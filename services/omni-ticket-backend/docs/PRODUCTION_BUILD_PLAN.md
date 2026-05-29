@@ -42,7 +42,7 @@ Build:
 - Docker/Procfile-style packaging for release, web, and worker process definitions. Done.
 - Staging/production runtime configuration validation. Done.
 - Postgres-safe seed ordering and local `omni_ticket` database smoke coverage. Done.
-- CI checks for lint, typecheck, unit tests, and migration/import sanity.
+- CI checks for frontend lint/build plus backend compile, lint, typecheck, unit tests, migration sanity, and worker smoke. Done.
 
 Acceptance:
 

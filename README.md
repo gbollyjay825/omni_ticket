@@ -41,6 +41,8 @@ alembic upgrade head
 python -m app.worker --once --market-id market-ng
 ```
 
+The root GitHub Actions workflow runs the same production gate on push and pull request: frontend lint/build, backend compile, lint, typecheck, tests, Alembic migration sanity, and a one-cycle worker smoke test.
+
 ## Production Container
 
 Build the PWA as a static Nginx container. The API URL is baked into the Vite build:

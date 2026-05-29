@@ -4,7 +4,7 @@ Last updated: 2026-05-29
 
 ## Current Milestone
 
-Status: Working Python/FastAPI vertical slice is running locally on `http://127.0.0.1:8000` against local PostgreSQL database `omni_ticket`, with the primary mutable operational paths, core operational reads, market-scoped connector account metadata, admin user management, durable outbound delivery queue, automation-rule execution, worker foundation, and deployment packaging moved onto SQLAlchemy-backed repositories. Local smoke tests pass, and the repository now includes a GitHub Actions CI workflow for lint, typecheck, and tests.
+Status: Working Python/FastAPI vertical slice is running locally on `http://127.0.0.1:8000` against local PostgreSQL database `omni_ticket`, with the primary mutable operational paths, core operational reads, market-scoped connector account metadata, admin user management, durable outbound delivery queue, automation-rule execution, worker foundation, and deployment packaging moved onto SQLAlchemy-backed repositories. Local smoke tests pass, and the monorepo now includes a root GitHub Actions CI workflow for frontend lint/build plus backend compile, lint, typecheck, tests, migration sanity, and worker smoke.
 
 Completed in this build:
 
@@ -39,7 +39,7 @@ Completed in this build:
 - Local PostgreSQL runtime configured through `.env` with Postgres-safe seed ordering.
 - Database-backed mirror for channels, agents, companies, customers, tickets, timeline events, handoffs, knowledge, rules, connector events, AI decisions, and audit history, with startup rehydration into the runtime store.
 - Smoke tests, lint, and typecheck passing.
-- GitHub Actions CI workflow added for `ruff`, `mypy`, and `pytest`.
+- Root GitHub Actions CI workflow added for frontend lint/build plus backend `compileall`, `ruff`, `mypy`, `pytest`, migration sanity, and worker smoke.
 
 Known production dependencies:
 
@@ -178,5 +178,5 @@ Known production dependencies:
 - Added `POST /api/v1/work-queue/{ticket_id}/override` so operators can apply manual routing, priority, owner, recommendation, and tag overrides with audit and timeline history.
 - The local backend now runs from PostgreSQL database `omni_ticket` through `.env`, while SQLite remains available as a fallback if `OMNI_DATABASE_URL` is changed.
 - Mutable operational resources now persist through a SQLAlchemy-backed mirror and are loaded back into the runtime store during startup so local restarts retain state.
-- Added `.github/workflows/ci.yml` so the backend repo now has repeatable lint, typecheck, and test automation on push and pull request.
+- Added root `.github/workflows/ci.yml` so the monorepo now has repeatable frontend and backend verification on push and pull request.
 - Added backend `Dockerfile`, `Procfile`, `docker-compose.yml`, `.env.example`, and `docs/DEPLOYMENT.md` for release/web/worker deployment packaging.
