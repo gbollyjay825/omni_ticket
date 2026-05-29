@@ -22,7 +22,7 @@ from app.db.models import (
     UserRecord,
     WorkspaceSettingsRecord,
 )
-from app.db.session import engine as default_engine
+from app.db.session import get_engine
 from app.db.store_sync import hydrate_store_state
 
 
@@ -33,12 +33,14 @@ def _payload(model: object) -> dict:
     return data
 
 
-def create_schema(engine: Engine = default_engine) -> None:
-    Base.metadata.create_all(bind=engine)
+def create_schema(engine: Engine | None = None) -> None:
+    target_engine = engine or get_engine()
+    Base.metadata.create_all(bind=target_engine)
 
 
-def table_names(engine: Engine = default_engine) -> list[str]:
-    return sorted(inspect(engine).get_table_names())
+def table_names(engine: Engine | None = None) -> list[str]:
+    target_engine = engine or get_engine()
+    return sorted(inspect(target_engine).get_table_names())
 
 
 CONNECTOR_ACCOUNT_DEFAULTS: dict[str, dict] = {
@@ -263,16 +265,18 @@ def seed_reference_data(session: Session, source: InMemoryStore = store) -> None
     session.commit()
 
 
-def initialize_database(engine: Engine = default_engine) -> None:
-    create_schema(engine)
-    with Session(engine) as session:
+def initialize_database(engine: Engine | None = None) -> None:
+    target_engine = engine or get_engine()
+    create_schema(target_engine)
+    with Session(target_engine) as session:
         seed_reference_data(session)
         hydrate_store_state(session, store)
 
 
-def reset_database(engine: Engine = default_engine, source: InMemoryStore = store) -> None:
-    Base.metadata.drop_all(bind=engine)
-    create_schema(engine)
-    with Session(engine) as session:
+def reset_database(engine: Engine | None = None, source: InMemoryStore = store) -> None:
+    target_engine = engine or get_engine()
+    Base.metadata.drop_all(bind=target_engine)
+    create_schema(target_engine)
+    with Session(target_engine) as session:
         seed_reference_data(session, source)
         hydrate_store_state(session, source)

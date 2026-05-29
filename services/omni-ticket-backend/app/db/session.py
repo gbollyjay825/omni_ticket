@@ -25,7 +25,23 @@ def create_database_engine(database_url: str | None = None) -> Engine:
 
 
 engine = create_database_engine()
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+SessionLocal = sessionmaker(autoflush=False, autocommit=False, expire_on_commit=False)
+SessionLocal.configure(bind=engine)
+
+
+def get_engine() -> Engine:
+    return engine
+
+
+def configure_database(database_url: str | None = None) -> Engine:
+    global engine
+
+    current_engine = engine
+    next_engine = create_database_engine(database_url)
+    SessionLocal.configure(bind=next_engine)
+    engine = next_engine
+    current_engine.dispose()
+    return engine
 
 
 def get_db() -> Generator[Session]:

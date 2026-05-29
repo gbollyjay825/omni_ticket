@@ -42,6 +42,7 @@ The production persistence foundation now includes:
 - Database-backed outbound message queue for public replies, including idempotency keys, connector-account readiness checks, delivery status, retry, and dead-letter states.
 - Background worker service and `python -m app.worker` entrypoint for due outbound retries, dead-letter handling, SLA refresh, Work Queue recompute, analytics rollups, and worker audit events.
 - Deployment packaging with Dockerfile, Procfile, compose stack, `.env.example`, and staging/production configuration validation.
+- Test-only database rebinding so smoke tests can run against a temporary SQLite file instead of the repo-default PostgreSQL database.
 - Runtime-store mirroring for channels, agents, companies, customers, tickets, timeline events, handoffs, knowledge, rules, connector events, AI decisions, and audit history, with startup hydration from the database.
 - Repository CI automation for backend lint, typecheck, and tests on push and pull request.
 

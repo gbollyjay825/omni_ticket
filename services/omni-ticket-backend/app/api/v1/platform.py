@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 
 from app.api.v1.security import RequestContext, require_context
 from app.db.bootstrap import table_names
-from app.db.session import engine, get_db
+from app.db.session import get_db, get_engine
 
 router = APIRouter(prefix="/platform", tags=["platform"])
 
@@ -16,7 +16,7 @@ def readiness(
     db: Session = Depends(get_db),
 ) -> dict:
     db.execute(text("select 1"))
-    tables = table_names(engine)
+    tables = table_names(get_engine())
     return {
         "database": "ok",
         "table_count": len(tables),

@@ -447,7 +447,16 @@ async function fetchJson<T>(
   })
 
   if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}`)
+    let message = `${response.status} ${response.statusText}`.trim()
+    try {
+      const errorBody = (await response.json()) as { detail?: string }
+      if (errorBody.detail) {
+        message = errorBody.detail
+      }
+    } catch {
+      // Keep the HTTP status when the server does not return a JSON problem body.
+    }
+    throw new Error(message)
   }
 
   return response.json() as Promise<T>

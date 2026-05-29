@@ -542,7 +542,9 @@ function OmniApp() {
               <input
                 type="email"
                 value={loginEmail}
-                onChange={(event) => setLoginEmail(event.target.value)}
+                onChange={(event) => {
+                  setLoginEmail(event.target.value)
+                }}
               />
             </label>
             <label>
@@ -550,7 +552,9 @@ function OmniApp() {
               <input
                 type="password"
                 value={loginPassword}
-                onChange={(event) => setLoginPassword(event.target.value)}
+                onChange={(event) => {
+                  setLoginPassword(event.target.value)
+                }}
               />
             </label>
             <label>
@@ -572,7 +576,13 @@ function OmniApp() {
               type="button"
               onClick={() => {
                 setLoginEmail('gbolahan@omniticket.example.com')
+                setLoginPassword('omni-demo')
                 setLoginMarket('market-ng')
+                login({
+                  email: 'gbolahan@omniticket.example.com',
+                  password: 'omni-demo',
+                  market_id: 'market-ng',
+                })
               }}
             >
               Admin · all markets
@@ -581,7 +591,13 @@ function OmniApp() {
               type="button"
               onClick={() => {
                 setLoginEmail('kofi.gh@omniticket.example.com')
+                setLoginPassword('omni-demo')
                 setLoginMarket('market-gh')
+                login({
+                  email: 'kofi.gh@omniticket.example.com',
+                  password: 'omni-demo',
+                  market_id: 'market-gh',
+                })
               }}
             >
               Ghana agent

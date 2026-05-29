@@ -30,6 +30,7 @@ Completed in this build:
 - Database-backed outbound message queue for public replies with idempotency keys, connector-account readiness checks, delivery status, retry, and dead-letter states.
 - Background worker service and `python -m app.worker` entrypoint for due outbound retries, dead-letter handling, SLA refresh, Work Queue recompute, analytics rollups, and worker audit events.
 - Dockerfile, Procfile, compose stack, `.env.example`, deployment docs, and staging/production configuration validation for separate release, web, and worker processes.
+- Isolated smoke-test path that rebinds backend tests to a temporary SQLite database instead of mutating the repo-default PostgreSQL runtime.
 - Database-backed ticket task completion updates through the existing ticket patch API, with persistence across runtime reset.
 - Local PostgreSQL runtime configured through `.env` with Postgres-safe seed ordering.
 - Database-backed mirror for channels, agents, companies, customers, tickets, timeline events, handoffs, knowledge, rules, connector events, AI decisions, and audit history, with startup rehydration into the runtime store.
@@ -51,7 +52,7 @@ Known production dependencies:
 1. Initialize independent Python repository. Done.
 2. Add FastAPI app shell, health route, test harness, linting, typing, and environment config. Done.
 3. Add CI pipeline for lint, typecheck, tests, and build. Done for backend lint/typecheck/tests; frontend build remains tracked in the separate frontend repo.
-4. Define environment strategy for local, staging, and production. Done for current deployable package; hosting-specific values pending.
+4. Define environment strategy for local, staging, and production. Done for current deployable package, including isolated smoke-test database rebinding; hosting-specific values pending.
 
 ## Phase 1: Data Platform
 

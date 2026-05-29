@@ -1,17 +1,27 @@
+from collections.abc import Generator
 from collections.abc import Callable
 
 import pytest
 from fastapi.testclient import TestClient
-from collections.abc import Generator
-
 from sqlalchemy.orm import Session
 
 from app.core.store import store
 from app.db.bootstrap import seed_reference_data
 from app.db.models import Base
-from app.db.session import engine
+from app.db.session import configure_database, get_engine
 from app.main import create_app
 from app.models.domain import WorkspaceSettings
+
+
+@pytest.fixture(scope="session", autouse=True)
+def isolated_database(tmp_path_factory: pytest.TempPathFactory) -> Generator[None]:
+    database_path = tmp_path_factory.mktemp("db") / "omni-ticket-tests.db"
+    original_database_url = str(get_engine().url)
+    configure_database(f"sqlite:///{database_path}")
+    try:
+        yield
+    finally:
+        configure_database(original_database_url)
 
 
 @pytest.fixture(autouse=True)
@@ -24,6 +34,7 @@ def reset_store() -> Generator[None]:
 def reset_local_state() -> None:
     store.settings = WorkspaceSettings()
     store.seed()
+    engine = get_engine()
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     with Session(engine) as session:

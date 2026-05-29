@@ -26,6 +26,7 @@ def test_production_settings_require_postgres_explicit_migrations_and_frontend_o
 
     assert any("PostgreSQL" in error for error in errors)
     assert any("OMNI_INITIALIZE_DATABASE" in error for error in errors)
+    assert any("OMNI_SESSION_SECRET" in error for error in errors)
     assert any("cannot contain '*'" in error for error in errors)
 
 

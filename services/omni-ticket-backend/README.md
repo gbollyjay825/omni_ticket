@@ -30,6 +30,7 @@ This repository now runs a working FastAPI backend slice for Omni Ticket:
 - Database-first outbound message queue for public replies with connector-account readiness checks, delivery status, retry, and dead-letter states.
 - Background worker entrypoint for due outbound retries, dead-letter handling, SLA refresh, Work Queue recompute, analytics rollups, and worker audit events.
 - Production packaging for release, web, and worker processes through Docker, Procfile, compose, and environment validation.
+- Temporary SQLite rebinding for smoke tests so local verification does not need to drop or reseed the repo-default PostgreSQL database.
 - Database-first SLA refresh, Work Queue scoring, analytics summary, audit trail, and generated API docs.
 - CORS configured for the local Vite frontend.
 
@@ -92,6 +93,8 @@ Run one worker cycle locally:
 ```bash
 python -m app.worker --once --market-id market-ng
 ```
+
+`pytest` now rebinds the backend to a temporary SQLite database for the test session, so smoke tests do not depend on the repo `.env` PostgreSQL target.
 
 Run the worker continuously:
 

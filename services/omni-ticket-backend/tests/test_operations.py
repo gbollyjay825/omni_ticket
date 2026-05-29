@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.store import store
 from app.db.models import AuditEventRecord, OutboundMessageRecord, SessionRecord, TicketRecord
-from app.db.session import engine
+from app.db.session import get_engine
 from app.main import create_app
 from app.models.domain import utc_now
 from app.services.worker import worker_service
@@ -24,7 +24,7 @@ def test_login_returns_user_and_available_markets(client: TestClient) -> None:
 
 def test_signed_token_survives_missing_session_record(client: TestClient) -> None:
     token = client.headers["Authorization"].removeprefix("Bearer ")
-    with Session(engine) as session:
+    with Session(get_engine()) as session:
         record = session.get(SessionRecord, token)
         assert record is not None
         session.delete(record)
@@ -323,7 +323,7 @@ def test_worker_processes_due_outbound_retries_after_connector_is_enabled(
         if message["ticket_id"] == ticket["id"]
     )
 
-    with Session(engine) as session:
+    with Session(get_engine()) as session:
         message_record = session.get(OutboundMessageRecord, failed_message["id"])
         assert message_record is not None
         message_record.next_attempt_at = utc_now() - timedelta(minutes=1)
@@ -344,7 +344,7 @@ def test_worker_processes_due_outbound_retries_after_connector_is_enabled(
         },
     )
 
-    with Session(engine) as session:
+    with Session(get_engine()) as session:
         summary = worker_service.run_once(session, store, market_ids=["market-ng"])
 
     outbound_job = next(job for job in summary.jobs if job.name == "outbound_retry")
@@ -378,14 +378,14 @@ def test_worker_dead_letters_due_outbound_after_max_attempts(client: TestClient)
         if message["ticket_id"] == ticket["id"]
     )
 
-    with Session(engine) as session:
+    with Session(get_engine()) as session:
         message_record = session.get(OutboundMessageRecord, failed_message["id"])
         assert message_record is not None
         message_record.attempts = message_record.max_attempts - 1
         message_record.next_attempt_at = utc_now() - timedelta(minutes=1)
         session.commit()
 
-    with Session(engine) as session:
+    with Session(get_engine()) as session:
         summary = worker_service.run_once(session, store, market_ids=["market-ng"])
 
     outbound_job = next(job for job in summary.jobs if job.name == "outbound_retry")
@@ -404,7 +404,7 @@ def test_worker_dead_letters_due_outbound_after_max_attempts(client: TestClient)
 def test_worker_refreshes_sla_and_recomputes_operational_views(client: TestClient) -> None:
     ticket = client.get("/api/v1/tickets").json()[0]
     past = utc_now() - timedelta(hours=1)
-    with Session(engine) as session:
+    with Session(get_engine()) as session:
         record = session.get(TicketRecord, ticket["id"])
         assert record is not None
         record.sla = {
@@ -416,7 +416,7 @@ def test_worker_refreshes_sla_and_recomputes_operational_views(client: TestClien
         }
         session.commit()
 
-    with Session(engine) as session:
+    with Session(get_engine()) as session:
         summary = worker_service.run_once(session, store, market_ids=["market-ng"], outbound_limit=0)
 
     sla_job = next(job for job in summary.jobs if job.name == "sla_refresh")
@@ -427,7 +427,7 @@ def test_worker_refreshes_sla_and_recomputes_operational_views(client: TestClien
     assert queue_job.processed >= 1
     assert analytics_job.details["open_tickets"] >= 1
 
-    with Session(engine) as session:
+    with Session(get_engine()) as session:
         refreshed = session.get(TicketRecord, ticket["id"])
         assert refreshed is not None
         assert refreshed.sla["risk"] == "breached"
