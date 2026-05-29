@@ -25,6 +25,7 @@ data/
 .ruff_cache/
 .mypy_cache/
 *.egg-info/
+.vercel/
 
 __pycache__/
 *.pyc
