@@ -1,0 +1,81 @@
+# Omni Ticket Backend Deployment
+
+## Process Model
+
+Run the backend as three separate process types:
+
+- `release`: runs `alembic upgrade head`.
+- `web`: runs the FastAPI API with Uvicorn.
+- `worker`: runs background jobs for outbound retries, dead-lettering, SLA refresh, Work Queue recompute, and analytics rollups.
+
+The included `Procfile` defines those commands for platforms that support Procfile-style deployments.
+
+## Required Environment
+
+Set these values in every environment:
+
+```bash
+OMNI_ENVIRONMENT=staging
+OMNI_DATABASE_URL=postgresql+psycopg://USER:PASSWORD@HOST:5432/DB
+OMNI_INITIALIZE_DATABASE=false
+OMNI_ALLOWED_ORIGINS='["https://your-frontend.example.com"]'
+OMNI_WORKER_INTERVAL_SECONDS=60
+OMNI_WORKER_OUTBOUND_LIMIT=50
+```
+
+Local development may use `OMNI_INITIALIZE_DATABASE=true` so reference data is seeded automatically. Staging and production must run migrations explicitly and keep automatic initialization off.
+
+## Docker
+
+Build the backend image:
+
+```bash
+docker build -t omni-ticket-backend .
+```
+
+Run the web process:
+
+```bash
+docker run --rm -p 8000:8000 \
+  -e OMNI_ENVIRONMENT=local \
+  -e OMNI_DATABASE_URL=postgresql+psycopg://omni:omni@host.docker.internal:5432/omni_ticket \
+  -e OMNI_INITIALIZE_DATABASE=true \
+  -e OMNI_ALLOWED_ORIGINS='["http://127.0.0.1:5173"]' \
+  omni-ticket-backend
+```
+
+Run one worker cycle:
+
+```bash
+docker run --rm \
+  -e OMNI_ENVIRONMENT=local \
+  -e OMNI_DATABASE_URL=postgresql+psycopg://omni:omni@host.docker.internal:5432/omni_ticket \
+  -e OMNI_INITIALIZE_DATABASE=true \
+  -e OMNI_ALLOWED_ORIGINS='["http://127.0.0.1:5173"]' \
+  omni-ticket-backend python -m app.worker --once --market-id market-ng
+```
+
+## Local Compose Smoke
+
+The compose stack starts Postgres, runs migrations, then starts `web` and `worker`:
+
+```bash
+docker compose up --build
+```
+
+API health:
+
+```bash
+curl http://127.0.0.1:8000/api/v1/health
+```
+
+## Deployment Guardrails
+
+At startup, the API and worker validate staging/production configuration:
+
+- `OMNI_DATABASE_URL` must not be SQLite.
+- `OMNI_INITIALIZE_DATABASE` must be `false`.
+- `OMNI_ALLOWED_ORIGINS` must be explicit and cannot contain `*`.
+- Worker interval and outbound limit must be positive.
+
+This keeps staging/production from silently starting with local/demo defaults.

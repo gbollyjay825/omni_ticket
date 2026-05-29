@@ -1,0 +1,3 @@
+release: alembic upgrade head
+web: uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
+worker: python -m app.worker --interval-seconds ${OMNI_WORKER_INTERVAL_SECONDS:-60} --outbound-limit ${OMNI_WORKER_OUTBOUND_LIMIT:-50}

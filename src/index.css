@@ -1,0 +1,158 @@
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap');
+
+:root {
+  --paper: oklch(0.985 0.004 85);
+  --paper-tint: oklch(0.965 0.005 85);
+  --surface: #ffffff;
+  --surface-2: oklch(0.975 0.004 85);
+  --hairline: oklch(0.91 0.006 85);
+  --hairline-soft: oklch(0.94 0.005 85);
+  --hairline-strong: oklch(0.85 0.008 85);
+  --ink: oklch(0.18 0.012 260);
+  --ink-2: oklch(0.36 0.01 260);
+  --ink-3: oklch(0.52 0.008 260);
+  --ink-4: oklch(0.68 0.006 260);
+  --ink-invert: oklch(0.985 0.003 85);
+  --signal: oklch(0.72 0.16 150);
+  --signal-ink: oklch(0.38 0.1 150);
+  --signal-tint: oklch(0.96 0.04 150);
+  --signal-edge: oklch(0.85 0.1 150);
+  --ok: oklch(0.68 0.13 150);
+  --ok-tint: oklch(0.965 0.03 150);
+  --warn: oklch(0.74 0.14 75);
+  --warn-tint: oklch(0.965 0.04 75);
+  --bad: oklch(0.62 0.18 25);
+  --bad-tint: oklch(0.965 0.04 25);
+  --info: oklch(0.62 0.13 240);
+  --info-tint: oklch(0.965 0.025 240);
+  --live: oklch(0.62 0.18 25);
+  --live-tint: oklch(0.97 0.025 25);
+  --test: oklch(0.55 0.13 270);
+  --test-tint: oklch(0.97 0.025 270);
+  --font-sans: 'Geist', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --fs-12: 11px;
+  --fs-13: 12px;
+  --fs-14: 13px;
+  --fs-15: 14px;
+  --fs-16: 15px;
+  --fs-18: 17px;
+  --fs-20: 19px;
+  --fs-24: 22px;
+  --fs-32: 28px;
+  --fs-44: 38px;
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-7: 32px;
+  --r-1: 4px;
+  --r-2: 6px;
+  --r-3: 8px;
+  --r-4: 10px;
+  --r-5: 14px;
+  --r-pill: 999px;
+  --shadow-pop: 0 1px 0 rgba(20, 20, 30, 0.04), 0 8px 20px -8px rgba(20, 20, 30, 0.1);
+  --shadow-over: 0 1px 0 rgba(20, 20, 30, 0.04), 0 18px 48px -16px rgba(20, 20, 30, 0.2);
+  --ring: 0 0 0 3px color-mix(in oklch, var(--signal) 32%, transparent);
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --dur-1: 120ms;
+  --dur-2: 200ms;
+  --dur-3: 320ms;
+  --rail-w: 232px;
+  --rail-w-collapsed: 60px;
+  --topbar-h: 56px;
+
+  --bg: var(--paper);
+  --heading: var(--ink);
+  --text: var(--ink-2);
+  --muted: var(--ink-3);
+  --line: var(--hairline);
+  --focus: var(--signal);
+  --sans:
+    var(--font-sans);
+
+  font-family: var(--sans);
+  color: var(--text);
+  background: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  overflow-x: hidden;
+  background: var(--bg);
+}
+
+body {
+  min-width: 320px;
+  min-height: 100svh;
+  margin: 0;
+  overflow-x: hidden;
+  color: var(--ink);
+  font-size: var(--fs-14);
+  font-feature-settings: "ss01", "cv11";
+  font-variant-numeric: tabular-nums;
+}
+
+#root {
+  min-height: 100svh;
+}
+
+a {
+  color: inherit;
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0.16em;
+}
+
+button,
+input,
+select,
+textarea {
+  letter-spacing: 0;
+  font: inherit;
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: color-mix(in oklch, var(--signal) 40%, transparent);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: var(--r-pill);
+  background: color-mix(in oklch, var(--ink-3) 30%, transparent);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklch, var(--ink-3) 60%, transparent);
+  background-clip: padding-box;
+}

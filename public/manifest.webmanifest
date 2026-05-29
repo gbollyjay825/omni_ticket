@@ -1,0 +1,33 @@
+{
+  "name": "Omni Ticket",
+  "short_name": "Omni Ticket",
+  "description": "An omnichannel operations support PWA for live channels, unified inbox, AI-assisted triage, knowledge, automation, analytics, workforce, and project tracking.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5f7f9",
+  "theme_color": "#0f766e",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/omni-ticket.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Unified Inbox",
+      "short_name": "Inbox",
+      "url": "/?screen=inbox",
+      "icons": [{ "src": "/omni-ticket.svg", "sizes": "any", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "Live Channels",
+      "short_name": "Channels",
+      "url": "/?screen=channels",
+      "icons": [{ "src": "/omni-ticket.svg", "sizes": "any", "type": "image/svg+xml" }]
+    }
+  ]
+}
