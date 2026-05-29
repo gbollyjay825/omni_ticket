@@ -1,0 +1,5 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "echo 'Python dependencies are installed by the Vercel Python runtime'",
+  "buildCommand": "echo 'Omni Ticket backend build ready'"
+}

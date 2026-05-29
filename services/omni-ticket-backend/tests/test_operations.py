@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.store import store
-from app.db.models import AuditEventRecord, OutboundMessageRecord, TicketRecord
+from app.db.models import AuditEventRecord, OutboundMessageRecord, SessionRecord, TicketRecord
 from app.db.session import engine
 from app.main import create_app
 from app.models.domain import utc_now
@@ -20,6 +20,29 @@ def test_login_returns_user_and_available_markets(client: TestClient) -> None:
     body = response.json()
     assert body["user"]["role"] == "admin"
     assert body["market"]["id"] == "market-ng"
+
+
+def test_signed_token_survives_missing_session_record(client: TestClient) -> None:
+    token = client.headers["Authorization"].removeprefix("Bearer ")
+    with Session(engine) as session:
+        record = session.get(SessionRecord, token)
+        assert record is not None
+        session.delete(record)
+        session.commit()
+
+    response = client.get("/api/v1/auth/me")
+    assert response.status_code == 200
+    assert response.json()["user"]["email"] == "gbolahan@omniticket.example.com"
+
+
+def test_tampered_signed_token_is_rejected(client: TestClient) -> None:
+    token = client.headers["Authorization"].removeprefix("Bearer ")
+    tampered_token = f"{token[:-1]}x"
+    response = client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {tampered_token}", "X-Omni-Market": "market-ng"},
+    )
+    assert response.status_code == 401
 
 
 def test_operations_require_authentication() -> None:

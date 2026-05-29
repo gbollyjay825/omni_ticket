@@ -59,6 +59,7 @@ Last updated: 2026-05-29
 | B-040 | Add durable outbound message queue with connector-account readiness checks, delivery status, retry, dead-letter states, and Setup visibility | P0 | Done |
 | B-041 | Add backend worker foundation for due outbound retries, SLA refresh, Work Queue recompute, analytics rollups, and worker audit events | P0 | Done |
 | B-042 | Add production packaging for frontend static container, backend API container, worker process, release migrations, compose stack, and env validation | P0 | Done |
+| B-043 | Fix Vercel serverless login by adding signed session tokens and same-origin backend service routing | P0 | Done |
 
 ## Pending Items
 
@@ -66,6 +67,7 @@ Last updated: 2026-05-29
 - Build real provider adapters for email, WhatsApp Business, Facebook Messenger, Instagram DM, SMS, and voice.
 - Add production identity provider, password policy, MFA/SSO, and full RBAC policy hardening.
 - Deploy the packaged web/API/worker processes to the selected managed hosting target with alerting and retry observability.
+- Make the standalone backend smoke path automation-safe by isolating test database/cache writes from the repo `.env` PostgreSQL default and local socket assumptions.
 - Connect real channel credentials and Freshdesk/Freshworks import/sync only if requested.
 - Add production RBAC enforcement, durable audit logs, database tenant isolation, and attachment scanning.
 - Commit the workspace to git and open the first delivery PR when the review path is agreed.
@@ -108,3 +110,4 @@ Last updated: 2026-05-29
 | C-032 | Public replies now create durable outbound messages with provider readiness checks, delivery status, retry endpoint, connector receipts, and Setup queue visibility | 2026-05-29 |
 | C-033 | Backend worker foundation now runs one-shot or looping jobs for outbound retries, SLA refresh, Work Queue recompute, analytics rollups, and worker audit events | 2026-05-29 |
 | C-034 | Production packaging added for static frontend, backend API, release migrations, worker process, local compose, and staging/production environment validation | 2026-05-29 |
+| C-035 | Vercel 401 login failure fixed by using signed session tokens and pointing the deployed PWA at the same-origin backend service route | 2026-05-29 |

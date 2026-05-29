@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     initialize_database: bool = True
     worker_interval_seconds: int = 60
     worker_outbound_limit: int = 50
+    session_secret: str = "omni-ticket-local-dev-secret"
+    session_ttl_minutes: int = 8 * 60
     allowed_origins: list[str] = [
         "http://127.0.0.1:5173",
         "http://localhost:5173",
@@ -33,7 +35,11 @@ class Settings(BaseSettings):
             errors.append("OMNI_WORKER_INTERVAL_SECONDS must be at least 1.")
         if self.worker_outbound_limit < 1:
             errors.append("OMNI_WORKER_OUTBOUND_LIMIT must be at least 1.")
+        if self.session_ttl_minutes < 5:
+            errors.append("OMNI_SESSION_TTL_MINUTES must be at least 5.")
         if self.production_like:
+            if self.session_secret == "omni-ticket-local-dev-secret":
+                errors.append("OMNI_SESSION_SECRET must be set in staging/production.")
             if self.database_url.startswith("sqlite"):
                 errors.append("OMNI_DATABASE_URL must point to PostgreSQL in staging/production.")
             if self.initialize_database:

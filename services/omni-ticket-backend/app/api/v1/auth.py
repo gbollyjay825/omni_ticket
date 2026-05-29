@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.v1.security import RequestContext, require_context
+from app.core.auth import create_session_token
 from app.db.mappers import market_from_record, user_from_record
 from app.db.models import AuditEventRecord, MarketRecord, SessionRecord, UserRecord
 from app.db.session import get_db
@@ -98,8 +99,8 @@ def login(request: LoginRequest, db: Session = Depends(get_db)) -> AuthSession:
     if market_record is None or not market_record.active:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Market not found")
 
-    token = f"ot_{uuid4().hex}"
-    db.add(SessionRecord(token=token, user_id=user.id))
+    token, expires_at = create_session_token(user.id)
+    db.add(SessionRecord(token=token, user_id=user.id, expires_at=expires_at))
     db.commit()
 
     return AuthSession(

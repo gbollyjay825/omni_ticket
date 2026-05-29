@@ -18,6 +18,8 @@ Set these values in every environment:
 OMNI_ENVIRONMENT=staging
 OMNI_DATABASE_URL=postgresql+psycopg://USER:PASSWORD@HOST:5432/DB
 OMNI_INITIALIZE_DATABASE=false
+OMNI_SESSION_SECRET=replace-with-a-long-random-secret
+OMNI_SESSION_TTL_MINUTES=480
 OMNI_ALLOWED_ORIGINS='["https://your-frontend.example.com"]'
 OMNI_WORKER_INTERVAL_SECONDS=60
 OMNI_WORKER_OUTBOUND_LIMIT=50
@@ -75,6 +77,7 @@ At startup, the API and worker validate staging/production configuration:
 
 - `OMNI_DATABASE_URL` must not be SQLite.
 - `OMNI_INITIALIZE_DATABASE` must be `false`.
+- `OMNI_SESSION_SECRET` must not use the local development default.
 - `OMNI_ALLOWED_ORIGINS` must be explicit and cannot contain `*`.
 - Worker interval and outbound limit must be positive.
 
