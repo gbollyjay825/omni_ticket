@@ -1,7 +1,7 @@
 import json
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import ValidationError
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -76,6 +76,7 @@ from app.models.domain import (
     WorkQueueItem,
     WorkQueueOverrideRequest,
 )
+from app.services.attachments import attachment_storage
 
 router = APIRouter(tags=["operations"])
 
@@ -437,6 +438,68 @@ def create_ticket_attachment(
         request,
         context.market_id,
         actor=context.user.id,
+    )
+
+
+@router.post("/tickets/{ticket_id}/attachments/binary", response_model=Attachment, status_code=201)
+async def upload_ticket_attachment(
+    ticket_id: str,
+    request: Request,
+    filename: str = Query(..., min_length=1, max_length=255),
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> Attachment:
+    require_operator(context)
+    content = await request.body()
+    if not content:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Attachment content is required")
+    if len(content) > app_settings.attachment_max_bytes:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Attachment is too large")
+    attachment_id = f"attachment_{uuid4().hex}"
+    content_type = request.headers.get("content-type") or "application/octet-stream"
+    storage_key = attachment_storage.write(
+        market_id=context.market_id,
+        ticket_id=ticket_id,
+        attachment_id=attachment_id,
+        filename=filename,
+        data=content,
+    )
+    return ticket_repository.create_attachment(
+        db,
+        state,
+        ticket_id,
+        CreateAttachmentRequest(
+            filename=filename,
+            content_type=content_type,
+            size_bytes=len(content),
+            storage_key=storage_key,
+        ),
+        context.market_id,
+        actor=context.user.id,
+        attachment_id=attachment_id,
+    )
+
+
+@router.get("/tickets/{ticket_id}/attachments/{attachment_id}/download")
+def download_ticket_attachment(
+    ticket_id: str,
+    attachment_id: str,
+    context: RequestContext = Depends(require_context),
+    db: Session = Depends(get_db),
+) -> Response:
+    attachment = ticket_repository.get_attachment(db, ticket_id, attachment_id, context.market_id)
+    if attachment.scan_status != "clean":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Attachment is not cleared for download")
+    try:
+        content = attachment_storage.read(attachment.storage_key)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Attachment content not found") from exc
+    safe_name = attachment_storage.safe_filename(attachment.filename)
+    return Response(
+        content=content,
+        media_type=attachment.content_type,
+        headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
     )
 
 

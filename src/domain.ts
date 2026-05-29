@@ -243,6 +243,7 @@ export interface AttachmentDraft {
   filename: string
   contentType: string
   sizeBytes: number
+  file?: File
 }
 
 export interface InboxFilters {

@@ -794,6 +794,45 @@ def test_dangerous_attachment_metadata_is_blocked(client: TestClient) -> None:
     )
 
 
+def test_binary_attachment_upload_can_be_downloaded_after_clean_scan(client: TestClient) -> None:
+    ticket = client.get("/api/v1/tickets").json()[0]
+    response = client.post(
+        f"/api/v1/tickets/{ticket['id']}/attachments/binary?filename=proof-note.txt",
+        content=b"customer proof bytes",
+        headers={"content-type": "text/plain"},
+    )
+    assert response.status_code == 201
+    attachment = response.json()
+    assert attachment["filename"] == "proof-note.txt"
+    assert attachment["scan_status"] == "clean"
+    assert attachment["size_bytes"] == len(b"customer proof bytes")
+    assert attachment["storage_key"].startswith("local:")
+
+    download = client.get(
+        f"/api/v1/tickets/{ticket['id']}/attachments/{attachment['id']}/download"
+    )
+    assert download.status_code == 200
+    assert download.content == b"customer proof bytes"
+    assert download.headers["content-type"].startswith("text/plain")
+
+
+def test_blocked_binary_attachment_cannot_be_downloaded(client: TestClient) -> None:
+    ticket = client.get("/api/v1/tickets").json()[0]
+    response = client.post(
+        f"/api/v1/tickets/{ticket['id']}/attachments/binary?filename=malware.exe",
+        content=b"blocked bytes",
+        headers={"content-type": "application/x-msdownload"},
+    )
+    assert response.status_code == 201
+    attachment = response.json()
+    assert attachment["scan_status"] == "blocked"
+
+    download = client.get(
+        f"/api/v1/tickets/{ticket['id']}/attachments/{attachment['id']}/download"
+    )
+    assert download.status_code == 403
+
+
 def test_failed_outbound_message_can_be_retried_after_connector_is_enabled(
     client: TestClient,
 ) -> None:

@@ -829,6 +829,19 @@ class TicketRepository:
         ).all()
         return [attachment_from_record(record) for record in records]
 
+    def get_attachment(
+        self,
+        db: Session,
+        ticket_id: str,
+        attachment_id: str,
+        market_id: str,
+    ) -> Attachment:
+        _ticket_record_or_404(db, ticket_id, market_id)
+        record = db.get(AttachmentRecord, attachment_id)
+        if record is None or record.market_id != market_id or record.ticket_id != ticket_id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Attachment not found")
+        return attachment_from_record(record)
+
     def create_attachment(
         self,
         db: Session,
@@ -838,6 +851,7 @@ class TicketRepository:
         market_id: str,
         *,
         actor: str,
+        attachment_id: str | None = None,
     ) -> Attachment:
         ticket_record = _ticket_record_or_404(db, ticket_id, market_id)
         filename = request.filename.strip()
@@ -847,7 +861,7 @@ class TicketRepository:
                 detail="Attachment filename is required",
             )
 
-        attachment_id = _new_id("attachment")
+        attachment_id = attachment_id or _new_id("attachment")
         scan_status, scan_result = _scan_attachment(filename, request.content_type)
         storage_key = (
             request.storage_key

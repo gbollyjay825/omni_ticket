@@ -1694,25 +1694,52 @@ function OmniApp() {
                   type="button"
                   className={attachmentDraft ? 'tool-toggle active' : 'tool-toggle'}
                   aria-pressed={Boolean(attachmentDraft)}
-                  onClick={() =>
-                    setAttachmentDraft((value) => (value ? null : defaultAttachmentDraft(composerChannel)))
-                  }
+                  onClick={() => {
+                    if (attachmentDraft) {
+                      setAttachmentDraft(null)
+                      const input = document.getElementById('composer-attachment-input') as HTMLInputElement | null
+                      if (input) input.value = ''
+                      return
+                    }
+                    document.getElementById('composer-attachment-input')?.click()
+                  }}
                 >
                   <Paperclip size={16} />
-                  {attachmentDraft ? 'Scan ready' : 'Attach'}
+                  {attachmentDraft ? 'File ready' : 'Attach'}
                 </button>
+                <input
+                  id="composer-attachment-input"
+                  className="sr-only"
+                  type="file"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0]
+                    if (!file) return
+                    setAttachmentDraft({
+                      filename: file.name || defaultAttachmentDraft(composerChannel).filename,
+                      contentType: file.type || 'application/octet-stream',
+                      sizeBytes: file.size,
+                      file,
+                    })
+                  }}
+                  aria-label="Choose attachment file"
+                />
               </div>
               {attachmentDraft && (
                 <div className="attachment-strip attachment-form">
                   <div className="attachment-form-status">
                     <Paperclip size={15} />
-                    <span>Metadata will be saved, scanned, and added to the case timeline.</span>
+                    <span>
+                      {attachmentDraft.file
+                        ? 'File will upload to local storage, scan, and attach to the case timeline.'
+                        : 'Metadata will be saved, scanned, and added to the case timeline.'}
+                    </span>
                   </div>
                   <label>
                     File name
                     <input
                       value={attachmentDraft.filename}
-                      onChange={(event) => updateAttachmentDraft({ filename: event.target.value })}
+                      readOnly={Boolean(attachmentDraft.file)}
+                      onChange={(event) => updateAttachmentDraft({ filename: event.target.value, file: undefined })}
                       aria-label="Attachment file name"
                     />
                   </label>
@@ -1720,7 +1747,8 @@ function OmniApp() {
                     Type
                     <input
                       value={attachmentDraft.contentType}
-                      onChange={(event) => updateAttachmentDraft({ contentType: event.target.value })}
+                      readOnly={Boolean(attachmentDraft.file)}
+                      onChange={(event) => updateAttachmentDraft({ contentType: event.target.value, file: undefined })}
                       aria-label="Attachment content type"
                     />
                   </label>
@@ -1730,15 +1758,24 @@ function OmniApp() {
                       type="number"
                       min="1"
                       value={Math.max(1, Math.round(attachmentDraft.sizeBytes / 1024))}
+                      readOnly={Boolean(attachmentDraft.file)}
                       onChange={(event) =>
                         updateAttachmentDraft({
                           sizeBytes: Math.max(1, Number(event.target.value || 1)) * 1024,
+                          file: undefined,
                         })
                       }
                       aria-label="Attachment size in KB"
                     />
                   </label>
-                  <button type="button" onClick={() => setAttachmentDraft(null)}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAttachmentDraft(null)
+                      const input = document.getElementById('composer-attachment-input') as HTMLInputElement | null
+                      if (input) input.value = ''
+                    }}
+                  >
                     Remove
                   </button>
                 </div>

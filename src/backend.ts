@@ -637,6 +637,39 @@ export async function createBackendAttachment(
   )
 }
 
+export async function uploadBackendAttachment(
+  ticketId: string,
+  file: File,
+  session: BackendSession,
+): Promise<BackendAttachment> {
+  const headers = new Headers()
+  for (const [key, value] of Object.entries(authHeaders(session))) {
+    if (value) headers.set(key, value)
+  }
+  headers.set('Content-Type', file.type || 'application/octet-stream')
+  const response = await fetch(
+    `${getBackendBaseUrl()}/tickets/${ticketId}/attachments/binary?filename=${encodeURIComponent(file.name || 'attachment')}`,
+    {
+      method: 'POST',
+      headers,
+      body: file,
+    },
+  )
+
+  if (!response.ok) {
+    let message = `${response.status} ${response.statusText}`.trim()
+    try {
+      const errorBody = (await response.json()) as { detail?: string }
+      if (errorBody.detail) message = errorBody.detail
+    } catch {
+      // Keep the HTTP status when the server does not return JSON.
+    }
+    throw new Error(message)
+  }
+
+  return response.json() as Promise<BackendAttachment>
+}
+
 export async function createBackendHandoff(
   ticketId: string,
   input: BackendCreateHandoffInput,

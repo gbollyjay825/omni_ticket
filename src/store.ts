@@ -56,6 +56,7 @@ import {
   type BackendSnapshot,
   postBackendReply,
   retryBackendOutboundMessage,
+  uploadBackendAttachment,
 } from './backend'
 import { initialOmniState } from './seed'
 
@@ -1109,22 +1110,27 @@ export function useOmniStore() {
           `Attachment: ${input.attachment.filename} (${input.attachment.contentType}, ${Math.round(input.attachment.sizeBytes / 1024)} KB).`,
         ].join('\n')
       : trimmedBody
+    const saveAttachment = (session: BackendSession) => {
+      if (!input.attachment) return Promise.resolve()
+      if (input.attachment.file) {
+        return uploadBackendAttachment(input.conversationId, input.attachment.file, session)
+      }
+      return createBackendAttachment(
+        input.conversationId,
+        {
+          filename: input.attachment.filename,
+          content_type: input.attachment.contentType,
+          size_bytes: input.attachment.sizeBytes,
+        },
+        session,
+      )
+    }
 
     if (input.mode === 'handoff') {
       if (
         syncBackendMutation(
           async (session) => {
-            if (input.attachment) {
-              await createBackendAttachment(
-                input.conversationId,
-                {
-                  filename: input.attachment.filename,
-                  content_type: input.attachment.contentType,
-                  size_bytes: input.attachment.sizeBytes,
-                },
-                session,
-              )
-            }
+            await saveAttachment(session)
             return createBackendHandoff(
               input.conversationId,
               {
@@ -1157,17 +1163,7 @@ export function useOmniStore() {
     } else if (
       syncBackendMutation(
         async (session) => {
-          if (input.attachment) {
-            await createBackendAttachment(
-              input.conversationId,
-              {
-                filename: input.attachment.filename,
-                content_type: input.attachment.contentType,
-                size_bytes: input.attachment.sizeBytes,
-              },
-              session,
-            )
-          }
+          await saveAttachment(session)
           return postBackendReply(
             input.conversationId,
             {
