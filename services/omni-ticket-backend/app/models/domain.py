@@ -60,6 +60,7 @@ class TimelineEventType(StrEnum):
     inbound = "inbound"
     public_reply = "public_reply"
     internal_note = "internal_note"
+    attachment_added = "attachment_added"
     handoff_requested = "handoff_requested"
     handoff_accepted = "handoff_accepted"
     handoff_resolved = "handoff_resolved"
@@ -97,6 +98,13 @@ class OutboundMessageStatus(StrEnum):
     failed = "failed"
     retrying = "retrying"
     dead_lettered = "dead_lettered"
+
+
+class AttachmentScanStatus(StrEnum):
+    pending = "pending"
+    clean = "clean"
+    blocked = "blocked"
+    failed = "failed"
 
 
 class UserRole(StrEnum):
@@ -388,6 +396,22 @@ class OutboundMessage(BaseModel):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class Attachment(BaseModel):
+    id: str
+    market_id: str = "market-ng"
+    ticket_id: str
+    timeline_event_id: str | None = None
+    filename: str
+    content_type: str = "application/octet-stream"
+    size_bytes: int = 0
+    storage_key: str
+    uploaded_by: str
+    scan_status: AttachmentScanStatus = AttachmentScanStatus.pending
+    scan_result: str | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 class AuditEvent(BaseModel):
     id: str
     market_id: str | None = None
@@ -515,6 +539,13 @@ class ReplyRequest(BaseModel):
 
 class RetryOutboundMessageRequest(BaseModel):
     reason: str = "Manual retry"
+
+
+class CreateAttachmentRequest(BaseModel):
+    filename: str = Field(min_length=1, max_length=255)
+    content_type: str = Field(default="application/octet-stream", max_length=160)
+    size_bytes: int = Field(ge=1, le=25 * 1024 * 1024)
+    storage_key: str | None = Field(default=None, max_length=500)
 
 
 class CreateHandoffRequest(BaseModel):

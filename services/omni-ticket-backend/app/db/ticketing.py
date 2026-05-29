@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.store import InMemoryStore
 from app.db.mappers import (
     agent_from_record,
+    attachment_from_record,
     ai_decision_from_record,
     automation_rule_from_record,
     audit_event_from_record,
@@ -21,6 +22,7 @@ from app.db.mappers import (
 )
 from app.db.models import (
     AgentRecord,
+    AttachmentRecord,
     AiDecisionRecord,
     AuditEventRecord,
     AutomationRuleRecord,
@@ -35,11 +37,14 @@ from app.db.models import (
 from app.db.outbound import outbound_repository
 from app.models.domain import (
     AppendEventRequest,
+    Attachment,
+    AttachmentScanStatus,
     ChannelType,
     ConnectorEvent,
     ConnectorDirection,
     ConnectorInboundRequest,
     CreateHandoffRequest,
+    CreateAttachmentRequest,
     CreateTicketRequest,
     Handoff,
     HandoffStatus,
@@ -119,6 +124,37 @@ def _trigger_channels(trigger: str) -> set[str]:
 
 def _trigger_sentiments(trigger: str) -> set[str]:
     return {"positive", "neutral", "frustrated", "angry"} & set(trigger.replace(",", " ").split())
+
+
+DANGEROUS_ATTACHMENT_SUFFIXES = {
+    ".bat",
+    ".cmd",
+    ".com",
+    ".exe",
+    ".jar",
+    ".js",
+    ".msi",
+    ".ps1",
+    ".scr",
+    ".sh",
+    ".vbs",
+}
+
+
+def _scan_attachment(filename: str, content_type: str) -> tuple[AttachmentScanStatus, str]:
+    normalized = filename.strip().lower()
+    suffix = f".{normalized.rsplit('.', 1)[-1]}" if "." in normalized else ""
+    if suffix in DANGEROUS_ATTACHMENT_SUFFIXES:
+        return (
+            AttachmentScanStatus.blocked,
+            f"Blocked because {suffix} files are not allowed in customer conversations.",
+        )
+    if content_type.strip().lower() in {"application/x-msdownload", "application/x-sh"}:
+        return (
+            AttachmentScanStatus.blocked,
+            "Blocked because the content type is not allowed in customer conversations.",
+        )
+    return AttachmentScanStatus.clean, "Passed local metadata policy scan."
 
 
 def _automation_rule_matches(rule: AutomationRuleRecord, ticket: TicketRecord) -> bool:
@@ -485,6 +521,17 @@ class TicketRepository:
                 .order_by(OutboundMessageRecord.created_at.asc())
             ).all()
         ]
+        attachments = [
+            attachment_from_record(record)
+            for record in db.scalars(
+                select(AttachmentRecord)
+                .where(
+                    AttachmentRecord.market_id == market_id,
+                    AttachmentRecord.ticket_id == ticket_id,
+                )
+                .order_by(AttachmentRecord.created_at.asc())
+            ).all()
+        ]
         state.customers[customer.id] = customer
         state.timeline[ticket_id] = timeline
         state.handoffs.update({handoff.id: handoff for handoff in handoffs})
@@ -502,6 +549,7 @@ class TicketRepository:
             "handoffs": handoffs,
             "ai_decisions": ai_decisions,
             "outbound_messages": outbound_messages,
+            "attachments": attachments,
         }
 
     def create_ticket(
@@ -762,6 +810,102 @@ class TicketRepository:
         )
         db.commit()
         return event
+
+    def list_attachments(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        ticket_id: str,
+        market_id: str,
+    ) -> list[Attachment]:
+        _ticket_record_or_404(db, ticket_id, market_id)
+        records = db.scalars(
+            select(AttachmentRecord)
+            .where(
+                AttachmentRecord.market_id == market_id,
+                AttachmentRecord.ticket_id == ticket_id,
+            )
+            .order_by(AttachmentRecord.created_at.asc())
+        ).all()
+        return [attachment_from_record(record) for record in records]
+
+    def create_attachment(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        ticket_id: str,
+        request: CreateAttachmentRequest,
+        market_id: str,
+        *,
+        actor: str,
+    ) -> Attachment:
+        ticket_record = _ticket_record_or_404(db, ticket_id, market_id)
+        filename = request.filename.strip()
+        if not filename:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Attachment filename is required",
+            )
+
+        attachment_id = _new_id("attachment")
+        scan_status, scan_result = _scan_attachment(filename, request.content_type)
+        storage_key = (
+            request.storage_key
+            or f"attachment://{market_id}/{ticket_id}/{attachment_id}/{filename}"
+        )
+        scan_label = "blocked" if scan_status == AttachmentScanStatus.blocked else "ready"
+        event = _add_timeline_record(
+            db,
+            state,
+            ticket_record,
+            event_type=TimelineEventType.attachment_added,
+            channel=ChannelType.internal,
+            actor=actor,
+            body=f"Attachment {scan_label}: {filename}. {scan_result}",
+            public=False,
+            metadata={
+                "attachment_id": attachment_id,
+                "filename": filename,
+                "content_type": request.content_type,
+                "size_bytes": request.size_bytes,
+                "scan_status": scan_status.value,
+            },
+        )
+        record = AttachmentRecord(
+            id=attachment_id,
+            market_id=market_id,
+            ticket_id=ticket_id,
+            timeline_event_id=event.id,
+            filename=filename,
+            content_type=request.content_type,
+            size_bytes=request.size_bytes,
+            storage_key=storage_key,
+            uploaded_by=actor,
+            scan_status=scan_status.value,
+            scan_result=scan_result,
+        )
+        db.add(record)
+        db.flush()
+        attachment = attachment_from_record(record)
+        _audit(
+            db,
+            state,
+            actor=actor,
+            action="attachment.create",
+            entity_type="attachment",
+            entity_id=attachment.id,
+            market_id=market_id,
+            details={
+                "ticket_id": ticket_id,
+                "filename": filename,
+                "content_type": request.content_type,
+                "size_bytes": request.size_bytes,
+                "scan_status": scan_status.value,
+            },
+        )
+        db.commit()
+        db.refresh(record)
+        return attachment_from_record(record)
 
     def reply(
         self,

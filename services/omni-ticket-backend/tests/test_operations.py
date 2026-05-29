@@ -737,6 +737,63 @@ def test_reply_creates_timeline_and_outbound_queue_message(client: TestClient) -
     )
 
 
+def test_attachment_metadata_is_scanned_and_added_to_ticket_timeline(client: TestClient) -> None:
+    ticket = client.get("/api/v1/tickets").json()[0]
+    response = client.post(
+        f"/api/v1/tickets/{ticket['id']}/attachments",
+        json={
+            "filename": "customer-payment-screenshot.png",
+            "content_type": "image/png",
+            "size_bytes": 248_000,
+        },
+    )
+    assert response.status_code == 201
+    attachment = response.json()
+    assert attachment["ticket_id"] == ticket["id"]
+    assert attachment["scan_status"] == "clean"
+    assert attachment["storage_key"].startswith(f"attachment://market-ng/{ticket['id']}/")
+
+    attachments = client.get(f"/api/v1/tickets/{ticket['id']}/attachments")
+    assert attachments.status_code == 200
+    assert any(item["id"] == attachment["id"] for item in attachments.json())
+
+    context = client.get(f"/api/v1/tickets/{ticket['id']}").json()
+    assert any(item["id"] == attachment["id"] for item in context["attachments"])
+    assert any(
+        event["type"] == "attachment_added"
+        and event["metadata"]["attachment_id"] == attachment["id"]
+        and event["metadata"]["scan_status"] == "clean"
+        for event in context["timeline"]
+    )
+    assert any(
+        event["action"] == "attachment.create" and event["entity_id"] == attachment["id"]
+        for event in client.get("/api/v1/audit").json()
+    )
+
+
+def test_dangerous_attachment_metadata_is_blocked(client: TestClient) -> None:
+    ticket = client.get("/api/v1/tickets").json()[0]
+    response = client.post(
+        f"/api/v1/tickets/{ticket['id']}/attachments",
+        json={
+            "filename": "customer-details.exe",
+            "content_type": "application/x-msdownload",
+            "size_bytes": 128_000,
+        },
+    )
+    assert response.status_code == 201
+    attachment = response.json()
+    assert attachment["scan_status"] == "blocked"
+    assert "not allowed" in attachment["scan_result"]
+
+    timeline = client.get(f"/api/v1/tickets/{ticket['id']}/timeline").json()
+    assert any(
+        event["type"] == "attachment_added"
+        and event["metadata"]["scan_status"] == "blocked"
+        for event in timeline
+    )
+
+
 def test_failed_outbound_message_can_be_retried_after_connector_is_enabled(
     client: TestClient,
 ) -> None:

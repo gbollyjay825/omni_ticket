@@ -239,6 +239,12 @@ export interface WorkspaceSettings {
   aiWorkQueueAutomationEnabled: boolean
 }
 
+export interface AttachmentDraft {
+  filename: string
+  contentType: string
+  sizeBytes: number
+}
+
 export interface InboxFilters {
   channel: ChannelId | 'all'
   status: ConversationStatus | 'all'
@@ -292,6 +298,7 @@ export interface ComposerInput {
   online: boolean
   handoffTeam?: string
   handoffReason?: string
+  attachment?: AttachmentDraft
 }
 
 export interface NewTicketInput {

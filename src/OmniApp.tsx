@@ -48,6 +48,7 @@ import {
   X,
 } from 'lucide-react'
 import type {
+  AttachmentDraft,
   ChannelId,
   ComposerMode,
   ContactMethod,
@@ -363,7 +364,7 @@ function OmniApp() {
   const [prototypeNotice, setPrototypeNotice] = useState('')
   const [quickCreateOpen, setQuickCreateOpen] = useState(false)
   const [notificationOpen, setNotificationOpen] = useState(false)
-  const [attachmentReady, setAttachmentReady] = useState(false)
+  const [attachmentDraft, setAttachmentDraft] = useState<AttachmentDraft | null>(null)
   const [loginEmail, setLoginEmail] = useState('gbolahan@omniticket.example.com')
   const [loginPassword, setLoginPassword] = useState('omni-demo')
   const [loginMarket, setLoginMarket] = useState('market-ng')
@@ -698,6 +699,35 @@ function OmniApp() {
     setSelectedChannel(channelId)
   }
 
+  function defaultAttachmentDraft(channelId: ChannelId): AttachmentDraft {
+    if (channelId === 'email') {
+      return {
+        filename: 'customer-email-thread.pdf',
+        contentType: 'application/pdf',
+        sizeBytes: 380_000,
+      }
+    }
+    if (channelId === 'whatsapp' || channelId === 'instagram' || channelId === 'facebook') {
+      return {
+        filename: 'customer-chat-screenshot.png',
+        contentType: 'image/png',
+        sizeBytes: 248_000,
+      }
+    }
+    return {
+      filename: 'customer-context-note.txt',
+      contentType: 'text/plain',
+      sizeBytes: 24_000,
+    }
+  }
+
+  function updateAttachmentDraft(patch: Partial<AttachmentDraft>) {
+    setAttachmentDraft((current) => ({
+      ...(current ?? defaultAttachmentDraft(composerChannel)),
+      ...patch,
+    }))
+  }
+
   function sendComposer() {
     submitComposer({
       conversationId: selectedConversation.id,
@@ -707,9 +737,10 @@ function OmniApp() {
       online,
       handoffTeam,
       handoffReason,
+      attachment: attachmentDraft ?? undefined,
     })
     setComposerText('')
-    setAttachmentReady(false)
+    setAttachmentDraft(null)
   }
 
   function sendLiveChatReply(conversation: OmniConversation, channelId: ChannelId) {
@@ -1438,6 +1469,9 @@ function OmniApp() {
     )
     const completedTasks = selectedConversation.tasks.filter((task) => task.done).length
     const taskProgress = percent(completedTasks, selectedConversation.tasks.length)
+    const attachmentEvents = selectedConversation.timeline.filter(
+      (event) => event.type === 'automation' && event.body.toLowerCase().includes('attachment'),
+    )
     const planSteps = [
       {
         label: 'Acknowledge customer',
@@ -1658,19 +1692,53 @@ function OmniApp() {
                 </button>
                 <button
                   type="button"
-                  className={attachmentReady ? 'tool-toggle active' : 'tool-toggle'}
-                  aria-pressed={attachmentReady}
-                  onClick={() => setAttachmentReady((value) => !value)}
+                  className={attachmentDraft ? 'tool-toggle active' : 'tool-toggle'}
+                  aria-pressed={Boolean(attachmentDraft)}
+                  onClick={() =>
+                    setAttachmentDraft((value) => (value ? null : defaultAttachmentDraft(composerChannel)))
+                  }
                 >
                   <Paperclip size={16} />
-                  {attachmentReady ? 'Attached' : 'Attach'}
+                  {attachmentDraft ? 'Scan ready' : 'Attach'}
                 </button>
               </div>
-              {attachmentReady && (
-                <div className="attachment-strip">
-                  <Paperclip size={15} />
-                  <span>Customer screenshot.pdf ready to include</span>
-                  <button type="button" onClick={() => setAttachmentReady(false)}>
+              {attachmentDraft && (
+                <div className="attachment-strip attachment-form">
+                  <div className="attachment-form-status">
+                    <Paperclip size={15} />
+                    <span>Metadata will be saved, scanned, and added to the case timeline.</span>
+                  </div>
+                  <label>
+                    File name
+                    <input
+                      value={attachmentDraft.filename}
+                      onChange={(event) => updateAttachmentDraft({ filename: event.target.value })}
+                      aria-label="Attachment file name"
+                    />
+                  </label>
+                  <label>
+                    Type
+                    <input
+                      value={attachmentDraft.contentType}
+                      onChange={(event) => updateAttachmentDraft({ contentType: event.target.value })}
+                      aria-label="Attachment content type"
+                    />
+                  </label>
+                  <label>
+                    Size KB
+                    <input
+                      type="number"
+                      min="1"
+                      value={Math.max(1, Math.round(attachmentDraft.sizeBytes / 1024))}
+                      onChange={(event) =>
+                        updateAttachmentDraft({
+                          sizeBytes: Math.max(1, Number(event.target.value || 1)) * 1024,
+                        })
+                      }
+                      aria-label="Attachment size in KB"
+                    />
+                  </label>
+                  <button type="button" onClick={() => setAttachmentDraft(null)}>
                     Remove
                   </button>
                 </div>
@@ -1728,7 +1796,7 @@ function OmniApp() {
                   className="primary-action"
                   type="button"
                   onClick={sendComposer}
-                  disabled={!composerText.trim()}
+                  disabled={!composerText.trim() && !attachmentDraft?.filename.trim()}
                 >
                   <Send size={17} />
                   {online ? 'Send update' : 'Queue update'}
@@ -1804,6 +1872,18 @@ function OmniApp() {
                   <span key={tag}>{tag}</span>
                 ))}
               </div>
+            </div>
+            <div className="property-card">
+              <span>Attachments</span>
+              {attachmentEvents.length > 0 ? (
+                <div className="compact-list">
+                  {attachmentEvents.slice(-3).map((event) => (
+                    <div key={event.id}>{event.body}</div>
+                  ))}
+                </div>
+              ) : (
+                <small>No customer files on this case yet.</small>
+              )}
             </div>
             <div className="property-card">
               <span>Tasks</span>

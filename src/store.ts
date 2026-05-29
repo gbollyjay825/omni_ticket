@@ -25,6 +25,7 @@ import type {
 import {
   type BackendAgent,
   changeBackendPassword,
+  createBackendAttachment,
   createBackendUser,
   createBackendHandoff,
   createBackendTicket,
@@ -221,6 +222,7 @@ function mapSlaState(ticket: BackendTicket): SlaState {
 function mapTimelineType(event: BackendTimelineEvent): TimelineType {
   if (event.type === 'public_reply') return 'agent-reply'
   if (event.type === 'internal_note') return 'internal-note'
+  if (event.type === 'attachment_added') return 'automation'
   if (event.type.startsWith('handoff_')) return 'handoff'
   if (event.type === 'connector_receipt' || event.type === 'status_change' || event.type === 'ai_decision') {
     return 'automation'
@@ -1098,13 +1100,32 @@ export function useOmniStore() {
   }
 
   function submitComposer(input: ComposerInput) {
-    if (!input.body.trim()) return
+    const trimmedBody = input.body.trim()
+    if (!trimmedBody && !input.attachment) return
+
+    const bodyWithAttachment = input.attachment
+      ? [
+          trimmedBody || 'Attachment added to the customer case.',
+          `Attachment: ${input.attachment.filename} (${input.attachment.contentType}, ${Math.round(input.attachment.sizeBytes / 1024)} KB).`,
+        ].join('\n')
+      : trimmedBody
 
     if (input.mode === 'handoff') {
       if (
         syncBackendMutation(
-          (session) =>
-            createBackendHandoff(
+          async (session) => {
+            if (input.attachment) {
+              await createBackendAttachment(
+                input.conversationId,
+                {
+                  filename: input.attachment.filename,
+                  content_type: input.attachment.contentType,
+                  size_bytes: input.attachment.sizeBytes,
+                },
+                session,
+              )
+            }
+            return createBackendHandoff(
               input.conversationId,
               {
                 to_team: input.handoffTeam || 'Operations',
@@ -1118,7 +1139,8 @@ export function useOmniStore() {
                 ],
               },
               session,
-            ),
+            )
+          },
           () => {
             const conversation = state.conversations.find((item) => item.id === input.conversationId)
             return {
@@ -1134,17 +1156,29 @@ export function useOmniStore() {
       }
     } else if (
       syncBackendMutation(
-        (session) =>
-          postBackendReply(
+        async (session) => {
+          if (input.attachment) {
+            await createBackendAttachment(
+              input.conversationId,
+              {
+                filename: input.attachment.filename,
+                content_type: input.attachment.contentType,
+                size_bytes: input.attachment.sizeBytes,
+              },
+              session,
+            )
+          }
+          return postBackendReply(
             input.conversationId,
             {
               channel: backendChannelId(input.channelId),
               actor: session.user.name,
-              body: input.body.trim(),
+              body: bodyWithAttachment,
               public: input.mode === 'reply',
             },
             session,
-          ),
+          )
+        },
         () => {
           const conversation = state.conversations.find((item) => item.id === input.conversationId)
           return {
@@ -1167,7 +1201,7 @@ export function useOmniStore() {
       author: input.mode === 'handoff' ? 'Operations handoff' : 'You',
       authorRole: input.mode === 'handoff' ? 'system' : 'agent',
       timestamp: createdAt,
-      body: input.body.trim(),
+      body: bodyWithAttachment,
       deliveryState: input.online ? 'sent' : 'queued',
     }
 
@@ -1190,7 +1224,7 @@ export function useOmniStore() {
               requesterId: conversation.assigneeId,
               ownerId: owner.id,
               reason: input.handoffReason || 'Operational support required',
-              context: input.body.trim(),
+              context: bodyWithAttachment,
               customerImpact: conversation.preview,
               acceptanceCriteria: 'Receiving team accepts ownership, confirms next action, and returns a customer-ready update.',
               status: 'requested' as const,
@@ -1219,7 +1253,7 @@ export function useOmniStore() {
                 conversationId: input.conversationId,
                 channelId: input.channelId,
                 mode: input.mode,
-                body: input.body.trim(),
+                body: bodyWithAttachment,
                 createdAt,
                 state: 'queued',
               },

@@ -38,6 +38,7 @@ from app.models.domain import (
     AnalyticsSnapshot,
     AppendEventRequest,
     AutomationRule,
+    Attachment,
     AuditEvent,
     Channel,
     ChannelType,
@@ -46,6 +47,7 @@ from app.models.domain import (
     ConnectorEvent,
     ConnectorInboundRequest,
     CreateAutomationRuleRequest,
+    CreateAttachmentRequest,
     CreateCompanyRequest,
     CreateConnectorAccountRequest,
     CreateHandoffRequest,
@@ -407,6 +409,35 @@ def append_timeline(
 ) -> TimelineEvent:
     require_operator(context)
     return ticket_repository.append_event(db, state, ticket_id, request, context.market_id)
+
+
+@router.get("/tickets/{ticket_id}/attachments", response_model=list[Attachment])
+def list_ticket_attachments(
+    ticket_id: str,
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> list[Attachment]:
+    return ticket_repository.list_attachments(db, state, ticket_id, context.market_id)
+
+
+@router.post("/tickets/{ticket_id}/attachments", response_model=Attachment, status_code=201)
+def create_ticket_attachment(
+    ticket_id: str,
+    request: CreateAttachmentRequest,
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> Attachment:
+    require_operator(context)
+    return ticket_repository.create_attachment(
+        db,
+        state,
+        ticket_id,
+        request,
+        context.market_id,
+        actor=context.user.id,
+    )
 
 
 @router.post("/tickets/{ticket_id}/reply", response_model=TimelineEvent)

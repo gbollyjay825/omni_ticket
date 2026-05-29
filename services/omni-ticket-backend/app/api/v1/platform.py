@@ -32,6 +32,7 @@ def readiness(
                 "customers",
                 "connector_accounts",
                 "connector_events",
+                "attachments",
                 "rate_limit_counters",
                 "audit_events",
             ]

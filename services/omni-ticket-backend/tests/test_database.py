@@ -20,6 +20,7 @@ def test_database_schema_and_seed_are_postgres_ready_with_local_sqlite(tmp_path:
     assert "users" in tables
     assert "tickets" in tables
     assert "customers" in tables
+    assert "attachments" in tables
     assert "connector_events" in tables
     assert "audit_events" in tables
 

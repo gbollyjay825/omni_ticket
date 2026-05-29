@@ -255,6 +255,22 @@ export interface BackendAiDecision {
   override_allowed: boolean
 }
 
+export interface BackendAttachment {
+  id: string
+  market_id: string
+  ticket_id: string
+  timeline_event_id: string | null
+  filename: string
+  content_type: string
+  size_bytes: number
+  storage_key: string
+  uploaded_by: string
+  scan_status: 'pending' | 'clean' | 'blocked' | 'failed'
+  scan_result: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface BackendTicket {
   id: string
   market_id: string
@@ -286,6 +302,7 @@ export interface BackendTicketContext {
   handoffs: BackendHandoff[]
   ai_decisions: BackendAiDecision[]
   outbound_messages: BackendOutboundMessage[]
+  attachments: BackendAttachment[]
 }
 
 export interface BackendHandoff {
@@ -349,6 +366,13 @@ export interface BackendReplyInput {
   body: string
   public: boolean
   idempotency_key?: string
+}
+
+export interface BackendCreateAttachmentInput {
+  filename: string
+  content_type: string
+  size_bytes: number
+  storage_key?: string
 }
 
 export interface BackendCreateHandoffInput {
@@ -590,6 +614,21 @@ export async function postBackendReply(
 ): Promise<BackendTimelineEvent> {
   return fetchJson<BackendTimelineEvent>(
     `/tickets/${ticketId}/reply`,
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+    session,
+  )
+}
+
+export async function createBackendAttachment(
+  ticketId: string,
+  input: BackendCreateAttachmentInput,
+  session: BackendSession,
+): Promise<BackendAttachment> {
+  return fetchJson<BackendAttachment>(
+    `/tickets/${ticketId}/attachments`,
     {
       method: 'POST',
       body: JSON.stringify(input),

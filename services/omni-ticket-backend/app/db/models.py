@@ -274,6 +274,22 @@ class OutboundMessageRecord(TimestampMixin, Base):
     )
 
 
+class AttachmentRecord(TimestampMixin, Base):
+    __tablename__ = "attachments"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    market_id: Mapped[str] = mapped_column(ForeignKey("markets.id"), index=True)
+    ticket_id: Mapped[str] = mapped_column(ForeignKey("tickets.id"), index=True)
+    timeline_event_id: Mapped[str | None] = mapped_column(ForeignKey("timeline_events.id"))
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(160), default="application/octet-stream")
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    storage_key: Mapped[str] = mapped_column(String(500), nullable=False)
+    uploaded_by: Mapped[str] = mapped_column(String(180), nullable=False)
+    scan_status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    scan_result: Mapped[str | None] = mapped_column(Text)
+
+
 class RateLimitRecord(TimestampMixin, Base):
     __tablename__ = "rate_limit_counters"
 

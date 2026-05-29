@@ -1,5 +1,6 @@
 from app.db.models import (
     AgentRecord,
+    AttachmentRecord,
     AiDecisionRecord,
     AuditEventRecord,
     AutomationRuleRecord,
@@ -22,6 +23,8 @@ from app.models.domain import (
     AgentStatus,
     AiDecision,
     AuditEvent,
+    Attachment,
+    AttachmentScanStatus,
     AutomationRule,
     Channel,
     ChannelHealth,
@@ -296,6 +299,26 @@ def outbound_message_from_record(record: OutboundMessageRecord) -> OutboundMessa
             "sent_at": record.sent_at,
             "last_error": record.last_error,
             "payload": record.payload,
+            "created_at": record.created_at,
+            "updated_at": record.updated_at,
+        }
+    )
+
+
+def attachment_from_record(record: AttachmentRecord) -> Attachment:
+    return Attachment.model_validate(
+        {
+            "id": record.id,
+            "market_id": record.market_id,
+            "ticket_id": record.ticket_id,
+            "timeline_event_id": record.timeline_event_id,
+            "filename": record.filename,
+            "content_type": record.content_type,
+            "size_bytes": record.size_bytes,
+            "storage_key": record.storage_key,
+            "uploaded_by": record.uploaded_by,
+            "scan_status": AttachmentScanStatus(record.scan_status),
+            "scan_result": record.scan_result,
             "created_at": record.created_at,
             "updated_at": record.updated_at,
         }
