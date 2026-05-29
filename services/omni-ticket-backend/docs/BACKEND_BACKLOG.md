@@ -4,7 +4,7 @@ Last updated: 2026-05-29
 
 ## Current Milestone
 
-Status: Working Python/FastAPI vertical slice is running locally on `http://127.0.0.1:8000` against local PostgreSQL database `omni_ticket`, with the primary mutable operational paths, core operational reads, market-scoped connector account metadata, admin user management, durable outbound delivery queue, worker foundation, and deployment packaging moved onto SQLAlchemy-backed repositories. Local smoke tests pass, and the repository now includes a GitHub Actions CI workflow for lint, typecheck, and tests.
+Status: Working Python/FastAPI vertical slice is running locally on `http://127.0.0.1:8000` against local PostgreSQL database `omni_ticket`, with the primary mutable operational paths, core operational reads, market-scoped connector account metadata, admin user management, durable outbound delivery queue, automation-rule execution, worker foundation, and deployment packaging moved onto SQLAlchemy-backed repositories. Local smoke tests pass, and the repository now includes a GitHub Actions CI workflow for lint, typecheck, and tests.
 
 Completed in this build:
 
@@ -23,6 +23,7 @@ Completed in this build:
 - Database-backed customer and company APIs with restart-safe rehydration before ticket creation.
 - Database-first ticket, timeline, reply/note, handoff, AI decision, and outbound connector-event workflows.
 - Database-first channel, agent status, knowledge article, and automation-rule management workflows.
+- Database-first automation-rule execution during ticket creation for routing, priority escalation, tags, checklist tasks, rule health, timeline history, and audit history.
 - Database-first simulated inbound connector intake with customer creation/reuse, ticket creation, connector receipt timeline events, and idempotent deduplication.
 - Database-first analytics summary and Work Queue reads with SLA refresh, channel volume, agent occupancy, and queue scoring.
 - Database-backed connector account readiness for Email, WhatsApp Business, Facebook Messenger, Instagram DM, SMS, and voice, including status, credential reference, webhook state, send permission, failures, capabilities, and market isolation.
@@ -121,8 +122,8 @@ Known production dependencies:
 
 1. Implement knowledge article CRUD and approval state. Started.
 2. Add article suggestion index by intent, channel, language, and tags.
-3. Implement automation rules engine for routing, SLA, escalation, tagging, and notifications. Rule management started; execution engine pending.
-4. Add rule health, last fired, failure count, and safe rollback.
+3. Implement automation rules engine for routing, SLA, escalation, tagging, and notifications. Started with ticket-creation execution for social and payment rules.
+4. Add rule health, last fired, failure count, and safe rollback. Started with `last_fired_at` and `failure_count` updates during rule execution.
 
 ## Phase 9: Analytics And Workforce
 
@@ -161,6 +162,7 @@ Known production dependencies:
 - Customer and company endpoints now use database records directly and can rehydrate a customer/company into the runtime ticket service after API restart.
 - Ticket, timeline, reply/note, handoff, AI decision, and outbound connector-event endpoints now write database records directly.
 - Channel, agent status, knowledge article, and automation-rule endpoints now write database records directly.
+- Enabled automation rules now execute during ticket creation and write routing, priority, tag, task, timeline, last-fired, failure-count, and audit changes back to the database.
 - Simulated inbound connector intake now writes customer, ticket, connector event, connector receipt timeline, and audit records directly.
 - Analytics summary and Work Queue endpoints now read from database records directly and refresh the runtime snapshot only for frontend compatibility.
 - Connector account endpoints now expose market-scoped provider readiness at `GET/POST/PATCH /api/v1/connectors/accounts` with `/api/v1/connector-accounts` aliases.

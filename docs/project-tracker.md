@@ -11,7 +11,7 @@ Last updated: 2026-05-29
 | E3 Omnichannel operations workflow | Command Center, Work Queue, Channel Chats, Customer 360, composer, handoffs, and assistive guidance | Done | None |
 | E4 Admin, analytics, knowledge, workforce, and tracker | Operational management screens with meaningful data and controls | Done | None |
 | E5 Install-ready app, verification, and delivery | Offline state, app shell, responsive verification, and milestone emails | Done | None |
-| E6 Python backend vertical slice | Local HTTP API, isolated smoke tests, authenticated market sync, login, market scoping, local PostgreSQL runtime, user management, durable persistence foundation, outbound delivery queue, background worker foundation, deployment packaging, signed-session fallback, and frontend write-through bridge | In Progress | Add real provider adapters, production SSO/RBAC hardening, managed hosting, and observability |
+| E6 Python backend vertical slice | Local HTTP API, isolated smoke tests, authenticated market sync, login, market scoping, local PostgreSQL runtime, user management, durable persistence foundation, outbound delivery queue, background worker foundation, deployment packaging, signed-session fallback, automation-rule execution, and frontend write-through bridge | In Progress | Add real provider adapters, production SSO/RBAC hardening, managed hosting, and observability |
 
 ## Backlog
 
@@ -61,6 +61,7 @@ Last updated: 2026-05-29
 | B-042 | Add production packaging for frontend static container, backend API container, worker process, release migrations, compose stack, and env validation | P0 | Done |
 | B-044 | Isolate backend smoke tests from the repo-default PostgreSQL runtime and local socket assumptions | P0 | Done |
 | B-043 | Fix Vercel serverless login by adding signed session tokens and same-origin backend service routing | P0 | Done |
+| B-045 | Execute automation rules on ticket creation for routing, priority, tags, checklist tasks, rule health, timeline, and audit | P0 | Done |
 
 ## Pending Items
 
@@ -112,3 +113,4 @@ Last updated: 2026-05-29
 | C-034 | Production packaging added for static frontend, backend API, release migrations, worker process, local compose, and staging/production environment validation | 2026-05-29 |
 | C-036 | Backend smoke tests now isolate to a temporary SQLite database and signed sessions can survive a missing session row when the token is still valid | 2026-05-29 |
 | C-035 | Vercel 401 login failure fixed by using signed session tokens and pointing the deployed PWA at the same-origin backend service route | 2026-05-29 |
+| C-037 | Automation rules now execute during ticket creation, applying deterministic routing, priority, tags, checklist tasks, last-fired state, timeline entries, and audit history even when AI routing is disabled | 2026-05-29 |

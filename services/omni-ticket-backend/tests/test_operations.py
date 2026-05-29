@@ -163,7 +163,7 @@ def test_ai_routing_can_be_disabled_in_settings(client: TestClient) -> None:
     response = client.post(
         "/api/v1/tickets",
         json={
-            "subject": "WhatsApp user cannot confirm payment reference",
+            "subject": "WhatsApp user cannot update profile contact",
             "description": "Customer needs manual help but no AI routing should run.",
             "customer_id": "cust-leo",
             "channel": "whatsapp",
@@ -173,6 +173,85 @@ def test_ai_routing_can_be_disabled_in_settings(client: TestClient) -> None:
     ticket = response.json()
     assert ticket["assignee_id"] is None
     assert "ai-routed" not in ticket["tags"]
+
+
+def test_automation_rules_route_social_complaints_without_ai(client: TestClient) -> None:
+    settings = client.patch(
+        "/api/v1/settings",
+        json={"ai_work_queue_automation_enabled": False},
+    )
+    assert settings.status_code == 200
+
+    response = client.post(
+        "/api/v1/tickets",
+        json={
+            "subject": "Public Facebook complaint about missed delivery",
+            "description": (
+                "Customer is angry after a failed delivery and posted the complaint publicly."
+            ),
+            "customer_id": "cust-sofia",
+            "channel": "facebook",
+        },
+    )
+    assert response.status_code == 201
+    ticket = response.json()
+    assert ticket["priority"] == "urgent"
+    assert ticket["assignee_id"] == "agent-mateo"
+    assert ticket["team"] == "Social Care"
+    assert "ai-routed" not in ticket["tags"]
+    assert "automation-rule" in ticket["tags"]
+    assert "rule:rule-social-risk" in ticket["tags"]
+    task_labels = {task["label"] for task in ticket["tasks"]}
+    assert "Reply in the private social thread" in task_labels
+    assert "Notify supervisor if the blocker remains open" in task_labels
+
+    context = client.get(f"/api/v1/tickets/{ticket['id']}").json()
+    assert not context["ai_decisions"]
+    assert any(
+        event["metadata"].get("rule_id") == "rule-social-risk"
+        for event in context["timeline"]
+    )
+
+    rules = client.get("/api/v1/automation-rules").json()
+    social_rule = next(rule for rule in rules if rule["id"] == "rule-social-risk")
+    assert social_rule["last_fired_at"] is not None
+
+    audit = client.get("/api/v1/audit")
+    assert audit.status_code == 200
+    assert any(
+        event["action"] == "automation_rule.fire"
+        and event["entity_id"] == "rule-social-risk"
+        and event["details"]["ticket_id"] == ticket["id"]
+        for event in audit.json()
+    )
+
+
+def test_automation_rules_attach_payment_checklist_without_ai(client: TestClient) -> None:
+    settings = client.patch(
+        "/api/v1/settings",
+        json={"ai_work_queue_automation_enabled": False},
+    )
+    assert settings.status_code == 200
+
+    response = client.post(
+        "/api/v1/tickets",
+        json={
+            "subject": "Duplicate payment after WhatsApp checkout",
+            "description": "Customer says the card was charged twice and needs billing help.",
+            "customer_id": "cust-leo",
+            "channel": "whatsapp",
+        },
+    )
+    assert response.status_code == 201
+    ticket = response.json()
+    assert ticket["assignee_id"] == "agent-amara"
+    assert ticket["team"] == "Billing Support"
+    assert "ai-routed" not in ticket["tags"]
+    assert "rule:rule-payment-risk" in ticket["tags"]
+    task_labels = {task["label"] for task in ticket["tasks"]}
+    assert "Confirm duplicate transaction reference" in task_labels
+    assert "Validate payment gateway status" in task_labels
+    assert "Send customer reversal timeline" in task_labels
 
 
 def test_ai_routing_setting_is_database_backed(client: TestClient) -> None:
@@ -191,7 +270,7 @@ def test_ai_routing_setting_is_database_backed(client: TestClient) -> None:
     response = client.post(
         "/api/v1/tickets",
         json={
-            "subject": "WhatsApp customer angry about payment hold",
+            "subject": "WhatsApp customer needs a profile update",
             "description": "This should stay manual because the persisted setting is disabled.",
             "customer_id": "cust-leo",
             "channel": "whatsapp",

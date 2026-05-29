@@ -9,6 +9,7 @@ from app.core.store import InMemoryStore
 from app.db.mappers import (
     agent_from_record,
     ai_decision_from_record,
+    automation_rule_from_record,
     audit_event_from_record,
     company_from_record,
     connector_event_from_record,
@@ -22,6 +23,7 @@ from app.db.models import (
     AgentRecord,
     AiDecisionRecord,
     AuditEventRecord,
+    AutomationRuleRecord,
     CompanyRecord,
     ConnectorEventRecord,
     CustomerRecord,
@@ -94,6 +96,223 @@ def _ticket_payload(ticket: Ticket) -> dict:
 
 def _task(label: str) -> TicketTask:
     return TicketTask(id=_new_id("task"), label=label, complete=False)
+
+
+def _search_text(*parts: object) -> str:
+    return " ".join(str(part).lower() for part in parts if part)
+
+
+def _ticket_search_text(ticket: TicketRecord) -> str:
+    return _search_text(
+        ticket.subject,
+        ticket.description,
+        ticket.channel,
+        ticket.priority,
+        ticket.sentiment,
+        " ".join(ticket.tags or []),
+    )
+
+
+def _trigger_channels(trigger: str) -> set[str]:
+    return {channel.value for channel in ChannelType if channel.value in trigger}
+
+
+def _trigger_sentiments(trigger: str) -> set[str]:
+    return {"positive", "neutral", "frustrated", "angry"} & set(trigger.replace(",", " ").split())
+
+
+def _automation_rule_matches(rule: AutomationRuleRecord, ticket: TicketRecord) -> bool:
+    trigger_text = _search_text(rule.trigger)
+    rule_text = _search_text(rule.name, rule.trigger, rule.action)
+    ticket_text = _ticket_search_text(ticket)
+
+    channel_constraints = _trigger_channels(trigger_text)
+    if channel_constraints and ticket.channel not in channel_constraints:
+        return False
+
+    sentiment_constraints = _trigger_sentiments(trigger_text)
+    if sentiment_constraints and ticket.sentiment not in sentiment_constraints:
+        return False
+
+    topic_keywords: dict[str, tuple[str, ...]] = {
+        "payment": ("payment", "paid", "charge", "refund", "invoice", "billing", "duplicate"),
+        "duplicate": ("duplicate", "double", "payment", "charge"),
+        "social": ("facebook", "instagram", "messenger", "dm", "public", "post", "complaint"),
+        "vip": ("vip", "priority customer", "premium"),
+        "sla": ("sla", "breach", "breached", "overdue", "due soon", "risk"),
+        "handoff": ("handoff", "transfer", "fulfillment", "operations"),
+    }
+    keywords = {
+        keyword
+        for topic, candidates in topic_keywords.items()
+        if topic in rule_text
+        for keyword in candidates
+    }
+    if keywords:
+        return any(keyword in ticket_text for keyword in keywords)
+
+    return bool(channel_constraints or sentiment_constraints)
+
+
+def _best_agent_for_team(db: Session, market_id: str, team: str) -> AgentRecord | None:
+    records = db.scalars(select(AgentRecord).where(AgentRecord.role == team)).all()
+    candidates = [record for record in records if market_id in record.market_ids]
+    if not candidates:
+        return None
+    status_rank = {"available": 0, "away": 1, "busy": 2, "offline": 3}
+    return min(
+        candidates,
+        key=lambda record: (
+            status_rank.get(record.status, 4),
+            record.occupancy / max(record.capacity, 1),
+            record.occupancy,
+        ),
+    )
+
+
+def _recommended_team(rule: AutomationRuleRecord, ticket: TicketRecord) -> str | None:
+    rule_text = _search_text(rule.name, rule.trigger, rule.action)
+    if any(token in rule_text for token in ("billing support", "billing", "payment", "duplicate")):
+        return "Billing Support"
+    if any(token in rule_text for token in ("social care", "social", "facebook", "instagram")):
+        return "Social Care"
+    if any(token in rule_text for token in ("escalation", "escalations")):
+        return "Escalations"
+    if "chat care" in rule_text or ticket.channel in {"whatsapp", "sms"}:
+        return "Chat Care"
+    return None
+
+
+def _append_task_labels(ticket: TicketRecord, labels: list[str]) -> list[str]:
+    existing = {str(item.get("label", "")).lower() for item in ticket.tasks or []}
+    tasks = list(ticket.tasks or [])
+    added: list[str] = []
+    for label in labels:
+        if label.lower() in existing:
+            continue
+        tasks.append(_task(label).model_dump(mode="json"))
+        existing.add(label.lower())
+        added.append(label)
+    if added:
+        ticket.tasks = tasks
+    return added
+
+
+def _apply_rule_action(
+    db: Session,
+    rule: AutomationRuleRecord,
+    ticket: TicketRecord,
+) -> list[str]:
+    rule_text = _search_text(rule.name, rule.trigger, rule.action)
+    changes: list[str] = []
+
+    if any(token in rule_text for token in ("raise priority", "urgent", "escalate")):
+        if ticket.priority != Priority.urgent.value:
+            ticket.priority = Priority.urgent.value
+            ticket.sla = default_sla(Priority.urgent, ticket.created_at).model_dump(mode="json")
+            changes.append("priority:urgent")
+
+    team = _recommended_team(rule, ticket)
+    if team:
+        agent = _best_agent_for_team(db, ticket.market_id, team)
+        if agent and ticket.assignee_id != agent.id:
+            ticket.assignee_id = agent.id
+            ticket.team = team
+            changes.append(f"assignee:{agent.id}")
+        elif ticket.team != team:
+            ticket.team = team
+            changes.append(f"team:{team}")
+
+    tags = set(ticket.tags or [])
+    next_tags = tags | {"automation-rule", f"rule:{rule.id}"}
+    if next_tags != tags:
+        ticket.tags = sorted(next_tags)
+        changes.append("tags:automation-rule")
+
+    task_labels: list[str] = []
+    if any(token in rule_text for token in ("payment", "duplicate", "billing")):
+        task_labels.extend(
+            [
+                "Confirm duplicate transaction reference",
+                "Validate payment gateway status",
+                "Send customer reversal timeline",
+            ]
+        )
+    if any(token in rule_text for token in ("social", "facebook", "instagram", "public")):
+        task_labels.extend(
+            [
+                "Reply in the private social thread",
+                "Keep public acknowledgement neutral",
+            ]
+        )
+    if "notify supervisor" in rule_text:
+        task_labels.append("Notify supervisor if the blocker remains open")
+
+    added_tasks = _append_task_labels(ticket, task_labels)
+    if added_tasks:
+        changes.append("tasks:" + ",".join(added_tasks))
+
+    ticket.updated_at = utc_now()
+    return changes
+
+
+def _apply_enabled_automation_rules(
+    db: Session,
+    state: InMemoryStore,
+    ticket: TicketRecord,
+) -> list[str]:
+    rules = db.scalars(
+        select(AutomationRuleRecord)
+        .where(AutomationRuleRecord.market_id == ticket.market_id)
+        .where(AutomationRuleRecord.enabled.is_(True))
+    ).all()
+    applied: list[str] = []
+    for rule in rules:
+        if not _automation_rule_matches(rule, ticket):
+            continue
+        try:
+            changes = _apply_rule_action(db, rule, ticket)
+            rule.last_fired_at = utc_now()
+            rule.failure_count = 0
+            state.rules[rule.id] = automation_rule_from_record(rule)
+            if not changes:
+                continue
+            applied.append(rule.id)
+            _add_timeline_record(
+                db,
+                state,
+                ticket,
+                event_type=TimelineEventType.status_change,
+                channel=ChannelType.internal,
+                actor="Automation Rules",
+                body=f"Automation rule applied: {rule.name}.",
+                public=False,
+                metadata={"rule_id": rule.id, "changes": changes},
+            )
+            _audit(
+                db,
+                state,
+                actor="automation-rules",
+                action="automation_rule.fire",
+                entity_type="automation_rule",
+                entity_id=rule.id,
+                market_id=ticket.market_id,
+                details={"ticket_id": ticket.id, "changes": changes},
+            )
+        except Exception as exc:
+            rule.failure_count = (rule.failure_count or 0) + 1
+            state.rules[rule.id] = automation_rule_from_record(rule)
+            _audit(
+                db,
+                state,
+                actor="automation-rules",
+                action="automation_rule.failure",
+                entity_type="automation_rule",
+                entity_id=rule.id,
+                market_id=ticket.market_id,
+                details={"ticket_id": ticket.id, "error": str(exc)},
+            )
+    return applied
 
 
 def _audit(
@@ -348,6 +567,13 @@ class TicketRepository:
             public=True,
             metadata={"external_id": request.external_id},
         )
+        applied_rules = _apply_enabled_automation_rules(db, state, ticket_record)
+        if applied_rules:
+            ticket = _sync_ticket(db, state, ticket_record)
+            ticket.ai_summary = automation_service.summary(ticket, customer)
+            ticket.recommended_action = automation_service.recommended_action(ticket, customer)
+            ticket_record.ai_summary = ticket.ai_summary
+            ticket_record.recommended_action = ticket.recommended_action
         if ai_enabled:
             decision = automation_service.make_decision(ticket)
             decision_record = AiDecisionRecord(

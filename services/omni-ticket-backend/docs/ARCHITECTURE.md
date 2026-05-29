@@ -35,6 +35,7 @@ The production persistence foundation now includes:
 - Database-first ticket, timeline, reply/note, handoff, AI decision, and outbound connector-event workflows.
 - Database-first ticket task completion updates through the existing ticket mutation path.
 - Database-first channel, agent status, knowledge article, and automation-rule management workflows.
+- Database-first automation-rule execution during ticket creation for routing, priority escalation, tags, checklist tasks, rule `last_fired_at`, failure count, timeline history, and audit history.
 - Database-first simulated inbound connector intake that creates/reuses customers, creates tickets, records connector events, writes connector receipt timeline events, and deduplicates provider payloads.
 - Database-first analytics summary and Work Queue reads that refresh SLA state, score priority queues, calculate channel volume, and report active agent occupancy.
 - Database-backed connector account readiness for Email, WhatsApp Business, Facebook Messenger, Instagram DM, SMS, and voice, including credential references rather than raw secrets.
@@ -46,7 +47,7 @@ The production persistence foundation now includes:
 - Runtime-store mirroring for channels, agents, companies, customers, tickets, timeline events, handoffs, knowledge, rules, connector events, AI decisions, and audit history, with startup hydration from the database.
 - Repository CI automation for backend lint, typecheck, and tests on push and pull request.
 
-The current API keeps the in-memory store as a compatibility cache for the frontend snapshot while core operational reads and writes move through SQLAlchemy-backed repositories. Auth, users, markets, sessions, workspace settings, customers, companies, tickets, ticket tasks, timelines, replies, handoffs, AI decisions, inbound/outbound connector events, outbound messages, connector accounts, channels, agents, knowledge, automation rules, analytics summary, and Work Queue reads are on the direct database path.
+The current API keeps the in-memory store as a compatibility cache for the frontend snapshot while core operational reads and writes move through SQLAlchemy-backed repositories. Auth, users, markets, sessions, workspace settings, customers, companies, tickets, ticket tasks, timelines, replies, handoffs, AI decisions, inbound/outbound connector events, outbound messages, connector accounts, channels, agents, knowledge, automation rule management and execution, analytics summary, and Work Queue reads are on the direct database path.
 
 ## Market And User Boundary
 

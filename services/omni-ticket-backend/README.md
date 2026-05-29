@@ -24,6 +24,7 @@ This repository now runs a working FastAPI backend slice for Omni Ticket:
 - Database-backed customer and company APIs.
 - Database-first ticket creation, update, timeline, reply/note, AI decision, outbound connector event, and structured handoff lifecycle.
 - Database-first channel, agent, customer, company, knowledge, and automation-rule management.
+- Database-first automation-rule execution for ticket routing, priority escalation, tags, checklist tasks, last-fired state, timeline history, and audit history.
 - Email, WhatsApp, Facebook Messenger, Instagram DM, SMS, voice, portal, and API-ready channel model.
 - Database-backed connector account readiness for market-specific Email, WhatsApp Business, Facebook Messenger, Instagram DM, SMS, and voice accounts.
 - Database-first connector intake simulation with idempotency, customer creation/reuse, ticket creation, connector receipt timeline events, and outbound connector event recording.
