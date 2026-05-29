@@ -340,6 +340,7 @@ function OmniApp() {
     publishArticle,
     createUser,
     updateUser,
+    changePassword,
     retryOutboundMessage,
     updateSettings,
     updateHandoffStatus,
@@ -378,10 +379,16 @@ function OmniApp() {
   const [newUser, setNewUser] = useState({
     name: '',
     email: '',
+    temporaryPassword: '',
     role: 'agent' as (typeof userRoleOptions)[number],
     marketIds: ['market-ng'],
     defaultMarketId: 'market-ng',
   })
+  const [passwordChange, setPasswordChange] = useState({
+    currentPassword: '',
+    newPassword: '',
+  })
+  const [passwordResetDrafts, setPasswordResetDrafts] = useState<Record<string, string>>({})
 
   const selectedAgent = state.agents.find((agent) => agent.id === selectedConversation.assigneeId)
   const selectedChannel =
@@ -489,7 +496,8 @@ function OmniApp() {
     event.preventDefault()
     const name = newUser.name.trim()
     const email = newUser.email.trim().toLowerCase()
-    if (!name || !email || !currentMarket) return
+    const temporaryPassword = newUser.temporaryPassword.trim()
+    if (!name || !email || temporaryPassword.length < 8 || !currentMarket) return
 
     const marketIds = newUser.marketIds.length > 0 ? newUser.marketIds : [currentMarket.id]
     const defaultMarketId = marketIds.includes(newUser.defaultMarketId)
@@ -500,6 +508,7 @@ function OmniApp() {
       createUser({
         name,
         email,
+        temporary_password: temporaryPassword,
         role: newUser.role,
         market_ids: marketIds,
         default_market_id: defaultMarketId,
@@ -509,11 +518,21 @@ function OmniApp() {
       setNewUser({
         name: '',
         email: '',
+        temporaryPassword: '',
         role: 'agent',
         marketIds: [currentMarket.id],
         defaultMarketId: currentMarket.id,
       })
-      setPrototypeNotice('User saved to the backend.')
+      setPrototypeNotice('User saved with a temporary password.')
+    }
+  }
+
+  function handleChangePassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (passwordChange.currentPassword.length < 1 || passwordChange.newPassword.length < 8) return
+    if (changePassword(passwordChange.currentPassword, passwordChange.newPassword)) {
+      setPasswordChange({ currentPassword: '', newPassword: '' })
+      setPrototypeNotice('Your password was updated.')
     }
   }
 
@@ -2814,6 +2833,23 @@ function OmniApp() {
                 </select>
               </label>
               <label>
+                <span>Temporary password</span>
+                <input
+                  required
+                  minLength={8}
+                  type="password"
+                  value={newUser.temporaryPassword}
+                  onChange={(event) =>
+                    setNewUser((current) => ({
+                      ...current,
+                      temporaryPassword: event.target.value,
+                    }))
+                  }
+                  placeholder="Minimum 8 characters"
+                  disabled={!canManageUsers}
+                />
+              </label>
+              <label>
                 <span>Default market</span>
                 <select
                   value={newUser.defaultMarketId}
@@ -2856,6 +2892,46 @@ function OmniApp() {
                 Add user
               </button>
             </form>
+            <form className="user-create-form password-change-form" onSubmit={handleChangePassword}>
+              <label>
+                <span>My current password</span>
+                <input
+                  required
+                  type="password"
+                  value={passwordChange.currentPassword}
+                  onChange={(event) =>
+                    setPasswordChange((current) => ({
+                      ...current,
+                      currentPassword: event.target.value,
+                    }))
+                  }
+                  placeholder="Current password"
+                />
+              </label>
+              <label>
+                <span>My new password</span>
+                <input
+                  required
+                  minLength={8}
+                  type="password"
+                  value={passwordChange.newPassword}
+                  onChange={(event) =>
+                    setPasswordChange((current) => ({
+                      ...current,
+                      newPassword: event.target.value,
+                    }))
+                  }
+                  placeholder="Minimum 8 characters"
+                />
+              </label>
+              <button
+                className="secondary-action"
+                type="submit"
+                disabled={passwordChange.currentPassword.length < 1 || passwordChange.newPassword.length < 8}
+              >
+                Update my password
+              </button>
+            </form>
             <div className="user-list" aria-label="Backend users">
               {platformUsers.map((user) => (
                 <article className={`user-card ${user.active ? 'active' : 'inactive'}`} key={user.id}>
@@ -2868,6 +2944,14 @@ function OmniApp() {
                     <em className={`chip status-${user.active ? 'healthy' : 'paused'}`}>
                       {user.active ? 'Active' : 'Inactive'}
                     </em>
+                    {user.password_reset_required ? (
+                      <em className="chip status-risk">Password reset required</em>
+                    ) : null}
+                  </div>
+                  <div className="user-security-row">
+                    <span>
+                      Last login {user.last_login_at ? formatTime(user.last_login_at) : 'not recorded'}
+                    </span>
                   </div>
                   <div className="user-card-controls">
                     <label>
@@ -2917,6 +3001,38 @@ function OmniApp() {
                       disabled={!canManageUsers || user.id === backendSession?.user.id}
                     >
                       {user.active ? 'Deactivate' : 'Reactivate'}
+                    </button>
+                  </div>
+                  <div className="user-card-controls password-reset-controls">
+                    <label>
+                      <span>Reset password</span>
+                      <input
+                        minLength={8}
+                        type="password"
+                        value={passwordResetDrafts[user.id] ?? ''}
+                        onChange={(event) =>
+                          setPasswordResetDrafts((current) => ({
+                            ...current,
+                            [user.id]: event.target.value,
+                          }))
+                        }
+                        placeholder="New temporary password"
+                        disabled={!canManageUsers}
+                      />
+                    </label>
+                    <button
+                      className="secondary-action"
+                      type="button"
+                      onClick={() => {
+                        const temporaryPassword = (passwordResetDrafts[user.id] ?? '').trim()
+                        if (temporaryPassword.length < 8) return
+                        updateUser(user.id, { temporary_password: temporaryPassword })
+                        setPasswordResetDrafts((current) => ({ ...current, [user.id]: '' }))
+                        setPrototypeNotice(`Temporary password reset for ${user.name}.`)
+                      }}
+                      disabled={!canManageUsers || (passwordResetDrafts[user.id] ?? '').trim().length < 8}
+                    >
+                      Reset
                     </button>
                   </div>
                   <div className="user-market-list" aria-label={`${user.name} market access`}>

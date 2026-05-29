@@ -8,6 +8,7 @@ from app.api.v1.rbac import require_admin, require_supervisor
 from app.api.v1.security import RequestContext, require_context
 from app.core.auth import create_session_token
 from app.core.config import settings
+from app.core.passwords import hash_password, validate_password_strength, verify_password
 from app.core.rate_limit import (
     RateLimitExceeded,
     raise_rate_limit_exceeded,
@@ -19,17 +20,17 @@ from app.db.rate_limit import database_rate_limiter
 from app.db.session import get_db
 from app.models.domain import (
     AuthSession,
+    ChangePasswordRequest,
     CreateUserRequest,
     LoginRequest,
     Market,
     UpdateUserRequest,
     User,
     UserRole,
+    utc_now,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-DEMO_PASSWORD = "omni-demo"
 
 
 def _assigned_markets(db: Session, market_ids: list[str]) -> list[Market]:
@@ -91,7 +92,11 @@ def login(
     user_record = db.scalar(
         select(UserRecord).where(UserRecord.email == str(request.email).lower())
     )
-    if user_record is None or not user_record.active or request.password != DEMO_PASSWORD:
+    if (
+        user_record is None
+        or not user_record.active
+        or not verify_password(request.password, user_record.password_hash)
+    ):
         reason = "inactive_user" if user_record is not None and not user_record.active else "invalid_credentials"
         write_audit_event(
             db,
@@ -139,6 +144,7 @@ def login(
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Market not found")
 
     token, expires_at = create_session_token(user.id)
+    user_record.last_login_at = utc_now()
     db.add(SessionRecord(token=token, user_id=user.id, expires_at=expires_at))
     write_audit_event(
         db,
@@ -167,7 +173,7 @@ def login(
 
     return AuthSession(
         access_token=token,
-        user=user,
+        user=user_from_record(user_record),
         market=market_from_record(market_record),
         available_markets=_assigned_markets(db, user.market_ids),
     )
@@ -215,10 +221,13 @@ def create_user(
         request.market_ids or [context.market_id],
         request.default_market_id,
     )
+    validate_password_strength(request.temporary_password, user_email=str(request.email).lower())
     record = UserRecord(
         id=f"user_{uuid4().hex}",
         name=request.name.strip(),
         email=str(request.email).lower(),
+        password_hash=hash_password(request.temporary_password),
+        password_reset_required=True,
         role=request.role.value,
         default_market_id=default_market_id,
         market_ids=market_ids,
@@ -232,7 +241,12 @@ def create_user(
         entity_type="user",
         entity_id=record.id,
         market_id=context.market_id,
-        details={"email": record.email, "role": record.role, "market_ids": market_ids},
+        details={
+            "email": record.email,
+            "role": record.role,
+            "market_ids": market_ids,
+            "temporary_password_set": True,
+        },
     )
     db.commit()
     db.refresh(record)
@@ -251,6 +265,7 @@ def update_user(
     if record is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="User not found")
     patch = request.model_dump(exclude_unset=True, mode="json")
+    audit_details = {key: value for key, value in patch.items() if key != "temporary_password"}
     if request.active is False and record.id == context.user.id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="You cannot deactivate yourself")
     if request.email is not None:
@@ -263,6 +278,11 @@ def update_user(
         if duplicate is not None:
             raise HTTPException(status.HTTP_409_CONFLICT, detail="User already exists")
         record.email = str(request.email).lower()
+    if request.temporary_password is not None:
+        validate_password_strength(request.temporary_password, user_email=record.email)
+        record.password_hash = hash_password(request.temporary_password)
+        record.password_reset_required = True
+        audit_details["temporary_password_set"] = True
     if request.name is not None:
         record.name = request.name.strip()
     if request.role is not None:
@@ -284,8 +304,44 @@ def update_user(
         entity_type="user",
         entity_id=record.id,
         market_id=context.market_id,
-        details=patch,
+        details=audit_details,
     )
     db.commit()
     db.refresh(record)
     return user_from_record(record)
+
+
+@router.post("/password", status_code=status.HTTP_204_NO_CONTENT)
+def change_password(
+    request: ChangePasswordRequest,
+    context: RequestContext = Depends(require_context),
+    db: Session = Depends(get_db),
+) -> None:
+    record = db.get(UserRecord, context.user.id)
+    if record is None or not record.active:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="User not found")
+    if not verify_password(request.current_password, record.password_hash):
+        write_audit_event(
+            db,
+            actor=context.user.id,
+            action="user.password.change.denied",
+            entity_type="user",
+            entity_id=context.user.id,
+            market_id=context.market_id,
+            details={"reason": "current_password_invalid"},
+            commit=True,
+        )
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Current password is incorrect")
+    validate_password_strength(request.new_password, user_email=record.email)
+    record.password_hash = hash_password(request.new_password)
+    record.password_reset_required = False
+    write_audit_event(
+        db,
+        actor=context.user.id,
+        action="user.password.change",
+        entity_type="user",
+        entity_id=context.user.id,
+        market_id=context.market_id,
+        details={"reset_required_cleared": True},
+    )
+    db.commit()

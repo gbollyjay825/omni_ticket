@@ -1013,6 +1013,7 @@ button:disabled {
 .status-review,
 .status-in-progress,
 .status-pending,
+.status-risk,
 .sla-risk,
 .sentiment-frustrated {
   background: #fef3c7;
@@ -2494,7 +2495,7 @@ button:disabled {
 
 .user-create-form {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 10px;
   align-items: end;
 }
@@ -2517,6 +2518,7 @@ button:disabled {
 
 .user-create-form input,
 .user-create-form select,
+.user-card-controls input,
 .user-card-controls select {
   min-width: 0;
   height: 40px;
@@ -2559,6 +2561,13 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+.password-change-form {
+  border: 1px solid var(--hairline);
+  border-radius: 9px;
+  background: var(--surface-2);
+  padding: 10px;
+}
+
 .user-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2580,9 +2589,13 @@ button:disabled {
 
 .user-card-head {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: 9px;
   align-items: center;
+}
+
+.user-card-head em {
+  justify-self: start;
 }
 
 .user-card-head strong,
@@ -2603,11 +2616,22 @@ button:disabled {
   line-height: 1.35;
 }
 
+.user-security-row {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+
 .user-card-controls {
   display: grid;
-  grid-template-columns: minmax(120px, 1fr) minmax(110px, 0.7fr) auto;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
   gap: 8px;
   align-items: end;
+}
+
+.password-reset-controls {
+  grid-template-columns: minmax(180px, 1fr) auto;
 }
 
 .user-card.empty {

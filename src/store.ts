@@ -24,6 +24,7 @@ import type {
 } from './domain'
 import {
   type BackendAgent,
+  changeBackendPassword,
   createBackendUser,
   createBackendHandoff,
   createBackendTicket,
@@ -1549,6 +1550,18 @@ export function useOmniStore() {
     return syncBackendMutation((session) => patchBackendUser(userId, patch, session))
   }
 
+  function changePassword(currentPassword: string, newPassword: string) {
+    return syncBackendMutation((session) =>
+      changeBackendPassword(
+        {
+          current_password: currentPassword,
+          new_password: newPassword,
+        },
+        session,
+      ),
+    )
+  }
+
   function retryOutboundMessage(messageId: string) {
     return syncBackendMutation((session) => retryBackendOutboundMessage(messageId, session))
   }
@@ -1671,6 +1684,7 @@ export function useOmniStore() {
     publishArticle,
     createUser,
     updateUser,
+    changePassword,
     retryOutboundMessage,
     updateSettings,
     updateHandoffStatus,

@@ -11,7 +11,7 @@ Last updated: 2026-05-29
 | E3 Omnichannel operations workflow | Command Center, Work Queue, Channel Chats, Customer 360, composer, handoffs, and assistive guidance | Done | None |
 | E4 Admin, analytics, knowledge, workforce, and tracker | Operational management screens with meaningful data and controls | Done | None |
 | E5 Install-ready app, verification, and delivery | Offline state, app shell, responsive verification, and milestone emails | Done | None |
-| E6 Python backend vertical slice | Local HTTP API, isolated smoke tests, authenticated market sync, login, market scoping, local PostgreSQL runtime, user management, route-level RBAC, durable persistence foundation, outbound delivery queue, signed inbound webhooks, rate limits, background worker foundation, deployment packaging, signed-session fallback, automation-rule execution, request traceability, security audit trail, and frontend write-through bridge | In Progress | Add real provider adapters, production SSO/MFA, custom permissions, managed hosting, dashboards, and alerting |
+| E6 Python backend vertical slice | Local HTTP API, isolated smoke tests, authenticated market sync, login, market scoping, local PostgreSQL runtime, password-backed user management, route-level RBAC, durable persistence foundation, outbound delivery queue, signed inbound webhooks, rate limits, background worker foundation, deployment packaging, signed-session fallback, automation-rule execution, request traceability, security audit trail, and frontend write-through bridge | In Progress | Add real provider adapters, production SSO/MFA, custom permissions, managed hosting, dashboards, and alerting |
 
 ## Backlog
 
@@ -70,12 +70,13 @@ Last updated: 2026-05-29
 | B-051 | Add request correlation headers, processing-time headers, and structured backend access logs | P0 | Done |
 | B-052 | Add durable audit records for login success/failure, rate-limit denial, explicit market selection, missing auth, invalid session, and market denial | P0 | Done |
 | B-053 | Complete database-backed handoff acceptance, blocker, due-date, checklist, and close-loop timeline updates | P0 | Done |
+| B-054 | Replace shared demo-password auth with per-user password hashes, admin temporary password reset, and self-service password change endpoint | P0 | Done |
 
 ## Pending Items
 
 - Decide hosting target for production deployment.
 - Build real provider adapters for email, WhatsApp Business, Facebook Messenger, Instagram DM, SMS, and voice.
-- Add production identity provider, password policy, MFA/SSO, custom permission profiles, and approval workflows.
+- Add production identity provider, MFA/SSO, custom permission profiles, and approval workflows.
 - Deploy the packaged web/API/worker processes to the selected managed hosting target with alerting and retry observability.
 - Connect real channel credentials and Freshdesk/Freshworks import/sync only if requested.
 - Add production RBAC enforcement, durable audit log export/retention, database tenant isolation hardening, and attachment scanning.
@@ -130,3 +131,4 @@ Last updated: 2026-05-29
 | C-043 | Backend responses now include request IDs and processing time while structured JSON access logs provide production traceability | 2026-05-29 |
 | C-044 | Auth and access-control decisions now write request-correlated audit records into the durable backend audit trail | 2026-05-29 |
 | C-045 | Handoff acceptance, blocker capture, due-date updates, checklist progress, and close-loop timeline history now persist through the database-backed lifecycle | 2026-05-29 |
+| C-046 | Users now authenticate against per-user PBKDF2 password hashes; admins can create/reset temporary credentials and users can change passwords to clear reset requirements | 2026-05-29 |

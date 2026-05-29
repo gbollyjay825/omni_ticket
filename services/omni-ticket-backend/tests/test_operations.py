@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.webhooks import sign_webhook_body
 from app.core.store import store
-from app.db.models import AuditEventRecord, OutboundMessageRecord, SessionRecord, TicketRecord
+from app.db.models import AuditEventRecord, OutboundMessageRecord, SessionRecord, TicketRecord, UserRecord
 from app.db.session import get_engine
 from app.main import create_app
 from app.models.domain import utc_now
@@ -99,7 +99,7 @@ def test_auth_success_and_market_selection_are_audited() -> None:
 
 def test_failed_login_and_access_denial_are_audited(
     client: TestClient,
-    login_as: Callable[[str, str], dict[str, str]],
+    login_as: Callable[..., dict[str, str]],
 ) -> None:
     anonymous = TestClient(create_app())
     failed_login = anonymous.post(
@@ -202,7 +202,7 @@ def test_login_rate_limit_blocks_repeated_attempts(client: TestClient) -> None:
 
 
 def test_market_scope_hides_other_market_customers(
-    client: TestClient, login_as: Callable[[str, str], dict[str, str]]
+    client: TestClient, login_as: Callable[..., dict[str, str]]
 ) -> None:
     gh_headers = login_as("kofi.gh@omniticket.example.com", "market-gh")
     gh_customers = client.get("/api/v1/customers", headers=gh_headers)
@@ -218,20 +218,22 @@ def test_market_scope_hides_other_market_customers(
 
 def test_role_policy_blocks_agent_from_admin_and_supervisor_controls(
     client: TestClient,
-    login_as: Callable[[str, str], dict[str, str]],
+    login_as: Callable[..., dict[str, str]],
 ) -> None:
+    temporary_password = "Nia-temp-2026"
     created = client.post(
         "/api/v1/auth/users",
         json={
             "name": "Nia Agent",
             "email": "nia.agent@omniticket.example.com",
+            "temporary_password": temporary_password,
             "role": "agent",
             "market_ids": ["market-ng"],
             "default_market_id": "market-ng",
         },
     )
     assert created.status_code == 201
-    agent_headers = login_as("nia.agent@omniticket.example.com", "market-ng")
+    agent_headers = login_as("nia.agent@omniticket.example.com", "market-ng", temporary_password)
 
     assert client.get("/api/v1/tickets", headers=agent_headers).status_code == 200
     assert client.get("/api/v1/work-queue", headers=agent_headers).status_code == 200
@@ -262,24 +264,28 @@ def test_role_policy_blocks_agent_from_admin_and_supervisor_controls(
 
 def test_role_policy_allows_agent_ticket_work_but_keeps_auditor_read_only(
     client: TestClient,
-    login_as: Callable[[str, str], dict[str, str]],
+    login_as: Callable[..., dict[str, str]],
 ) -> None:
+    auditor_password = "Ada-temp-2026"
     auditor = client.post(
         "/api/v1/auth/users",
         json={
             "name": "Ada Auditor",
             "email": "ada.auditor@omniticket.example.com",
+            "temporary_password": auditor_password,
             "role": "auditor",
             "market_ids": ["market-ng"],
             "default_market_id": "market-ng",
         },
     )
     assert auditor.status_code == 201
+    agent_password = "Ola-temp-2026"
     agent = client.post(
         "/api/v1/auth/users",
         json={
             "name": "Ola Agent",
             "email": "ola.agent@omniticket.example.com",
+            "temporary_password": agent_password,
             "role": "agent",
             "market_ids": ["market-ng"],
             "default_market_id": "market-ng",
@@ -287,7 +293,7 @@ def test_role_policy_allows_agent_ticket_work_but_keeps_auditor_read_only(
     )
     assert agent.status_code == 201
 
-    agent_headers = login_as("ola.agent@omniticket.example.com", "market-ng")
+    agent_headers = login_as("ola.agent@omniticket.example.com", "market-ng", agent_password)
     ticket = client.get("/api/v1/tickets", headers=agent_headers).json()[0]
     reply = client.post(
         f"/api/v1/tickets/{ticket['id']}/reply",
@@ -301,7 +307,7 @@ def test_role_policy_allows_agent_ticket_work_but_keeps_auditor_read_only(
     )
     assert reply.status_code == 200
 
-    auditor_headers = login_as("ada.auditor@omniticket.example.com", "market-ng")
+    auditor_headers = login_as("ada.auditor@omniticket.example.com", "market-ng", auditor_password)
     assert client.get("/api/v1/tickets", headers=auditor_headers).status_code == 200
     assert client.get("/api/v1/audit", headers=auditor_headers).status_code == 200
     assert client.get("/api/v1/auth/users", headers=auditor_headers).status_code == 403
@@ -319,7 +325,7 @@ def test_role_policy_allows_agent_ticket_work_but_keeps_auditor_read_only(
 
 def test_role_policy_limits_setup_to_admins_and_supervisor_tools_to_supervisors(
     client: TestClient,
-    login_as: Callable[[str, str], dict[str, str]],
+    login_as: Callable[..., dict[str, str]],
 ) -> None:
     supervisor_headers = login_as("amara.ng@omniticket.example.com", "market-ng")
     assert client.get("/api/v1/auth/users", headers=supervisor_headers).status_code == 200
@@ -335,6 +341,7 @@ def test_role_policy_limits_setup_to_admins_and_supervisor_tools_to_supervisors(
         json={
             "name": "Blocked Supervisor Create",
             "email": "blocked.supervisor@omniticket.example.com",
+            "temporary_password": "Blocked-temp-2026",
             "role": "agent",
             "market_ids": ["market-ng"],
             "default_market_id": "market-ng",
@@ -352,6 +359,117 @@ def test_role_policy_limits_setup_to_admins_and_supervisor_tools_to_supervisors(
         json={"status": "connected"},
         headers=supervisor_headers,
     ).status_code == 403
+
+
+def test_user_passwords_are_hashed_and_admin_can_reset_temporary_password(
+    client: TestClient,
+    login_as: Callable[..., dict[str, str]],
+) -> None:
+    created = client.post(
+        "/api/v1/auth/users",
+        json={
+            "name": "Password Managed",
+            "email": "password.managed@omniticket.example.com",
+            "temporary_password": "First-temp-2026",
+            "role": "agent",
+            "market_ids": ["market-ng"],
+            "default_market_id": "market-ng",
+        },
+    )
+    assert created.status_code == 201
+    user = created.json()
+    assert user["password_reset_required"] is True
+
+    with Session(get_engine()) as session:
+        record = session.get(UserRecord, user["id"])
+        assert record is not None
+        assert record.password_hash is not None
+        assert record.password_hash != "First-temp-2026"
+
+    denied = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "password.managed@omniticket.example.com",
+            "password": "omni-demo",
+            "market_id": "market-ng",
+        },
+    )
+    assert denied.status_code == 401
+    login_as("password.managed@omniticket.example.com", "market-ng", "First-temp-2026")
+
+    reset = client.patch(
+        f"/api/v1/auth/users/{user['id']}",
+        json={"temporary_password": "Second-temp-2026"},
+    )
+    assert reset.status_code == 200
+    assert reset.json()["password_reset_required"] is True
+    assert (
+        client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "password.managed@omniticket.example.com",
+                "password": "First-temp-2026",
+                "market_id": "market-ng",
+            },
+        ).status_code
+        == 401
+    )
+    login_as("password.managed@omniticket.example.com", "market-ng", "Second-temp-2026")
+
+
+def test_user_can_change_password_and_clear_reset_requirement(client: TestClient) -> None:
+    created = client.post(
+        "/api/v1/auth/users",
+        json={
+            "name": "Password Change",
+            "email": "password.change@omniticket.example.com",
+            "temporary_password": "Temp-change-2026",
+            "role": "agent",
+            "market_ids": ["market-ng"],
+            "default_market_id": "market-ng",
+        },
+    )
+    assert created.status_code == 201
+
+    anonymous = TestClient(create_app())
+    login = anonymous.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "password.change@omniticket.example.com",
+            "password": "Temp-change-2026",
+            "market_id": "market-ng",
+        },
+    )
+    assert login.status_code == 200
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}", "X-Omni-Market": "market-ng"}
+    changed = anonymous.post(
+        "/api/v1/auth/password",
+        headers=headers,
+        json={"current_password": "Temp-change-2026", "new_password": "Permanent-2026"},
+    )
+    assert changed.status_code == 204
+    assert (
+        anonymous.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "password.change@omniticket.example.com",
+                "password": "Temp-change-2026",
+                "market_id": "market-ng",
+            },
+        ).status_code
+        == 401
+    )
+    relogin = anonymous.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "password.change@omniticket.example.com",
+            "password": "Permanent-2026",
+            "market_id": "market-ng",
+        },
+    )
+    assert relogin.status_code == 200
+    assert relogin.json()["user"]["password_reset_required"] is False
 
 
 def test_seeded_work_queue_has_ai_ranked_items(client: TestClient) -> None:
@@ -1477,6 +1595,7 @@ def test_admin_can_create_and_manage_market_users(client: TestClient) -> None:
         json={
             "name": "Ops Reviewer",
             "email": "ops.reviewer@example.com",
+            "temporary_password": "Reviewer-temp-2026",
             "role": "agent",
             "market_ids": ["market-ng", "market-gh"],
             "default_market_id": "market-ng",
@@ -1487,6 +1606,7 @@ def test_admin_can_create_and_manage_market_users(client: TestClient) -> None:
     assert user["email"] == "ops.reviewer@example.com"
     assert user["role"] == "agent"
     assert user["market_ids"] == ["market-ng", "market-gh"]
+    assert user["password_reset_required"] is True
 
     update = client.patch(
         f"/api/v1/auth/users/{user['id']}",

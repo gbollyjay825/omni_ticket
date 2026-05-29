@@ -142,6 +142,8 @@ export interface BackendUser {
   market_ids: string[]
   default_market_id: string
   active: boolean
+  password_reset_required: boolean
+  last_login_at?: string | null
 }
 
 export interface BackendAuthContext {
@@ -382,6 +384,7 @@ export interface BackendUpdateRuleInput {
 export interface BackendCreateUserInput {
   name: string
   email: string
+  temporary_password: string
   role: BackendUser['role']
   market_ids: string[]
   default_market_id?: string
@@ -391,10 +394,16 @@ export interface BackendCreateUserInput {
 export interface BackendUpdateUserInput {
   name?: string
   email?: string
+  temporary_password?: string
   role?: BackendUser['role']
   market_ids?: string[]
   default_market_id?: string
   active?: boolean
+}
+
+export interface BackendChangePasswordInput {
+  current_password: string
+  new_password: string
 }
 
 interface BackendFrontendSnapshot {
@@ -457,6 +466,10 @@ async function fetchJson<T>(
       // Keep the HTTP status when the server does not return a JSON problem body.
     }
     throw new Error(message)
+  }
+
+  if (response.status === 204) {
+    return undefined as T
   }
 
   return response.json() as Promise<T>
@@ -522,6 +535,20 @@ export async function patchBackendUser(
     {
       method: 'PATCH',
       body: JSON.stringify(patch),
+    },
+    session,
+  )
+}
+
+export async function changeBackendPassword(
+  input: BackendChangePasswordInput,
+  session: BackendSession,
+): Promise<void> {
+  return fetchJson<void>(
+    '/auth/password',
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
     },
     session,
   )

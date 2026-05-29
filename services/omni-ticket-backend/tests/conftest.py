@@ -56,13 +56,18 @@ def client() -> TestClient:
 
 
 @pytest.fixture
-def login_as() -> Callable[[str, str], dict[str, str]]:
-    def _login(email: str, market_id: str = "market-ng") -> dict[str, str]:
+def login_as() -> Callable[..., dict[str, str]]:
+    def _login(
+        email: str,
+        market_id: str = "market-ng",
+        password: str = "omni-demo",
+    ) -> dict[str, str]:
         test_client = TestClient(create_app())
         response = test_client.post(
             "/api/v1/auth/login",
-            json={"email": email, "password": "omni-demo", "market_id": market_id},
+            json={"email": email, "password": password, "market_id": market_id},
         )
+        assert response.status_code == 200
         token = response.json()["access_token"]
         return {"Authorization": f"Bearer {token}", "X-Omni-Market": market_id}
 

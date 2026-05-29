@@ -4,7 +4,7 @@ Last updated: 2026-05-29
 
 ## Current Milestone
 
-Status: Working Python/FastAPI vertical slice is running locally on `http://127.0.0.1:8000` against local PostgreSQL database `omni_ticket`, with the primary mutable operational paths, core operational reads, market-scoped connector account metadata, admin user management, durable outbound delivery queue, automation-rule execution, worker foundation, and deployment packaging moved onto SQLAlchemy-backed repositories. Local smoke tests pass, and the monorepo now includes a root GitHub Actions CI workflow for frontend lint/build plus backend compile, lint, typecheck, tests, migration sanity, and worker smoke.
+Status: Working Python/FastAPI vertical slice is running locally on `http://127.0.0.1:8000` against local PostgreSQL database `omni_ticket`, with the primary mutable operational paths, core operational reads, market-scoped connector account metadata, password-backed admin user management, durable outbound delivery queue, automation-rule execution, worker foundation, and deployment packaging moved onto SQLAlchemy-backed repositories. Local smoke tests pass, and the monorepo now includes a root GitHub Actions CI workflow for frontend lint/build plus backend compile, lint, typecheck, tests, migration sanity, and worker smoke.
 
 Completed in this build:
 
@@ -33,6 +33,7 @@ Completed in this build:
 - Database-backed fixed-window rate limiting for login, authenticated connector intake, and signed provider webhooks, with Redis, gateway, or WAF limits still recommended for multi-region scale.
 - Request correlation middleware with `X-Request-ID`, processing-time response headers, and structured JSON access logs.
 - Database-backed admin user creation and update APIs for role, active status, market assignment, and default market.
+- Per-user PBKDF2 password hashes, admin-set temporary passwords, password reset-required state, user password-change endpoint, and login timestamp capture.
 - Database-backed outbound message queue for public replies with idempotency keys, connector-account readiness checks, delivery status, retry, and dead-letter states.
 - Background worker service and `python -m app.worker` entrypoint for due outbound retries, dead-letter handling, SLA refresh, Work Queue recompute, analytics rollups, and worker audit events.
 - Dockerfile, Procfile, compose stack, `.env.example`, deployment docs, and staging/production configuration validation for separate release, web, and worker processes.
@@ -47,7 +48,7 @@ Completed in this build:
 Known production dependencies:
 
 - PostgreSQL provider.
-- Identity provider and tenant/RBAC policy.
+- Production identity provider, MFA/SSO, and tenant/RBAC policy.
 - WhatsApp Business API credentials.
 - Meta app credentials for Facebook Messenger and Instagram DM.
 - Mailbox provider credentials.
@@ -71,7 +72,7 @@ Known production dependencies:
 
 ## Phase 2: Auth, Tenancy, And Security
 
-1. Implement authentication provider integration. Database-backed local sessions done; production provider pending.
+1. Implement authentication provider integration. Database-backed local sessions and per-user password hashes done; production provider, MFA, and SSO pending.
 2. Add RBAC for agent, supervisor, admin, auditor, and service account roles. Route-level policy is done for current user roles; service-account policy remains pending.
 3. Add tenant isolation middleware and database scoping. Session/user/market scoping and the primary operational write/read paths now enforce market scope through database-backed routes.
 4. Add audit logging for every write action. Started, with auth, market-selection, access-denied, setup, ticketing, connector, worker, automation, and outbound events now durable.

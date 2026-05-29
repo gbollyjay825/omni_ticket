@@ -1,6 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.passwords import hash_password
 from app.core.store import InMemoryStore
 from app.db.mappers import (
     agent_from_record,
@@ -49,7 +50,12 @@ def persist_store_state(db: Session, state: InMemoryStore) -> None:
     for market in state.markets.values():
         _merge_record(db, MarketRecord, market.model_dump(mode="json"))
     for user in state.users.values():
-        _merge_record(db, UserRecord, user.model_dump(mode="json"))
+        payload = user.model_dump(mode="json")
+        existing = db.get(UserRecord, user.id)
+        payload["password_hash"] = (
+            existing.password_hash if existing and existing.password_hash else hash_password("omni-demo")
+        )
+        _merge_record(db, UserRecord, payload)
     for settings in state.settings_by_market.values():
         _merge_record(db, WorkspaceSettingsRecord, settings.model_dump(mode="json"))
     for channel in state.channels.values():

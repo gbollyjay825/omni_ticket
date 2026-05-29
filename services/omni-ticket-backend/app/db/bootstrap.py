@@ -3,6 +3,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from app.core.store import InMemoryStore, store
+from app.core.passwords import hash_password
 from app.db.models import (
     AgentRecord,
     AiDecisionRecord,
@@ -145,12 +146,13 @@ def seed_reference_data(session: Session, source: InMemoryStore = store) -> None
         ]
     )
     session.flush()
-    session.add_all(
-        [
-            UserRecord(**_payload(user))
-            for user in source.users.values()
-        ]
-    )
+    user_records = []
+    for user in source.users.values():
+        payload = _payload(user)
+        payload["password_hash"] = hash_password("omni-demo")
+        payload["password_reset_required"] = False
+        user_records.append(UserRecord(**payload))
+    session.add_all(user_records)
     session.add_all(
         [
             WorkspaceSettingsRecord(**_payload(settings))

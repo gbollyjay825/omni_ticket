@@ -71,6 +71,8 @@ def user_from_record(record: UserRecord) -> User:
         market_ids=record.market_ids,
         default_market_id=record.default_market_id,
         active=record.active,
+        password_reset_required=record.password_reset_required,
+        last_login_at=record.last_login_at,
     )
 
 

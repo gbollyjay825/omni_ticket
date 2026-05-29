@@ -128,6 +128,8 @@ class User(BaseModel):
     market_ids: list[str]
     default_market_id: str
     active: bool = True
+    password_reset_required: bool = False
+    last_login_at: datetime | None = None
 
 
 class LoginRequest(BaseModel):
@@ -139,6 +141,7 @@ class LoginRequest(BaseModel):
 class CreateUserRequest(BaseModel):
     name: str
     email: EmailStr
+    temporary_password: str = Field(min_length=8)
     role: UserRole = UserRole.agent
     market_ids: list[str] = Field(default_factory=list)
     default_market_id: str | None = None
@@ -148,10 +151,16 @@ class CreateUserRequest(BaseModel):
 class UpdateUserRequest(BaseModel):
     name: str | None = None
     email: EmailStr | None = None
+    temporary_password: str | None = Field(default=None, min_length=8)
     role: UserRole | None = None
     market_ids: list[str] | None = None
     default_market_id: str | None = None
     active: bool | None = None
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8)
 
 
 class AuthSession(BaseModel):

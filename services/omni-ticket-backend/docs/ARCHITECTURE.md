@@ -70,10 +70,11 @@ Current local auth model:
 - `GET /api/v1/auth/me` validates the current database session and market.
 - `GET /api/v1/auth/markets` lists database markets assigned to the user.
 - `GET /api/v1/auth/users` lists database users visible to supervisors/admins.
-- `POST /api/v1/auth/users` creates database-backed users for admins.
-- `PATCH /api/v1/auth/users/{user_id}` updates user role, active state, market assignments, and default market.
+- `POST /api/v1/auth/users` creates database-backed users for admins with a per-user temporary password hash.
+- `PATCH /api/v1/auth/users/{user_id}` updates user role, active state, market assignments, default market, and admin-set temporary password reset.
+- `POST /api/v1/auth/password` lets an authenticated user change their own password and clear reset-required state.
 
-Production auth still needs a real identity provider, password policy, MFA/SSO, token expiry/refresh, deeper RBAC policy enforcement, and audit events for auth decisions.
+Production auth still needs a real identity provider, MFA/SSO, token refresh, custom permission profiles, and optional external policy enforcement.
 
 Current role policy:
 
