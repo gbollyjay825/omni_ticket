@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.auth import parse_session_token
+from app.core.observability import current_request_id
 from app.db.mappers import market_from_record, user_from_record
 from app.db.models import MarketRecord, SessionRecord, UserRecord
 from app.db.session import get_db
@@ -16,6 +17,7 @@ from app.models.domain import Market, User
 class RequestContext:
     user: User
     market: Market
+    request_id: str | None = None
 
     @property
     def market_id(self) -> str:
@@ -72,4 +74,4 @@ def require_context(
     market = market_from_record(market_record)
     if not market.active:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Market not found")
-    return RequestContext(user=user, market=market)
+    return RequestContext(user=user, market=market, request_id=current_request_id())

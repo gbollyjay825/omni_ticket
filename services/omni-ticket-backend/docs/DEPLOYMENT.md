@@ -101,6 +101,15 @@ The backend includes a database-backed fixed-window limiter for the routes most 
 
 When the limit is exceeded, the API returns `429` with a `Retry-After` header. The current implementation stores counters in the application database so serverless invocations share the same state. Login limits are keyed by email address, connector intake by authenticated user, market, and provider, and signed webhooks by market and provider. A high-scale multi-region deployment should still pair the same policy with Redis, gateway/WAF rules, or the hosting provider's edge rate limit.
 
+## Request Traceability
+
+Every API response includes:
+
+- `X-Request-ID`: caller-provided when safe, otherwise generated as `req_<uuid>`.
+- `X-Process-Time-Ms`: backend processing time for the request.
+
+The API also emits structured JSON access logs through the `omni_ticket.access` logger with request ID, method, path, status code, and duration. These logs are intentionally provider-neutral so they can be captured by local Docker logs, Vercel logs, or a future OpenTelemetry/log drain integration without changing route handlers.
+
 ## Signed Connector Webhooks
 
 Provider adapter callbacks can post to:

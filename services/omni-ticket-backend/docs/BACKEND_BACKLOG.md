@@ -30,6 +30,7 @@ Completed in this build:
 - Database-backed connector account readiness for Email, WhatsApp Business, Facebook Messenger, Instagram DM, SMS, and voice, including status, credential reference, webhook state, send permission, failures, capabilities, and market isolation.
 - Signed connector webhook endpoint for provider callbacks with HMAC verification, timestamp tolerance, delivery-id replay protection, account failure tracking, and audit history.
 - Database-backed fixed-window rate limiting for login, authenticated connector intake, and signed provider webhooks, with Redis, gateway, or WAF limits still recommended for multi-region scale.
+- Request correlation middleware with `X-Request-ID`, processing-time response headers, and structured JSON access logs.
 - Database-backed admin user creation and update APIs for role, active status, market assignment, and default market.
 - Database-backed outbound message queue for public replies with idempotency keys, connector-account readiness checks, delivery status, retry, and dead-letter states.
 - Background worker service and `python -m app.worker` entrypoint for due outbound retries, dead-letter handling, SLA refresh, Work Queue recompute, analytics rollups, and worker audit events.
@@ -64,7 +65,7 @@ Known production dependencies:
 2. Add SQLAlchemy or SQLModel models and Alembic migrations. Done.
 3. Model tenants, users, roles, teams, agents, customers, companies, channels, tickets, timeline events, SLAs, handoffs, knowledge articles, settings, and audit events. Done at schema level.
 4. Add seed data migration for local development. Started with database seeding from reference data.
-5. Add repository layer with transaction boundaries. Auth/session/settings/customer/company/ticket/timeline/handoff/channel/agent/knowledge/rule/inbound connector/analytics/work-queue/connector account/outbound queue/worker paths are database-first; production deployment scheduling and observability remain pending.
+5. Add repository layer with transaction boundaries. Auth/session/settings/customer/company/ticket/timeline/handoff/channel/agent/knowledge/rule/inbound connector/analytics/work-queue/connector account/outbound queue/worker paths are database-first; production deployment scheduling, dashboards, and alerting remain pending.
 
 ## Phase 2: Auth, Tenancy, And Security
 
@@ -139,7 +140,7 @@ Known production dependencies:
 1. Add rate limiting and connector signature verification. Started with canonical signed connector webhook intake plus database-backed auth/connector/webhook rate limits.
 2. Add idempotency keys for all inbound webhooks and outbound sends. Started with delivery-id replay protection and existing provider/external-id deduplication.
 3. Add retry policies and dead-letter queues. Done locally with the durable outbound message queue and worker execution; provider-specific retry policies and deployment alerting pending.
-4. Add observability dashboards and alerting.
+4. Add observability dashboards and alerting. Started with request IDs, processing-time headers, and structured JSON access logs.
 5. Add backup, retention, export, and deletion workflows.
 6. Add load tests for queue recompute, webhook ingestion, and ticket timeline reads.
 
@@ -169,6 +170,7 @@ Known production dependencies:
 - Simulated inbound connector intake now writes customer, ticket, connector event, connector receipt timeline, and audit records directly.
 - Signed provider webhooks can now call `POST /api/v1/webhooks/{provider}/{market_code}` with HMAC signature headers, timestamp freshness, and delivery-id replay protection before using the same database-first connector intake path.
 - Login, authenticated connector intake, and signed provider webhook routes now return `429` with `Retry-After` when database-backed rate limits are exceeded.
+- Every backend response now carries request correlation and processing-time headers, and the API emits structured JSON access logs for production traceability.
 - Analytics summary and Work Queue endpoints now read from database records directly and refresh the runtime snapshot only for frontend compatibility.
 - Connector account endpoints now expose market-scoped provider readiness at `GET/POST/PATCH /api/v1/connectors/accounts` with `/api/v1/connector-accounts` aliases.
 - Outbound message endpoints now expose `GET /api/v1/outbound/messages` and `POST /api/v1/outbound/messages/{message_id}/retry` for delivery visibility and manual retry.

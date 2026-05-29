@@ -10,6 +10,7 @@ from app.api.v1.platform import router as platform_router
 from app.api.v1.resources import router as resources_router
 from app.api.v1.settings import router as settings_router
 from app.core.config import settings
+from app.core.observability import RequestObservabilityMiddleware
 from app.db.bootstrap import initialize_database
 
 
@@ -35,6 +36,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(RequestObservabilityMiddleware)
     app.include_router(auth_router, prefix=settings.api_prefix)
     app.include_router(health_router, prefix=settings.api_prefix)
     app.include_router(platform_router, prefix=settings.api_prefix)

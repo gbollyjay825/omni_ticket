@@ -67,6 +67,7 @@ Last updated: 2026-05-29
 | B-048 | Add database-backed rate limiting for login, authenticated connector intake, and signed provider webhooks with `429` and `Retry-After` behavior | P0 | Done |
 | B-049 | Stabilize production rate-limit keys behind Vercel proxy routing and verify live login smoke tests | P0 | Done |
 | B-050 | Add root GitHub Actions CI for frontend lint/build and backend compile, lint, typecheck, tests, migration sanity, and worker smoke | P0 | Done |
+| B-051 | Add request correlation headers, processing-time headers, and structured backend access logs | P0 | Done |
 
 ## Pending Items
 
@@ -124,3 +125,4 @@ Last updated: 2026-05-29
 | C-040 | Login, authenticated connector intake, and signed provider webhooks now have configurable database-backed rate limits with `429` and `Retry-After` responses | 2026-05-29 |
 | C-041 | Production Vercel smoke tests now confirm admin login returns `200` and repeated invalid login attempts return `429` after the configured limit | 2026-05-29 |
 | C-042 | Root GitHub Actions CI now gates push and pull request changes with frontend and backend production checks | 2026-05-29 |
+| C-043 | Backend responses now include request IDs and processing time while structured JSON access logs provide production traceability | 2026-05-29 |
