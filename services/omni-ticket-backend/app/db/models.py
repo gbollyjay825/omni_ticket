@@ -271,6 +271,14 @@ class OutboundMessageRecord(TimestampMixin, Base):
     )
 
 
+class RateLimitRecord(TimestampMixin, Base):
+    __tablename__ = "rate_limit_counters"
+
+    key: Mapped[str] = mapped_column(String(255), primary_key=True)
+    window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    count: Mapped[int] = mapped_column(Integer, default=0)
+
+
 class AiDecisionRecord(TimestampMixin, Base):
     __tablename__ = "ai_decisions"
 

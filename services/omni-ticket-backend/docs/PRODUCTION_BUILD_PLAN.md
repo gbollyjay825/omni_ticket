@@ -154,7 +154,7 @@ Acceptance:
 Build:
 
 - Attachment object storage and malware scanning.
-- Rate limiting, WAF/deployment rules, request IDs, structured logs, OpenTelemetry traces. Local in-process route limits are done for auth and connector intake; shared production backing and edge/WAF rules remain pending.
+- Rate limiting, WAF/deployment rules, request IDs, structured logs, OpenTelemetry traces. Database-backed route limits are done for auth and connector intake; edge/WAF rules remain pending.
 - Backup, retention, export, deletion, and legal hold workflows.
 - Secrets management and credential rotation.
 - Load tests for queue recompute, webhook ingestion, and ticket reads.

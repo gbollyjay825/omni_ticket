@@ -64,7 +64,7 @@ Last updated: 2026-05-29
 | B-045 | Execute automation rules on ticket creation for routing, priority, tags, checklist tasks, rule health, timeline, and audit | P0 | Done |
 | B-046 | Add signed connector webhook intake with timestamp freshness, delivery-id replay protection, account failure state, and audit history | P0 | Done |
 | B-047 | Add route-level RBAC for agents, supervisors, admins, and auditors across setup, operations, audit, and readiness surfaces | P0 | Done |
-| B-048 | Add local rate limiting for login, authenticated connector intake, and signed provider webhooks with `429` and `Retry-After` behavior | P0 | Done |
+| B-048 | Add database-backed rate limiting for login, authenticated connector intake, and signed provider webhooks with `429` and `Retry-After` behavior | P0 | Done |
 
 ## Pending Items
 
@@ -119,4 +119,4 @@ Last updated: 2026-05-29
 | C-037 | Automation rules now execute during ticket creation, applying deterministic routing, priority, tags, checklist tasks, last-fired state, timeline entries, and audit history even when AI routing is disabled | 2026-05-29 |
 | C-038 | Signed provider webhook intake added with account readiness checks, HMAC signature verification, timestamp freshness, delivery-id replay protection, failure tracking, and audit history | 2026-05-29 |
 | C-039 | Route-level RBAC now enforces agent operational writes, supervisor controls, admin-only setup, auditor read-only access, audit visibility, and readiness restrictions | 2026-05-29 |
-| C-040 | Login, authenticated connector intake, and signed provider webhooks now have configurable local rate limits with `429` and `Retry-After` responses | 2026-05-29 |
+| C-040 | Login, authenticated connector intake, and signed provider webhooks now have configurable database-backed rate limits with `429` and `Retry-After` responses | 2026-05-29 |

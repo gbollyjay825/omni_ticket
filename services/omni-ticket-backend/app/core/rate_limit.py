@@ -1,6 +1,3 @@
-import math
-import time
-from collections import defaultdict, deque
 from dataclasses import dataclass
 
 from fastapi import HTTPException, Request, status
@@ -9,35 +6,6 @@ from fastapi import HTTPException, Request, status
 @dataclass(frozen=True)
 class RateLimitExceeded(Exception):
     retry_after_seconds: int
-
-
-class InMemoryRateLimiter:
-    def __init__(self) -> None:
-        self._hits: dict[str, deque[float]] = defaultdict(deque)
-
-    def check(
-        self,
-        key: str,
-        *,
-        limit: int,
-        window_seconds: int,
-        now: float | None = None,
-    ) -> None:
-        current_time = now or time.time()
-        bucket = self._hits[key]
-        cutoff = current_time - window_seconds
-        while bucket and bucket[0] <= cutoff:
-            bucket.popleft()
-        if len(bucket) >= limit:
-            retry_after = max(1, math.ceil(bucket[0] + window_seconds - current_time))
-            raise RateLimitExceeded(retry_after)
-        bucket.append(current_time)
-
-    def reset(self) -> None:
-        self._hits.clear()
-
-
-rate_limiter = InMemoryRateLimiter()
 
 
 def client_identity(request: Request) -> str:

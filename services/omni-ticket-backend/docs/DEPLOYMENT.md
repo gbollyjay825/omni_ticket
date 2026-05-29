@@ -93,13 +93,13 @@ This keeps staging/production from silently starting with local/demo defaults.
 
 ## Rate Limits
 
-The local backend includes an in-process limiter for the routes most exposed to abuse:
+The backend includes a database-backed fixed-window limiter for the routes most exposed to abuse:
 
 - `POST /api/v1/auth/login`
 - `POST /api/v1/connectors/inbound`
 - `POST /api/v1/webhooks/{provider}/{market_code}`
 
-When the limit is exceeded, the API returns `429` with a `Retry-After` header. The in-process limiter is suitable for local and single-instance prototype deployment. A production multi-instance deployment should back the same policy with Redis, gateway/WAF rules, or the hosting provider's edge rate limit so counters are shared across instances.
+When the limit is exceeded, the API returns `429` with a `Retry-After` header. The current implementation stores counters in the application database so serverless invocations share the same state. A high-scale multi-region deployment should still pair the same policy with Redis, gateway/WAF rules, or the hosting provider's edge rate limit.
 
 ## Signed Connector Webhooks
 

@@ -12,10 +12,10 @@ from app.core.rate_limit import (
     RateLimitExceeded,
     client_identity,
     raise_rate_limit_exceeded,
-    rate_limiter,
 )
 from app.db.mappers import market_from_record, user_from_record
 from app.db.models import AuditEventRecord, MarketRecord, SessionRecord, UserRecord
+from app.db.rate_limit import database_rate_limiter
 from app.db.session import get_db
 from app.models.domain import (
     AuthSession,
@@ -92,7 +92,8 @@ def login(
     db: Session = Depends(get_db),
 ) -> AuthSession:
     try:
-        rate_limiter.check(
+        database_rate_limiter.check(
+            db,
             f"auth-login:{client_identity(http_request)}:{str(request.email).lower()}",
             limit=settings.login_rate_limit_attempts,
             window_seconds=settings.login_rate_limit_window_seconds,

@@ -9,7 +9,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.rate_limit import rate_limiter
 from app.core.webhooks import sign_webhook_body
 from app.core.store import store
 from app.db.models import AuditEventRecord, OutboundMessageRecord, SessionRecord, TicketRecord
@@ -96,15 +95,15 @@ def test_operations_require_authentication() -> None:
 
 
 def test_login_rate_limit_blocks_repeated_attempts(client: TestClient) -> None:
-    rate_limiter.reset()
     original_attempts = settings.login_rate_limit_attempts
     original_window = settings.login_rate_limit_window_seconds
     settings.login_rate_limit_attempts = 2
     settings.login_rate_limit_window_seconds = 60
     try:
         anonymous = TestClient(create_app())
+        rate_limited_email = f"rate-login-{uuid4().hex}@omniticket.example.com"
         payload = {
-            "email": "gbolahan@omniticket.example.com",
+            "email": rate_limited_email,
             "password": "wrong-password",
             "market_id": "market-ng",
         }
@@ -117,7 +116,6 @@ def test_login_rate_limit_blocks_repeated_attempts(client: TestClient) -> None:
     finally:
         settings.login_rate_limit_attempts = original_attempts
         settings.login_rate_limit_window_seconds = original_window
-        rate_limiter.reset()
 
 
 def test_market_scope_hides_other_market_customers(
@@ -897,7 +895,6 @@ def test_connector_ingest_is_database_first_after_runtime_reset(client: TestClie
 
 
 def test_authenticated_connector_ingest_is_rate_limited(client: TestClient) -> None:
-    rate_limiter.reset()
     original_attempts = settings.connector_inbound_rate_limit_attempts
     original_window = settings.connector_inbound_rate_limit_window_seconds
     settings.connector_inbound_rate_limit_attempts = 1
@@ -931,7 +928,6 @@ def test_authenticated_connector_ingest_is_rate_limited(client: TestClient) -> N
     finally:
         settings.connector_inbound_rate_limit_attempts = original_attempts
         settings.connector_inbound_rate_limit_window_seconds = original_window
-        rate_limiter.reset()
 
 
 def test_signed_webhook_ingests_without_agent_session(client: TestClient) -> None:
@@ -1007,7 +1003,6 @@ def test_signed_webhook_rejects_invalid_signature_and_tracks_failure(client: Tes
 
 def test_signed_webhook_is_rate_limited_before_ticket_creation(client: TestClient) -> None:
     account = _ready_connector_account(client)
-    rate_limiter.reset()
     original_attempts = settings.webhook_rate_limit_attempts
     original_window = settings.webhook_rate_limit_window_seconds
     settings.webhook_rate_limit_attempts = 1
@@ -1050,7 +1045,6 @@ def test_signed_webhook_is_rate_limited_before_ticket_creation(client: TestClien
     finally:
         settings.webhook_rate_limit_attempts = original_attempts
         settings.webhook_rate_limit_window_seconds = original_window
-        rate_limiter.reset()
 
 
 def test_signed_webhook_blocks_replayed_delivery_id_with_new_event(

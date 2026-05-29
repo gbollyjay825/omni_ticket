@@ -29,7 +29,7 @@ Completed in this build:
 - Database-first analytics summary and Work Queue reads with SLA refresh, channel volume, agent occupancy, and queue scoring.
 - Database-backed connector account readiness for Email, WhatsApp Business, Facebook Messenger, Instagram DM, SMS, and voice, including status, credential reference, webhook state, send permission, failures, capabilities, and market isolation.
 - Signed connector webhook endpoint for provider callbacks with HMAC verification, timestamp tolerance, delivery-id replay protection, account failure tracking, and audit history.
-- Local in-process rate limiting for login, authenticated connector intake, and signed provider webhooks, with production backing intended for Redis, gateway, or WAF limits.
+- Database-backed fixed-window rate limiting for login, authenticated connector intake, and signed provider webhooks, with Redis, gateway, or WAF limits still recommended for multi-region scale.
 - Database-backed admin user creation and update APIs for role, active status, market assignment, and default market.
 - Database-backed outbound message queue for public replies with idempotency keys, connector-account readiness checks, delivery status, retry, and dead-letter states.
 - Background worker service and `python -m app.worker` entrypoint for due outbound retries, dead-letter handling, SLA refresh, Work Queue recompute, analytics rollups, and worker audit events.
@@ -136,7 +136,7 @@ Known production dependencies:
 
 ## Phase 10: Production Hardening
 
-1. Add rate limiting and connector signature verification. Started with canonical signed connector webhook intake plus in-process auth/connector/webhook rate limits.
+1. Add rate limiting and connector signature verification. Started with canonical signed connector webhook intake plus database-backed auth/connector/webhook rate limits.
 2. Add idempotency keys for all inbound webhooks and outbound sends. Started with delivery-id replay protection and existing provider/external-id deduplication.
 3. Add retry policies and dead-letter queues. Done locally with the durable outbound message queue and worker execution; provider-specific retry policies and deployment alerting pending.
 4. Add observability dashboards and alerting.
@@ -168,7 +168,7 @@ Known production dependencies:
 - Enabled automation rules now execute during ticket creation and write routing, priority, tag, task, timeline, last-fired, failure-count, and audit changes back to the database.
 - Simulated inbound connector intake now writes customer, ticket, connector event, connector receipt timeline, and audit records directly.
 - Signed provider webhooks can now call `POST /api/v1/webhooks/{provider}/{market_code}` with HMAC signature headers, timestamp freshness, and delivery-id replay protection before using the same database-first connector intake path.
-- Login, authenticated connector intake, and signed provider webhook routes now return `429` with `Retry-After` when local rate limits are exceeded.
+- Login, authenticated connector intake, and signed provider webhook routes now return `429` with `Retry-After` when database-backed rate limits are exceeded.
 - Analytics summary and Work Queue endpoints now read from database records directly and refresh the runtime snapshot only for frontend compatibility.
 - Connector account endpoints now expose market-scoped provider readiness at `GET/POST/PATCH /api/v1/connectors/accounts` with `/api/v1/connector-accounts` aliases.
 - Outbound message endpoints now expose `GET /api/v1/outbound/messages` and `POST /api/v1/outbound/messages/{message_id}/retry` for delivery visibility and manual retry.

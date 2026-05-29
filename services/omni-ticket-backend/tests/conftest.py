@@ -5,7 +5,6 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.core.rate_limit import rate_limiter
 from app.core.store import store
 from app.db.bootstrap import seed_reference_data
 from app.db.models import Base
@@ -33,7 +32,6 @@ def reset_store() -> Generator[None]:
 
 
 def reset_local_state() -> None:
-    rate_limiter.reset()
     store.settings = WorkspaceSettings()
     store.seed()
     engine = get_engine()

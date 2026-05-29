@@ -14,7 +14,6 @@ from app.core.rate_limit import (
     RateLimitExceeded,
     client_identity,
     raise_rate_limit_exceeded,
-    rate_limiter,
 )
 from app.core.store import InMemoryStore
 from app.core.webhooks import verify_webhook_signature
@@ -24,6 +23,7 @@ from app.db.mappers import company_from_record, customer_from_record, market_fro
 from app.db.models import CompanyRecord, CustomerRecord, MarketRecord, UserRecord
 from app.db.operations import operations_repository
 from app.db.outbound import outbound_repository
+from app.db.rate_limit import database_rate_limiter
 from app.db.session import get_db
 from app.db.settings import get_or_create_workspace_settings, workspace_settings_from_record
 from app.db.store_sync import persist_store_state
@@ -620,7 +620,8 @@ def ingest_connector(
     require_operator(context)
     market_id = request.market_id or context.market_id
     try:
-        rate_limiter.check(
+        database_rate_limiter.check(
+            db,
             (
                 "connector-inbound:"
                 f"{client_identity(http_request)}:{context.user.id}:{market_id}:{request.provider.value}"
@@ -662,7 +663,8 @@ async def ingest_signed_webhook(
     if market_record is None or not market_record.active:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Market not found")
     try:
-        rate_limiter.check(
+        database_rate_limiter.check(
+            db,
             f"signed-webhook:{client_identity(http_request)}:{provider.value}:{market_record.id}",
             limit=app_settings.webhook_rate_limit_attempts,
             window_seconds=app_settings.webhook_rate_limit_window_seconds,
