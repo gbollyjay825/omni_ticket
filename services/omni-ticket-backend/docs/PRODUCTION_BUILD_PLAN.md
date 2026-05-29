@@ -106,12 +106,13 @@ Build:
 - Facebook Messenger connector: page webhook, replies, private reply flow. Account metadata done; real provider adapter pending.
 - Instagram DM connector: DM intake, comment-to-DM, media. Account metadata done; real provider adapter pending.
 - SMS and voice connector provider boundaries. Account metadata done; real provider adapters pending.
-- Connector signature verification, inbound replay protection, provider-specific send adapters, and provider-specific retry policies. Durable outbound queue, send idempotency, and worker retry/dead-letter execution are done locally.
+- Connector signature verification, inbound replay protection, provider-specific send adapters, and provider-specific retry policies. Canonical signed webhook verification, delivery-id replay protection, durable outbound queue, send idempotency, and worker retry/dead-letter execution are done locally; provider-native signature adapters remain pending.
 
 Acceptance:
 
 - Each market can own separate channel credentials/accounts.
 - Incoming provider events create/update tickets in the correct market.
+- Signed webhooks reject invalid signatures, stale timestamps, disabled accounts, and replayed delivery identifiers.
 - Outbound sends are auditable and retryable.
 
 ## Phase 5: AI Work Queue And Automation Engine

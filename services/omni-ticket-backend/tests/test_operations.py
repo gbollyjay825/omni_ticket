@@ -1,17 +1,59 @@
 from collections.abc import Callable
 from datetime import timedelta
+import json
+import time
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.webhooks import sign_webhook_body
 from app.core.store import store
 from app.db.models import AuditEventRecord, OutboundMessageRecord, SessionRecord, TicketRecord
 from app.db.session import get_engine
 from app.main import create_app
 from app.models.domain import utc_now
 from app.services.worker import worker_service
+
+
+def _json_body(payload: dict) -> bytes:
+    return json.dumps(payload, separators=(",", ":")).encode()
+
+
+def _signed_webhook_headers(account: dict, body: bytes, delivery_id: str) -> dict[str, str]:
+    timestamp = int(time.time())
+    return {
+        "Content-Type": "application/json",
+        "X-Omni-Timestamp": str(timestamp),
+        "X-Omni-Signature": sign_webhook_body(
+            account_id=account["id"],
+            credential_ref=account["credential_ref"],
+            timestamp=timestamp,
+            body=body,
+        ),
+        "X-Omni-Delivery": delivery_id,
+    }
+
+
+def _ready_connector_account(client: TestClient, provider: str = "whatsapp") -> dict:
+    account = next(
+        item
+        for item in client.get("/api/v1/connectors/accounts").json()
+        if item["provider"] == provider
+    )
+    response = client.patch(
+        f"/api/v1/connectors/accounts/{account['id']}",
+        json={
+            "status": "connected",
+            "intake_enabled": True,
+            "secret_configured": True,
+            "webhook_verified": True,
+            "credential_ref": f"vault://omni/ng/{provider}/webhook-secret",
+        },
+    )
+    assert response.status_code == 200
+    return response.json()
 
 
 def test_login_returns_user_and_available_markets(client: TestClient) -> None:
@@ -687,6 +729,117 @@ def test_connector_ingest_is_database_first_after_runtime_reset(client: TestClie
     assert duplicate.status_code == 201
     assert duplicate.json()["deduplicated"] is True
     assert duplicate.json()["ticket"]["id"] == ticket_id
+
+
+def test_signed_webhook_ingests_without_agent_session(client: TestClient) -> None:
+    account = _ready_connector_account(client)
+    payload = {
+        "external_id": f"wa-signed-{uuid4().hex}",
+        "customer_name": "Signed Webhook Customer",
+        "customer_email": f"signed-{uuid4().hex}@example.com",
+        "subject": "Signed WhatsApp webhook payment complaint",
+        "body": "Customer is angry about a duplicate payment from WhatsApp.",
+        "handle": "+2348111111111",
+    }
+    body = _json_body(payload)
+    response = TestClient(create_app()).post(
+        "/api/v1/webhooks/whatsapp/ng",
+        content=body,
+        headers=_signed_webhook_headers(account, body, "delivery-signed-1"),
+    )
+    assert response.status_code == 201
+    result = response.json()
+    assert result["deduplicated"] is False
+    ticket = result["ticket"]
+    assert ticket["channel"] == "whatsapp"
+    assert ticket["team"] == "Billing Support"
+    assert "connector-intake" in ticket["tags"]
+    assert result["connector_event"]["payload"]["metadata"]["webhook_signature_verified"] is True
+    assert result["connector_event"]["payload"]["metadata"]["webhook_delivery_id"] == "delivery-signed-1"
+
+    context = client.get(f"/api/v1/tickets/{ticket['id']}")
+    assert context.status_code == 200
+    assert any(
+        event["type"] == "connector_receipt"
+        and event["metadata"]["external_id"] == payload["external_id"]
+        for event in context.json()["timeline"]
+    )
+
+
+def test_signed_webhook_rejects_invalid_signature_and_tracks_failure(client: TestClient) -> None:
+    account = _ready_connector_account(client)
+    payload = {
+        "external_id": f"wa-invalid-{uuid4().hex}",
+        "customer_name": "Invalid Signature",
+        "customer_email": f"invalid-{uuid4().hex}@example.com",
+        "subject": "Invalid signature should fail",
+        "body": "This event should never become a ticket.",
+    }
+    body = _json_body(payload)
+    response = TestClient(create_app()).post(
+        "/api/v1/webhooks/whatsapp/ng",
+        content=body,
+        headers={
+            "Content-Type": "application/json",
+            "X-Omni-Timestamp": str(int(time.time())),
+            "X-Omni-Signature": "sha256=bad",
+            "X-Omni-Delivery": "delivery-invalid",
+        },
+    )
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid webhook signature"
+
+    updated_account = next(
+        item
+        for item in client.get("/api/v1/connectors/accounts").json()
+        if item["id"] == account["id"]
+    )
+    assert updated_account["failure_count"] == 1
+    assert updated_account["last_error"] == "Invalid webhook signature"
+    assert not any(
+        event["external_id"] == payload["external_id"]
+        for event in client.get("/api/v1/connectors/events").json()
+    )
+
+
+def test_signed_webhook_blocks_replayed_delivery_id_with_new_event(
+    client: TestClient,
+) -> None:
+    account = _ready_connector_account(client)
+    first_payload = {
+        "external_id": f"wa-replay-{uuid4().hex}",
+        "customer_name": "Replay Customer",
+        "customer_email": f"replay-{uuid4().hex}@example.com",
+        "subject": "Original signed delivery",
+        "body": "Original delivery should create one ticket.",
+    }
+    first_body = _json_body(first_payload)
+    delivery_id = "delivery-replay-1"
+    first = TestClient(create_app()).post(
+        "/api/v1/webhooks/whatsapp/ng",
+        content=first_body,
+        headers=_signed_webhook_headers(account, first_body, delivery_id),
+    )
+    assert first.status_code == 201
+
+    duplicate = TestClient(create_app()).post(
+        "/api/v1/webhooks/whatsapp/ng",
+        content=first_body,
+        headers=_signed_webhook_headers(account, first_body, delivery_id),
+    )
+    assert duplicate.status_code == 201
+    assert duplicate.json()["deduplicated"] is True
+    assert duplicate.json()["ticket"]["id"] == first.json()["ticket"]["id"]
+
+    replay_payload = {**first_payload, "external_id": f"wa-replay-mutated-{uuid4().hex}"}
+    replay_body = _json_body(replay_payload)
+    replay = TestClient(create_app()).post(
+        "/api/v1/webhooks/whatsapp/ng",
+        content=replay_body,
+        headers=_signed_webhook_headers(account, replay_body, delivery_id),
+    )
+    assert replay.status_code == 409
+    assert replay.json()["detail"] == "Webhook delivery id was already processed"
 
 
 def test_management_surfaces_are_available(client: TestClient) -> None:

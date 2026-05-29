@@ -39,6 +39,7 @@ The production persistence foundation now includes:
 - Database-first simulated inbound connector intake that creates/reuses customers, creates tickets, records connector events, writes connector receipt timeline events, and deduplicates provider payloads.
 - Database-first analytics summary and Work Queue reads that refresh SLA state, score priority queues, calculate channel volume, and report active agent occupancy.
 - Database-backed connector account readiness for Email, WhatsApp Business, Facebook Messenger, Instagram DM, SMS, and voice, including credential references rather than raw secrets.
+- Signed connector webhook endpoint for provider callbacks with account readiness checks, HMAC verification, timestamp freshness, delivery-id replay protection, connector-account failure state, and audit history.
 - Database-backed admin user creation and management for role, active state, market assignment, and default market.
 - Database-backed outbound message queue for public replies, including idempotency keys, connector-account readiness checks, delivery status, retry, and dead-letter states.
 - Background worker service and `python -m app.worker` entrypoint for due outbound retries, dead-letter handling, SLA refresh, Work Queue recompute, analytics rollups, and worker audit events.
@@ -203,7 +204,7 @@ Planned production additions:
 - `POST /api/v1/work-queue/recompute`
 - `POST /api/v1/work-queue/{ticket_id}/override`
 - `PATCH /api/v1/channels/{channel_id}`
-- Signed provider-specific webhook endpoints for email, WhatsApp, Facebook Messenger, Instagram DM, SMS, and voice.
+- Provider-specific webhook signature adapters for email, WhatsApp, Facebook Messenger, Instagram DM, SMS, and voice on top of the canonical signed webhook boundary.
 
 ## Repository Boundary
 

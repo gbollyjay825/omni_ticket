@@ -20,6 +20,7 @@ OMNI_DATABASE_URL=postgresql+psycopg://USER:PASSWORD@HOST:5432/DB
 OMNI_INITIALIZE_DATABASE=false
 OMNI_SESSION_SECRET=replace-with-a-long-random-secret
 OMNI_SESSION_TTL_MINUTES=480
+OMNI_WEBHOOK_SIGNATURE_TOLERANCE_SECONDS=300
 OMNI_ALLOWED_ORIGINS='["https://your-frontend.example.com"]'
 OMNI_WORKER_INTERVAL_SECONDS=60
 OMNI_WORKER_OUTBOUND_LIMIT=50
@@ -82,3 +83,19 @@ At startup, the API and worker validate staging/production configuration:
 - Worker interval and outbound limit must be positive.
 
 This keeps staging/production from silently starting with local/demo defaults.
+
+## Signed Connector Webhooks
+
+Provider adapter callbacks can post to:
+
+```bash
+POST /api/v1/webhooks/{provider}/{market_code}
+```
+
+The endpoint is unauthenticated by user session because external providers call it directly. It requires:
+
+- `X-Omni-Timestamp`: Unix timestamp within `OMNI_WEBHOOK_SIGNATURE_TOLERANCE_SECONDS`.
+- `X-Omni-Signature`: `sha256=<hmac>` over `{timestamp}.{raw_body}` using the connector account webhook secret material.
+- `X-Omni-Delivery`: provider delivery identifier for replay protection.
+
+The connector account must be intake-enabled, webhook-verified, and have a configured secret reference. Invalid signatures, stale timestamps, disabled intake, and replayed delivery identifiers are rejected and written back to connector account failure state plus audit history.

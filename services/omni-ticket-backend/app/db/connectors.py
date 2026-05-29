@@ -6,8 +6,9 @@ from sqlalchemy.orm import Session
 
 from app.core.store import InMemoryStore
 from app.db.mappers import audit_event_from_record, connector_account_from_record
-from app.db.models import AuditEventRecord, ConnectorAccountRecord
+from app.db.models import AuditEventRecord, ConnectorAccountRecord, ConnectorEventRecord
 from app.models.domain import (
+    ChannelType,
     ConnectorAccount,
     CreateConnectorAccountRequest,
     UpdateConnectorAccountRequest,
@@ -42,6 +43,94 @@ def _audit(
 
 
 class ConnectorAccountRepository:
+    def get_account_for_provider(
+        self,
+        db: Session,
+        *,
+        market_id: str,
+        provider: ChannelType,
+    ) -> ConnectorAccountRecord | None:
+        return db.scalar(
+            select(ConnectorAccountRecord).where(
+                ConnectorAccountRecord.market_id == market_id,
+                ConnectorAccountRecord.provider == provider.value,
+            )
+        )
+
+    def delivery_id_seen(
+        self,
+        db: Session,
+        *,
+        market_id: str,
+        provider: ChannelType,
+        delivery_id: str,
+    ) -> bool:
+        records = db.scalars(
+            select(ConnectorEventRecord).where(
+                ConnectorEventRecord.market_id == market_id,
+                ConnectorEventRecord.provider == provider.value,
+            )
+        ).all()
+        return any(
+            (record.payload or {}).get("metadata", {}).get("webhook_delivery_id") == delivery_id
+            for record in records
+        )
+
+    def external_event_seen(
+        self,
+        db: Session,
+        *,
+        market_id: str,
+        provider: ChannelType,
+        external_id: str,
+    ) -> bool:
+        return (
+            db.scalar(
+                select(ConnectorEventRecord).where(
+                    ConnectorEventRecord.market_id == market_id,
+                    ConnectorEventRecord.provider == provider.value,
+                    ConnectorEventRecord.external_id == external_id,
+                )
+            )
+            is not None
+        )
+
+    def record_webhook_failure(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        *,
+        account: ConnectorAccountRecord,
+        error: str,
+        delivery_id: str | None = None,
+    ) -> ConnectorAccount:
+        account.failure_count = (account.failure_count or 0) + 1
+        account.last_error = error
+        _audit(
+            db,
+            state,
+            action="connector.webhook_rejected",
+            entity_id=account.id,
+            market_id=account.market_id,
+            details={
+                "provider": account.provider,
+                "delivery_id": delivery_id,
+                "error": error,
+            },
+        )
+        db.commit()
+        db.refresh(account)
+        return connector_account_from_record(account)
+
+    def record_webhook_success(
+        self,
+        db: Session,
+        *,
+        account: ConnectorAccountRecord,
+    ) -> None:
+        account.last_error = None
+        db.flush()
+
     def list_accounts(
         self,
         db: Session,

@@ -1,12 +1,15 @@
+import json
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.v1.dependencies import get_store
 from app.api.v1.security import RequestContext, require_context
 from app.core.store import InMemoryStore
+from app.core.webhooks import verify_webhook_signature
 from app.db.connectors import connector_account_repository
 from app.db.management import management_repository
 from app.db.mappers import company_from_record, customer_from_record, market_from_record, user_from_record
@@ -613,6 +616,146 @@ def ingest_connector(
         market_id,
         ai_enabled=settings.ai_work_queue_automation_enabled,
     )
+    return result
+
+
+@router.post("/webhooks/{provider}/{market_code}", status_code=201)
+async def ingest_signed_webhook(
+    provider: ChannelType,
+    market_code: str,
+    http_request: Request,
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> dict:
+    market_record = db.scalar(select(MarketRecord).where(MarketRecord.code == market_code.upper()))
+    if market_record is None or not market_record.active:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Market not found")
+
+    account = connector_account_repository.get_account_for_provider(
+        db,
+        market_id=market_record.id,
+        provider=provider,
+    )
+    if account is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Connector account not found")
+    if not account.intake_enabled:
+        connector_account_repository.record_webhook_failure(
+            db,
+            state,
+            account=account,
+            error="Connector intake is disabled",
+        )
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Connector intake is disabled")
+    if not account.secret_configured or not account.webhook_verified:
+        connector_account_repository.record_webhook_failure(
+            db,
+            state,
+            account=account,
+            error="Connector webhook is not ready for signed intake",
+        )
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            detail="Connector webhook is not ready for signed intake",
+        )
+
+    raw_body = await http_request.body()
+    try:
+        verification = verify_webhook_signature(
+            account_id=account.id,
+            credential_ref=account.credential_ref,
+            body=raw_body,
+            headers=dict(http_request.headers),
+        )
+    except ValueError as exc:
+        connector_account_repository.record_webhook_failure(
+            db,
+            state,
+            account=account,
+            error=str(exc),
+        )
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+
+    try:
+        payload = json.loads(raw_body.decode() or "{}")
+    except json.JSONDecodeError as exc:
+        connector_account_repository.record_webhook_failure(
+            db,
+            state,
+            account=account,
+            error="Invalid webhook JSON body",
+            delivery_id=verification.delivery_id,
+        )
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid JSON body") from exc
+
+    external_id = str(payload.get("external_id") or "").strip()
+    delivery_seen = verification.delivery_id and connector_account_repository.delivery_id_seen(
+        db,
+        market_id=market_record.id,
+        provider=provider,
+        delivery_id=verification.delivery_id,
+    )
+    external_seen = connector_account_repository.external_event_seen(
+        db,
+        market_id=market_record.id,
+        provider=provider,
+        external_id=external_id,
+    )
+    if delivery_seen and not external_seen:
+        connector_account_repository.record_webhook_failure(
+            db,
+            state,
+            account=account,
+            error="Webhook delivery id was already processed",
+            delivery_id=verification.delivery_id,
+        )
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="Webhook delivery id was already processed",
+        )
+
+    metadata = dict(payload.get("metadata") or {})
+    metadata.update(
+        {
+            "webhook_delivery_id": verification.delivery_id,
+            "webhook_signature_verified": True,
+            "webhook_timestamp": verification.timestamp,
+            "connector_account_id": account.id,
+        }
+    )
+
+    try:
+        inbound = ConnectorInboundRequest(
+            provider=provider,
+            external_id=external_id,
+            customer_name=payload.get("customer_name", ""),
+            customer_email=payload.get("customer_email", ""),
+            subject=payload.get("subject", ""),
+            body=payload.get("body", ""),
+            handle=payload.get("handle"),
+            metadata=metadata,
+        )
+    except ValidationError as exc:
+        connector_account_repository.record_webhook_failure(
+            db,
+            state,
+            account=account,
+            error="Webhook payload failed validation",
+            delivery_id=verification.delivery_id,
+        )
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=exc.errors()) from exc
+
+    settings = workspace_settings_from_record(
+        get_or_create_workspace_settings(db, market_from_record(market_record))
+    )
+    result = ticket_repository.ingest_connector(
+        db,
+        state,
+        inbound,
+        market_record.id,
+        ai_enabled=settings.ai_work_queue_automation_enabled,
+    )
+    connector_account_repository.record_webhook_success(db, account=account)
+    db.commit()
     return result
 
 
