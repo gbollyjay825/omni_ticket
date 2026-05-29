@@ -548,6 +548,11 @@ class CreateAttachmentRequest(BaseModel):
     storage_key: str | None = Field(default=None, max_length=500)
 
 
+class AttachmentDownloadLink(BaseModel):
+    url: str
+    expires_at: datetime
+
+
 class CreateHandoffRequest(BaseModel):
     to_team: str
     requested_by: str

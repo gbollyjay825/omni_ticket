@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     webhook_rate_limit_window_seconds: int = 60
     attachment_storage_dir: str = "/tmp/omni-ticket-attachments"
     attachment_max_bytes: int = 25 * 1024 * 1024
+    attachment_download_ttl_minutes: int = 10
     allowed_origins: list[str] = [
         "http://127.0.0.1:5173",
         "http://localhost:5173",
@@ -50,6 +51,8 @@ class Settings(BaseSettings):
             errors.append("OMNI_WEBHOOK_SIGNATURE_TOLERANCE_SECONDS must be at least 30.")
         if self.attachment_max_bytes < 1:
             errors.append("OMNI_ATTACHMENT_MAX_BYTES must be at least 1.")
+        if self.attachment_download_ttl_minutes < 1:
+            errors.append("OMNI_ATTACHMENT_DOWNLOAD_TTL_MINUTES must be at least 1.")
         rate_limit_fields = {
             "OMNI_LOGIN_RATE_LIMIT_ATTEMPTS": self.login_rate_limit_attempts,
             "OMNI_LOGIN_RATE_LIMIT_WINDOW_SECONDS": self.login_rate_limit_window_seconds,

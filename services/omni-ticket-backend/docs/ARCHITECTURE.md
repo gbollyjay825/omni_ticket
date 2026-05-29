@@ -14,7 +14,7 @@ Build an independent Python backend for Omni Ticket that powers ticketing, omnic
 - Redis for queues, locks, short-lived cache, rate limits, and connector state in the production phase
 - Celery, Dramatiq, or RQ for background work in the production phase
 - OpenTelemetry-compatible logging/tracing
-- Object storage for attachments
+- Object storage for attachments and malware scanning provider
 
 ## Current Vertical Slice
 
@@ -45,6 +45,7 @@ The production persistence foundation now includes:
 - Database-backed fixed-window rate limiter for login, authenticated connector intake, and signed provider webhooks, returning `429` plus `Retry-After` before expensive downstream work.
 - Database-backed admin user creation and management for role, active state, market assignment, and default market.
 - Database-backed outbound message queue for public replies, including idempotency keys, connector-account readiness checks, delivery status, retry, and dead-letter states.
+- Binary attachment upload/download support with a local storage adapter, configurable max size, and clean-scan-only download access.
 - Background worker service and `python -m app.worker` entrypoint for due outbound retries, dead-letter handling, SLA refresh, Work Queue recompute, analytics rollups, and worker audit events.
 - Deployment packaging with Dockerfile, Procfile, compose stack, `.env.example`, and staging/production configuration validation.
 - Test-only database rebinding so smoke tests can run against a temporary SQLite file instead of the repo-default PostgreSQL database.
@@ -179,6 +180,10 @@ AI should not autonomously send customer-facing messages without a separately ap
 - `PATCH /api/v1/tickets/{ticket_id}`
 - `GET /api/v1/tickets/{ticket_id}/timeline`
 - `POST /api/v1/tickets/{ticket_id}/timeline`
+- `POST /api/v1/tickets/{ticket_id}/attachments/binary`
+- `POST /api/v1/tickets/{ticket_id}/attachments/{attachment_id}/download-link`
+- `GET /api/v1/tickets/{ticket_id}/attachments/{attachment_id}/download`
+- `GET /api/v1/tickets/{ticket_id}/attachments/{attachment_id}/download/signed`
 - `POST /api/v1/tickets/{ticket_id}/reply`
 - `POST /api/v1/tickets/{ticket_id}/handoffs`
 - `GET /api/v1/work-queue`

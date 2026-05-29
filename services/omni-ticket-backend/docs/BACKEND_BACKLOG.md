@@ -4,7 +4,7 @@ Last updated: 2026-05-29
 
 ## Current Milestone
 
-Status: Working Python/FastAPI vertical slice is running locally on `http://127.0.0.1:8000` against local PostgreSQL database `omni_ticket`, with the primary mutable operational paths, core operational reads, market-scoped connector account metadata, password-backed admin user management, durable outbound delivery queue, automation-rule execution, worker foundation, and deployment packaging moved onto SQLAlchemy-backed repositories. Local smoke tests pass, and the monorepo now includes a root GitHub Actions CI workflow for frontend lint/build plus backend compile, lint, typecheck, tests, migration sanity, and worker smoke.
+Status: Working Python/FastAPI vertical slice is running locally on `http://127.0.0.1:8000` against local PostgreSQL database `omni_ticket`, with the primary mutable operational paths, core operational reads, market-scoped connector account metadata, password-backed admin user management, durable outbound delivery queue, automation-rule execution, worker foundation, deployment packaging, and binary attachment storage/download support moved onto SQLAlchemy-backed repositories. Local smoke tests pass, and the monorepo now includes a root GitHub Actions CI workflow for frontend lint/build plus backend compile, lint, typecheck, tests, migration sanity, and worker smoke.
 
 Completed in this build:
 
@@ -35,6 +35,7 @@ Completed in this build:
 - Database-backed admin user creation and update APIs for role, active status, market assignment, and default market.
 - Per-user PBKDF2 password hashes, admin-set temporary passwords, password reset-required state, user password-change endpoint, and login timestamp capture.
 - Database-backed outbound message queue for public replies with idempotency keys, connector-account readiness checks, delivery status, retry, and dead-letter states.
+- Binary attachment upload/download path with local storage adapter, configurable size limit, blocked-file scan enforcement, and clean-only retrieval.
 - Background worker service and `python -m app.worker` entrypoint for due outbound retries, dead-letter handling, SLA refresh, Work Queue recompute, analytics rollups, and worker audit events.
 - Dockerfile, Procfile, compose stack, `.env.example`, deployment docs, and staging/production configuration validation for separate release, web, and worker processes.
 - Isolated smoke-test path that rebinds backend tests to a temporary SQLite database instead of mutating the repo-default PostgreSQL runtime.
@@ -53,7 +54,7 @@ Known production dependencies:
 - Meta app credentials for Facebook Messenger and Instagram DM.
 - Mailbox provider credentials.
 - SMS/voice provider credentials.
-- Attachment object storage and scanning.
+- Attachment object storage and production malware scanning provider.
 
 ## Phase 0: Repository Foundation
 
@@ -76,7 +77,7 @@ Known production dependencies:
 2. Add RBAC for agent, supervisor, admin, auditor, and service account roles. Route-level policy is done for current user roles; service-account policy remains pending.
 3. Add tenant isolation middleware and database scoping. Session/user/market scoping and the primary operational write/read paths now enforce market scope through database-backed routes.
 4. Add audit logging for every write action. Started, with auth, market-selection, access-denied, setup, ticketing, connector, worker, automation, and outbound events now durable.
-5. Add attachment metadata model and malware scanning integration point. Pending dependency.
+5. Add attachment metadata model and malware scanning integration point. Metadata plus local storage/download gate are done; production object storage and malware scanning provider remain pending dependencies.
 
 ## Phase 3: Ticket And Conversation APIs
 
@@ -109,7 +110,7 @@ Known production dependencies:
 
 ## Phase 6: Omnichannel Connectors
 
-1. Email connector: inbound mailbox sync, outbound send, thread mapping, attachments. Database-first simulated intake, account metadata, outbound queue, and local-dev send adapter done; real provider adapter pending.
+1. Email connector: inbound mailbox sync, outbound send, thread mapping, attachments. Database-first simulated intake, account metadata, outbound queue, local-dev send adapter, and binary attachment storage/download path done; real provider adapter pending.
 2. WhatsApp connector: webhook intake, template messages, media, delivery receipts. Database-first simulated intake, account metadata, outbound queue, and local-dev send adapter done; real provider adapter pending.
 3. Facebook Messenger connector: page webhook intake, replies, private reply flow, delivery state. Database-first simulated intake, account metadata, outbound queue, and local-dev send adapter done; real provider adapter pending.
 4. Instagram DM connector: DM intake, comment-to-DM handoff, media, reply state. Database-first simulated intake, account metadata, outbound queue, and local-dev send adapter done; real provider adapter pending.

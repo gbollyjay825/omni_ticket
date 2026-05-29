@@ -9,6 +9,10 @@ from sqlalchemy.orm import Session
 from app.api.v1.dependencies import get_store
 from app.api.v1.rbac import require_admin, require_audit_reader, require_operator, require_supervisor
 from app.api.v1.security import RequestContext, require_context
+from app.core.attachment_tokens import (
+    create_attachment_download_token,
+    parse_attachment_download_token,
+)
 from app.core.config import settings as app_settings
 from app.core.rate_limit import (
     RateLimitExceeded,
@@ -16,6 +20,7 @@ from app.core.rate_limit import (
 )
 from app.core.store import InMemoryStore
 from app.core.webhooks import verify_webhook_signature
+from app.db.audit import write_audit_event
 from app.db.connectors import connector_account_repository
 from app.db.management import management_repository
 from app.db.mappers import (
@@ -39,6 +44,7 @@ from app.models.domain import (
     AppendEventRequest,
     AutomationRule,
     Attachment,
+    AttachmentDownloadLink,
     AuditEvent,
     Channel,
     ChannelType,
@@ -441,6 +447,21 @@ def create_ticket_attachment(
     )
 
 
+def _download_attachment_response(attachment: Attachment) -> Response:
+    if attachment.scan_status != "clean":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Attachment is not cleared for download")
+    try:
+        content = attachment_storage.read(attachment.storage_key)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Attachment content not found") from exc
+    safe_name = attachment_storage.safe_filename(attachment.filename)
+    return Response(
+        content=content,
+        media_type=attachment.content_type,
+        headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
+    )
+
+
 @router.post("/tickets/{ticket_id}/attachments/binary", response_model=Attachment, status_code=201)
 async def upload_ticket_attachment(
     ticket_id: str,
@@ -481,6 +502,40 @@ async def upload_ticket_attachment(
     )
 
 
+@router.post(
+    "/tickets/{ticket_id}/attachments/{attachment_id}/download-link",
+    response_model=AttachmentDownloadLink,
+)
+def create_ticket_attachment_download_link(
+    ticket_id: str,
+    attachment_id: str,
+    context: RequestContext = Depends(require_context),
+    db: Session = Depends(get_db),
+) -> AttachmentDownloadLink:
+    attachment = ticket_repository.get_attachment(db, ticket_id, attachment_id, context.market_id)
+    if attachment.scan_status != "clean":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Attachment is not cleared for download")
+    token, expires_at = create_attachment_download_token(
+        market_id=context.market_id,
+        ticket_id=ticket_id,
+        attachment_id=attachment_id,
+    )
+    write_audit_event(
+        db,
+        actor=context.user.id,
+        action="attachment.download_link.create",
+        entity_type="attachment",
+        entity_id=attachment_id,
+        market_id=context.market_id,
+        details={"ticket_id": ticket_id, "expires_at": expires_at.isoformat()},
+        commit=True,
+    )
+    return AttachmentDownloadLink(
+        url=f"/api/v1/tickets/{ticket_id}/attachments/{attachment_id}/download/signed?token={token}",
+        expires_at=expires_at,
+    )
+
+
 @router.get("/tickets/{ticket_id}/attachments/{attachment_id}/download")
 def download_ticket_attachment(
     ticket_id: str,
@@ -489,18 +544,35 @@ def download_ticket_attachment(
     db: Session = Depends(get_db),
 ) -> Response:
     attachment = ticket_repository.get_attachment(db, ticket_id, attachment_id, context.market_id)
-    if attachment.scan_status != "clean":
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Attachment is not cleared for download")
-    try:
-        content = attachment_storage.read(attachment.storage_key)
-    except (OSError, ValueError) as exc:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Attachment content not found") from exc
-    safe_name = attachment_storage.safe_filename(attachment.filename)
-    return Response(
-        content=content,
-        media_type=attachment.content_type,
-        headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
+    return _download_attachment_response(attachment)
+
+
+@router.get("/tickets/{ticket_id}/attachments/{attachment_id}/download/signed")
+def download_ticket_attachment_with_signed_link(
+    ticket_id: str,
+    attachment_id: str,
+    token: str,
+    db: Session = Depends(get_db),
+) -> Response:
+    payload = parse_attachment_download_token(token)
+    if (
+        payload is None
+        or payload.ticket_id != ticket_id
+        or payload.attachment_id != attachment_id
+    ):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Invalid attachment download link")
+    attachment = ticket_repository.get_attachment(db, ticket_id, attachment_id, payload.market_id)
+    write_audit_event(
+        db,
+        actor="signed-download",
+        action="attachment.download",
+        entity_type="attachment",
+        entity_id=attachment_id,
+        market_id=payload.market_id,
+        details={"ticket_id": ticket_id, "mode": "signed_link"},
+        commit=True,
     )
+    return _download_attachment_response(attachment)
 
 
 @router.post("/tickets/{ticket_id}/reply", response_model=TimelineEvent)

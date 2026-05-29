@@ -11,7 +11,7 @@ Last updated: 2026-05-29
 | E3 Omnichannel operations workflow | Command Center, Work Queue, Channel Chats, Customer 360, composer, handoffs, and assistive guidance | Done | None |
 | E4 Admin, analytics, knowledge, workforce, and tracker | Operational management screens with meaningful data and controls | Done | None |
 | E5 Install-ready app, verification, and delivery | Offline state, app shell, responsive verification, and milestone emails | Done | None |
-| E6 Python backend vertical slice | Local HTTP API, isolated smoke tests, authenticated market sync, login, market scoping, local PostgreSQL runtime, password-backed user management, route-level RBAC, durable persistence foundation, outbound delivery queue, signed inbound webhooks, rate limits, background worker foundation, deployment packaging, signed-session fallback, automation-rule execution, request traceability, security audit trail, attachment metadata scanning, binary attachment upload/download boundary, and frontend write-through bridge | In Progress | Add real provider adapters, production SSO/MFA, custom permissions, managed hosting, dashboards, and alerting |
+| E6 Python backend vertical slice | Local HTTP API, isolated smoke tests, authenticated market sync, login, market scoping, local PostgreSQL runtime, password-backed user management, route-level RBAC, durable persistence foundation, outbound delivery queue, signed inbound webhooks, rate limits, background worker foundation, deployment packaging, signed-session fallback, automation-rule execution, request traceability, security audit trail, attachment metadata scanning, binary attachment upload/download boundary, signed attachment download links, and frontend write-through bridge | In Progress | Add real provider adapters, production SSO/MFA, custom permissions, managed hosting, dashboards, and alerting |
 
 ## Backlog
 
@@ -73,6 +73,7 @@ Last updated: 2026-05-29
 | B-054 | Replace shared demo-password auth with per-user password hashes, admin temporary password reset, and self-service password change endpoint | P0 | Done |
 | B-055 | Add ticket attachment metadata, policy scan state, audit history, timeline entries, and composer write-through bridge | P0 | Done |
 | B-056 | Add raw binary attachment upload/download endpoints, local storage adapter, file-size guardrails, and frontend file picker upload path | P0 | Done |
+| B-057 | Add expiring signed attachment download links with token validation and audit records | P0 | Done |
 
 ## Pending Items
 
@@ -136,3 +137,4 @@ Last updated: 2026-05-29
 | C-046 | Users now authenticate against per-user PBKDF2 password hashes; admins can create/reset temporary credentials and users can change passwords to clear reset requirements | 2026-05-29 |
 | C-047 | Ticket attachments now have database-backed metadata, local policy scan status, timeline events, audit history, and a composer metadata flow that writes through to the backend | 2026-05-29 |
 | C-048 | Clean binary attachments can now be uploaded through a raw backend endpoint, stored behind a local storage adapter, downloaded after scan clearance, and selected through the frontend file picker | 2026-05-29 |
+| C-049 | Attachment downloads now support expiring signed links with token validation and durable audit records for link creation and signed downloads | 2026-05-29 |

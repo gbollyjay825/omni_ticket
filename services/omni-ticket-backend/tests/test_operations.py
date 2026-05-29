@@ -833,6 +833,41 @@ def test_blocked_binary_attachment_cannot_be_downloaded(client: TestClient) -> N
     assert download.status_code == 403
 
 
+def test_clean_attachment_can_use_signed_download_link(client: TestClient) -> None:
+    ticket = client.get("/api/v1/tickets").json()[0]
+    upload = client.post(
+        f"/api/v1/tickets/{ticket['id']}/attachments/binary?filename=signed-proof.txt",
+        content=b"signed proof bytes",
+        headers={"content-type": "text/plain"},
+    )
+    assert upload.status_code == 201
+    attachment = upload.json()
+
+    link = client.post(
+        f"/api/v1/tickets/{ticket['id']}/attachments/{attachment['id']}/download-link"
+    )
+    assert link.status_code == 200
+    assert "/download/signed?token=" in link.json()["url"]
+
+    public_download = TestClient(create_app()).get(link.json()["url"])
+    assert public_download.status_code == 200
+    assert public_download.content == b"signed proof bytes"
+
+    tampered = TestClient(create_app()).get(f"{link.json()['url']}x")
+    assert tampered.status_code == 401
+
+    audit = client.get("/api/v1/audit").json()
+    assert any(
+        event["action"] == "attachment.download_link.create"
+        and event["entity_id"] == attachment["id"]
+        for event in audit
+    )
+    assert any(
+        event["action"] == "attachment.download" and event["entity_id"] == attachment["id"]
+        for event in audit
+    )
+
+
 def test_failed_outbound_message_can_be_retried_after_connector_is_enabled(
     client: TestClient,
 ) -> None:
