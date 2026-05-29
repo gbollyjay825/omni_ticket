@@ -35,3 +35,17 @@ def test_validate_for_process_raises_for_invalid_production_config() -> None:
 
     with pytest.raises(RuntimeError):
         settings.validate_for_process("worker")
+
+
+def test_rate_limit_settings_must_be_positive() -> None:
+    settings = Settings(
+        login_rate_limit_attempts=0,
+        connector_inbound_rate_limit_window_seconds=0,
+        webhook_rate_limit_attempts=0,
+    )
+
+    errors = settings.deployment_errors("web")
+
+    assert any("OMNI_LOGIN_RATE_LIMIT_ATTEMPTS" in error for error in errors)
+    assert any("OMNI_CONNECTOR_INBOUND_RATE_LIMIT_WINDOW_SECONDS" in error for error in errors)
+    assert any("OMNI_WEBHOOK_RATE_LIMIT_ATTEMPTS" in error for error in errors)

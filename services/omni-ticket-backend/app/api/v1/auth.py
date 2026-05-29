@@ -1,12 +1,19 @@
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.v1.rbac import require_admin, require_supervisor
 from app.api.v1.security import RequestContext, require_context
 from app.core.auth import create_session_token
+from app.core.config import settings
+from app.core.rate_limit import (
+    RateLimitExceeded,
+    client_identity,
+    raise_rate_limit_exceeded,
+    rate_limiter,
+)
 from app.db.mappers import market_from_record, user_from_record
 from app.db.models import AuditEventRecord, MarketRecord, SessionRecord, UserRecord
 from app.db.session import get_db
@@ -79,7 +86,20 @@ def _audit_user_write(
 
 
 @router.post("/login", response_model=AuthSession)
-def login(request: LoginRequest, db: Session = Depends(get_db)) -> AuthSession:
+def login(
+    request: LoginRequest,
+    http_request: Request,
+    db: Session = Depends(get_db),
+) -> AuthSession:
+    try:
+        rate_limiter.check(
+            f"auth-login:{client_identity(http_request)}:{str(request.email).lower()}",
+            limit=settings.login_rate_limit_attempts,
+            window_seconds=settings.login_rate_limit_window_seconds,
+        )
+    except RateLimitExceeded as exc:
+        raise_rate_limit_exceeded(exc)
+
     user_record = db.scalar(
         select(UserRecord).where(UserRecord.email == str(request.email).lower())
     )

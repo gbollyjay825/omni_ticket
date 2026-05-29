@@ -13,6 +13,12 @@ class Settings(BaseSettings):
     session_secret: str = "omni-ticket-local-dev-secret"
     session_ttl_minutes: int = 8 * 60
     webhook_signature_tolerance_seconds: int = 5 * 60
+    login_rate_limit_attempts: int = 10
+    login_rate_limit_window_seconds: int = 60
+    connector_inbound_rate_limit_attempts: int = 120
+    connector_inbound_rate_limit_window_seconds: int = 60
+    webhook_rate_limit_attempts: int = 120
+    webhook_rate_limit_window_seconds: int = 60
     allowed_origins: list[str] = [
         "http://127.0.0.1:5173",
         "http://localhost:5173",
@@ -40,6 +46,17 @@ class Settings(BaseSettings):
             errors.append("OMNI_SESSION_TTL_MINUTES must be at least 5.")
         if self.webhook_signature_tolerance_seconds < 30:
             errors.append("OMNI_WEBHOOK_SIGNATURE_TOLERANCE_SECONDS must be at least 30.")
+        rate_limit_fields = {
+            "OMNI_LOGIN_RATE_LIMIT_ATTEMPTS": self.login_rate_limit_attempts,
+            "OMNI_LOGIN_RATE_LIMIT_WINDOW_SECONDS": self.login_rate_limit_window_seconds,
+            "OMNI_CONNECTOR_INBOUND_RATE_LIMIT_ATTEMPTS": self.connector_inbound_rate_limit_attempts,
+            "OMNI_CONNECTOR_INBOUND_RATE_LIMIT_WINDOW_SECONDS": self.connector_inbound_rate_limit_window_seconds,
+            "OMNI_WEBHOOK_RATE_LIMIT_ATTEMPTS": self.webhook_rate_limit_attempts,
+            "OMNI_WEBHOOK_RATE_LIMIT_WINDOW_SECONDS": self.webhook_rate_limit_window_seconds,
+        }
+        for field_name, field_value in rate_limit_fields.items():
+            if field_value < 1:
+                errors.append(f"{field_name} must be at least 1.")
         if self.production_like:
             if self.session_secret == "omni-ticket-local-dev-secret":
                 errors.append("OMNI_SESSION_SECRET must be set in staging/production.")

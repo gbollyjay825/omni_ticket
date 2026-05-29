@@ -41,6 +41,7 @@ The production persistence foundation now includes:
 - Database-first analytics summary and Work Queue reads that refresh SLA state, score priority queues, calculate channel volume, and report active agent occupancy.
 - Database-backed connector account readiness for Email, WhatsApp Business, Facebook Messenger, Instagram DM, SMS, and voice, including credential references rather than raw secrets.
 - Signed connector webhook endpoint for provider callbacks with account readiness checks, HMAC verification, timestamp freshness, delivery-id replay protection, connector-account failure state, and audit history.
+- In-process rate limiter for login, authenticated connector intake, and signed provider webhooks, returning `429` plus `Retry-After` before expensive downstream work.
 - Database-backed admin user creation and management for role, active state, market assignment, and default market.
 - Database-backed outbound message queue for public replies, including idempotency keys, connector-account readiness checks, delivery status, retry, and dead-letter states.
 - Background worker service and `python -m app.worker` entrypoint for due outbound retries, dead-letter handling, SLA refresh, Work Queue recompute, analytics rollups, and worker audit events.

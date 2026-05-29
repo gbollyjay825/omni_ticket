@@ -9,6 +9,13 @@ from sqlalchemy.orm import Session
 from app.api.v1.dependencies import get_store
 from app.api.v1.rbac import require_admin, require_audit_reader, require_operator, require_supervisor
 from app.api.v1.security import RequestContext, require_context
+from app.core.config import settings as app_settings
+from app.core.rate_limit import (
+    RateLimitExceeded,
+    client_identity,
+    raise_rate_limit_exceeded,
+    rate_limiter,
+)
 from app.core.store import InMemoryStore
 from app.core.webhooks import verify_webhook_signature
 from app.db.connectors import connector_account_repository
@@ -605,12 +612,25 @@ def read_analytics_overview(
 @router.post("/connectors/inbound", status_code=201)
 def ingest_connector(
     request: ConnectorInboundRequest,
+    http_request: Request,
     context: RequestContext = Depends(require_context),
     state: InMemoryStore = Depends(get_store),
     db: Session = Depends(get_db),
 ) -> dict:
     require_operator(context)
     market_id = request.market_id or context.market_id
+    try:
+        rate_limiter.check(
+            (
+                "connector-inbound:"
+                f"{client_identity(http_request)}:{context.user.id}:{market_id}:{request.provider.value}"
+            ),
+            limit=app_settings.connector_inbound_rate_limit_attempts,
+            window_seconds=app_settings.connector_inbound_rate_limit_window_seconds,
+        )
+    except RateLimitExceeded as exc:
+        raise_rate_limit_exceeded(exc)
+
     if market_id not in context.user.market_ids:
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="User is not assigned to this market")
     target_market = context.market
@@ -641,6 +661,14 @@ async def ingest_signed_webhook(
     market_record = db.scalar(select(MarketRecord).where(MarketRecord.code == market_code.upper()))
     if market_record is None or not market_record.active:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Market not found")
+    try:
+        rate_limiter.check(
+            f"signed-webhook:{client_identity(http_request)}:{provider.value}:{market_record.id}",
+            limit=app_settings.webhook_rate_limit_attempts,
+            window_seconds=app_settings.webhook_rate_limit_window_seconds,
+        )
+    except RateLimitExceeded as exc:
+        raise_rate_limit_exceeded(exc)
 
     account = connector_account_repository.get_account_for_provider(
         db,

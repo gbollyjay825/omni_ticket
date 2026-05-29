@@ -8,6 +8,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
+from app.core.rate_limit import rate_limiter
 from app.core.webhooks import sign_webhook_body
 from app.core.store import store
 from app.db.models import AuditEventRecord, OutboundMessageRecord, SessionRecord, TicketRecord
@@ -91,6 +93,31 @@ def test_operations_require_authentication() -> None:
     unauthenticated = TestClient(create_app())
     response = unauthenticated.get("/api/v1/work-queue")
     assert response.status_code == 401
+
+
+def test_login_rate_limit_blocks_repeated_attempts(client: TestClient) -> None:
+    rate_limiter.reset()
+    original_attempts = settings.login_rate_limit_attempts
+    original_window = settings.login_rate_limit_window_seconds
+    settings.login_rate_limit_attempts = 2
+    settings.login_rate_limit_window_seconds = 60
+    try:
+        anonymous = TestClient(create_app())
+        payload = {
+            "email": "gbolahan@omniticket.example.com",
+            "password": "wrong-password",
+            "market_id": "market-ng",
+        }
+        assert anonymous.post("/api/v1/auth/login", json=payload).status_code == 401
+        assert anonymous.post("/api/v1/auth/login", json=payload).status_code == 401
+        limited = anonymous.post("/api/v1/auth/login", json=payload)
+        assert limited.status_code == 429
+        assert limited.json()["detail"] == "Rate limit exceeded"
+        assert int(limited.headers["Retry-After"]) >= 1
+    finally:
+        settings.login_rate_limit_attempts = original_attempts
+        settings.login_rate_limit_window_seconds = original_window
+        rate_limiter.reset()
 
 
 def test_market_scope_hides_other_market_customers(
@@ -869,6 +896,44 @@ def test_connector_ingest_is_database_first_after_runtime_reset(client: TestClie
     assert duplicate.json()["ticket"]["id"] == ticket_id
 
 
+def test_authenticated_connector_ingest_is_rate_limited(client: TestClient) -> None:
+    rate_limiter.reset()
+    original_attempts = settings.connector_inbound_rate_limit_attempts
+    original_window = settings.connector_inbound_rate_limit_window_seconds
+    settings.connector_inbound_rate_limit_attempts = 1
+    settings.connector_inbound_rate_limit_window_seconds = 60
+    try:
+        first = client.post(
+            "/api/v1/connectors/inbound",
+            json={
+                "provider": "whatsapp",
+                "external_id": f"rate-auth-{uuid4().hex}",
+                "customer_name": "Rate Limited Auth",
+                "customer_email": f"rate-auth-{uuid4().hex}@example.com",
+                "subject": "First authenticated connector event",
+                "body": "This first event should pass.",
+            },
+        )
+        assert first.status_code == 201
+        limited = client.post(
+            "/api/v1/connectors/inbound",
+            json={
+                "provider": "whatsapp",
+                "external_id": f"rate-auth-{uuid4().hex}",
+                "customer_name": "Rate Limited Auth",
+                "customer_email": f"rate-auth-{uuid4().hex}@example.com",
+                "subject": "Second authenticated connector event",
+                "body": "This second event should be rate limited.",
+            },
+        )
+        assert limited.status_code == 429
+        assert limited.json()["detail"] == "Rate limit exceeded"
+    finally:
+        settings.connector_inbound_rate_limit_attempts = original_attempts
+        settings.connector_inbound_rate_limit_window_seconds = original_window
+        rate_limiter.reset()
+
+
 def test_signed_webhook_ingests_without_agent_session(client: TestClient) -> None:
     account = _ready_connector_account(client)
     payload = {
@@ -938,6 +1003,54 @@ def test_signed_webhook_rejects_invalid_signature_and_tracks_failure(client: Tes
         event["external_id"] == payload["external_id"]
         for event in client.get("/api/v1/connectors/events").json()
     )
+
+
+def test_signed_webhook_is_rate_limited_before_ticket_creation(client: TestClient) -> None:
+    account = _ready_connector_account(client)
+    rate_limiter.reset()
+    original_attempts = settings.webhook_rate_limit_attempts
+    original_window = settings.webhook_rate_limit_window_seconds
+    settings.webhook_rate_limit_attempts = 1
+    settings.webhook_rate_limit_window_seconds = 60
+    try:
+        first_payload = {
+            "external_id": f"wa-rate-{uuid4().hex}",
+            "customer_name": "Webhook Rate One",
+            "customer_email": f"webhook-rate-one-{uuid4().hex}@example.com",
+            "subject": "First signed webhook",
+            "body": "The first signed webhook should pass.",
+        }
+        first_body = _json_body(first_payload)
+        first = TestClient(create_app()).post(
+            "/api/v1/webhooks/whatsapp/ng",
+            content=first_body,
+            headers=_signed_webhook_headers(account, first_body, "delivery-rate-1"),
+        )
+        assert first.status_code == 201
+
+        second_payload = {
+            "external_id": f"wa-rate-{uuid4().hex}",
+            "customer_name": "Webhook Rate Two",
+            "customer_email": f"webhook-rate-two-{uuid4().hex}@example.com",
+            "subject": "Second signed webhook",
+            "body": "The second signed webhook should be limited.",
+        }
+        second_body = _json_body(second_payload)
+        limited = TestClient(create_app()).post(
+            "/api/v1/webhooks/whatsapp/ng",
+            content=second_body,
+            headers=_signed_webhook_headers(account, second_body, "delivery-rate-2"),
+        )
+        assert limited.status_code == 429
+        assert limited.json()["detail"] == "Rate limit exceeded"
+        assert not any(
+            event["external_id"] == second_payload["external_id"]
+            for event in client.get("/api/v1/connectors/events").json()
+        )
+    finally:
+        settings.webhook_rate_limit_attempts = original_attempts
+        settings.webhook_rate_limit_window_seconds = original_window
+        rate_limiter.reset()
 
 
 def test_signed_webhook_blocks_replayed_delivery_id_with_new_event(

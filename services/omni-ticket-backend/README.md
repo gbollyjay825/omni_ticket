@@ -30,6 +30,7 @@ This repository now runs a working FastAPI backend slice for Omni Ticket:
 - Database-backed connector account readiness for market-specific Email, WhatsApp Business, Facebook Messenger, Instagram DM, SMS, and voice accounts.
 - Database-first connector intake simulation with idempotency, customer creation/reuse, ticket creation, connector receipt timeline events, and outbound connector event recording.
 - Signed connector webhook endpoint for provider callbacks with HMAC verification, timestamp tolerance, delivery-id replay protection, account failure tracking, and audit history.
+- Local in-process rate limiting for login, authenticated connector intake, and signed provider webhooks, with production backing intended for Redis, gateway, or WAF limits.
 - Database-first outbound message queue for public replies with connector-account readiness checks, delivery status, retry, and dead-letter states.
 - Background worker entrypoint for due outbound retries, dead-letter handling, SLA refresh, Work Queue recompute, analytics rollups, and worker audit events.
 - Production packaging for release, web, and worker processes through Docker, Procfile, compose, and environment validation.

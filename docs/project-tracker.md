@@ -11,7 +11,7 @@ Last updated: 2026-05-29
 | E3 Omnichannel operations workflow | Command Center, Work Queue, Channel Chats, Customer 360, composer, handoffs, and assistive guidance | Done | None |
 | E4 Admin, analytics, knowledge, workforce, and tracker | Operational management screens with meaningful data and controls | Done | None |
 | E5 Install-ready app, verification, and delivery | Offline state, app shell, responsive verification, and milestone emails | Done | None |
-| E6 Python backend vertical slice | Local HTTP API, isolated smoke tests, authenticated market sync, login, market scoping, local PostgreSQL runtime, user management, route-level RBAC, durable persistence foundation, outbound delivery queue, signed inbound webhooks, background worker foundation, deployment packaging, signed-session fallback, automation-rule execution, and frontend write-through bridge | In Progress | Add real provider adapters, production SSO/MFA, custom permissions, managed hosting, and observability |
+| E6 Python backend vertical slice | Local HTTP API, isolated smoke tests, authenticated market sync, login, market scoping, local PostgreSQL runtime, user management, route-level RBAC, durable persistence foundation, outbound delivery queue, signed inbound webhooks, rate limits, background worker foundation, deployment packaging, signed-session fallback, automation-rule execution, and frontend write-through bridge | In Progress | Add real provider adapters, production SSO/MFA, custom permissions, managed hosting, and observability |
 
 ## Backlog
 
@@ -64,6 +64,7 @@ Last updated: 2026-05-29
 | B-045 | Execute automation rules on ticket creation for routing, priority, tags, checklist tasks, rule health, timeline, and audit | P0 | Done |
 | B-046 | Add signed connector webhook intake with timestamp freshness, delivery-id replay protection, account failure state, and audit history | P0 | Done |
 | B-047 | Add route-level RBAC for agents, supervisors, admins, and auditors across setup, operations, audit, and readiness surfaces | P0 | Done |
+| B-048 | Add local rate limiting for login, authenticated connector intake, and signed provider webhooks with `429` and `Retry-After` behavior | P0 | Done |
 
 ## Pending Items
 
@@ -118,3 +119,4 @@ Last updated: 2026-05-29
 | C-037 | Automation rules now execute during ticket creation, applying deterministic routing, priority, tags, checklist tasks, last-fired state, timeline entries, and audit history even when AI routing is disabled | 2026-05-29 |
 | C-038 | Signed provider webhook intake added with account readiness checks, HMAC signature verification, timestamp freshness, delivery-id replay protection, failure tracking, and audit history | 2026-05-29 |
 | C-039 | Route-level RBAC now enforces agent operational writes, supervisor controls, admin-only setup, auditor read-only access, audit visibility, and readiness restrictions | 2026-05-29 |
+| C-040 | Login, authenticated connector intake, and signed provider webhooks now have configurable local rate limits with `429` and `Retry-After` responses | 2026-05-29 |

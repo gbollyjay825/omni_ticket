@@ -21,6 +21,12 @@ OMNI_INITIALIZE_DATABASE=false
 OMNI_SESSION_SECRET=replace-with-a-long-random-secret
 OMNI_SESSION_TTL_MINUTES=480
 OMNI_WEBHOOK_SIGNATURE_TOLERANCE_SECONDS=300
+OMNI_LOGIN_RATE_LIMIT_ATTEMPTS=10
+OMNI_LOGIN_RATE_LIMIT_WINDOW_SECONDS=60
+OMNI_CONNECTOR_INBOUND_RATE_LIMIT_ATTEMPTS=120
+OMNI_CONNECTOR_INBOUND_RATE_LIMIT_WINDOW_SECONDS=60
+OMNI_WEBHOOK_RATE_LIMIT_ATTEMPTS=120
+OMNI_WEBHOOK_RATE_LIMIT_WINDOW_SECONDS=60
 OMNI_ALLOWED_ORIGINS='["https://your-frontend.example.com"]'
 OMNI_WORKER_INTERVAL_SECONDS=60
 OMNI_WORKER_OUTBOUND_LIMIT=50
@@ -81,8 +87,19 @@ At startup, the API and worker validate staging/production configuration:
 - `OMNI_SESSION_SECRET` must not use the local development default.
 - `OMNI_ALLOWED_ORIGINS` must be explicit and cannot contain `*`.
 - Worker interval and outbound limit must be positive.
+- Rate-limit attempt and window settings must be positive.
 
 This keeps staging/production from silently starting with local/demo defaults.
+
+## Rate Limits
+
+The local backend includes an in-process limiter for the routes most exposed to abuse:
+
+- `POST /api/v1/auth/login`
+- `POST /api/v1/connectors/inbound`
+- `POST /api/v1/webhooks/{provider}/{market_code}`
+
+When the limit is exceeded, the API returns `429` with a `Retry-After` header. The in-process limiter is suitable for local and single-instance prototype deployment. A production multi-instance deployment should back the same policy with Redis, gateway/WAF rules, or the hosting provider's edge rate limit so counters are shared across instances.
 
 ## Signed Connector Webhooks
 
