@@ -11,7 +11,7 @@ Last updated: 2026-05-29
 | E3 Omnichannel operations workflow | Command Center, Work Queue, Channel Chats, Customer 360, composer, handoffs, and assistive guidance | Done | None |
 | E4 Admin, analytics, knowledge, workforce, and tracker | Operational management screens with meaningful data and controls | Done | None |
 | E5 Install-ready app, verification, and delivery | Offline state, app shell, responsive verification, and milestone emails | Done | None |
-| E6 Python backend vertical slice | Local HTTP API, isolated smoke tests, authenticated market sync, login, market scoping, local PostgreSQL runtime, user management, route-level RBAC, durable persistence foundation, outbound delivery queue, signed inbound webhooks, rate limits, background worker foundation, deployment packaging, signed-session fallback, automation-rule execution, and frontend write-through bridge | In Progress | Add real provider adapters, production SSO/MFA, custom permissions, managed hosting, and observability |
+| E6 Python backend vertical slice | Local HTTP API, isolated smoke tests, authenticated market sync, login, market scoping, local PostgreSQL runtime, user management, route-level RBAC, durable persistence foundation, outbound delivery queue, signed inbound webhooks, rate limits, background worker foundation, deployment packaging, signed-session fallback, automation-rule execution, request traceability, security audit trail, and frontend write-through bridge | In Progress | Add real provider adapters, production SSO/MFA, custom permissions, managed hosting, dashboards, and alerting |
 
 ## Backlog
 
@@ -68,6 +68,7 @@ Last updated: 2026-05-29
 | B-049 | Stabilize production rate-limit keys behind Vercel proxy routing and verify live login smoke tests | P0 | Done |
 | B-050 | Add root GitHub Actions CI for frontend lint/build and backend compile, lint, typecheck, tests, migration sanity, and worker smoke | P0 | Done |
 | B-051 | Add request correlation headers, processing-time headers, and structured backend access logs | P0 | Done |
+| B-052 | Add durable audit records for login success/failure, rate-limit denial, explicit market selection, missing auth, invalid session, and market denial | P0 | Done |
 
 ## Pending Items
 
@@ -126,3 +127,4 @@ Last updated: 2026-05-29
 | C-041 | Production Vercel smoke tests now confirm admin login returns `200` and repeated invalid login attempts return `429` after the configured limit | 2026-05-29 |
 | C-042 | Root GitHub Actions CI now gates push and pull request changes with frontend and backend production checks | 2026-05-29 |
 | C-043 | Backend responses now include request IDs and processing time while structured JSON access logs provide production traceability | 2026-05-29 |
+| C-044 | Auth and access-control decisions now write request-correlated audit records into the durable backend audit trail | 2026-05-29 |

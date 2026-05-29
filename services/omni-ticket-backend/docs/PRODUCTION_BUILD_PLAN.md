@@ -74,7 +74,7 @@ Build:
 - Add market-access enforcement in reusable dependencies.
 - Add admin user management APIs.
 - Add admin user management APIs. Done for local backend.
-- Add audit trail for all auth, market switch, and access-denied events.
+- Add audit trail for all auth, market switch, and access-denied events. Done for local sessions, explicit market selection, failed login, missing authentication, invalid sessions, rate limiting, and market-scope denial.
 
 Acceptance:
 
@@ -82,6 +82,7 @@ Acceptance:
 - A user assigned only to Ghana cannot read Nigeria/UK records. Done in API tests.
 - Admin can add/remove users from markets. Done for local backend and frontend Setup screen.
 - Agents, supervisors, admins, and auditors are constrained by route-level RBAC across operations, setup, audit, and readiness APIs. Done.
+- Auth and access-denied audit records include request IDs and can be read from the database-backed audit endpoint. Done.
 
 ## Phase 3: Durable Ticketing And Customer Management
 

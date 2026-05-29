@@ -65,6 +65,89 @@ def test_login_returns_user_and_available_markets(client: TestClient) -> None:
     assert body["market"]["id"] == "market-ng"
 
 
+def test_auth_success_and_market_selection_are_audited() -> None:
+    anonymous = TestClient(create_app())
+    login_response = anonymous.post(
+        "/api/v1/auth/login",
+        headers={"X-Request-ID": "trace-market-login"},
+        json={
+            "email": "gbolahan@omniticket.example.com",
+            "password": "omni-demo",
+            "market_id": "market-gh",
+        },
+    )
+    assert login_response.status_code == 200
+    token = login_response.json()["access_token"]
+    audit_response = anonymous.get(
+        "/api/v1/audit",
+        headers={"Authorization": f"Bearer {token}", "X-Omni-Market": "market-gh"},
+    )
+    assert audit_response.status_code == 200
+    events = audit_response.json()
+    assert any(
+        event["action"] == "auth.login.success"
+        and event["details"]["request_id"] == "trace-market-login"
+        for event in events
+    )
+    assert any(
+        event["action"] == "auth.market.selected"
+        and event["entity_id"] == "market-gh"
+        and event["details"]["request_id"] == "trace-market-login"
+        for event in events
+    )
+
+
+def test_failed_login_and_access_denial_are_audited(
+    client: TestClient,
+    login_as: Callable[[str, str], dict[str, str]],
+) -> None:
+    anonymous = TestClient(create_app())
+    failed_login = anonymous.post(
+        "/api/v1/auth/login",
+        headers={"X-Request-ID": "trace-login-denied"},
+        json={
+            "email": "gbolahan@omniticket.example.com",
+            "password": "wrong-password",
+            "market_id": "market-ng",
+        },
+    )
+    assert failed_login.status_code == 401
+
+    missing_auth = anonymous.get(
+        "/api/v1/work-queue",
+        headers={"X-Request-ID": "trace-missing-auth"},
+    )
+    assert missing_auth.status_code == 401
+
+    gh_headers = login_as("kofi.gh@omniticket.example.com", "market-gh")
+    denied_market = client.get(
+        "/api/v1/customers",
+        headers={**gh_headers, "X-Omni-Market": "market-ng", "X-Request-ID": "trace-market-denied"},
+    )
+    assert denied_market.status_code == 403
+
+    audit_response = client.get("/api/v1/audit")
+    assert audit_response.status_code == 200
+    events = audit_response.json()
+    assert any(
+        event["action"] == "auth.login.denied"
+        and event["details"]["request_id"] == "trace-login-denied"
+        and event["details"]["reason"] == "invalid_credentials"
+        for event in events
+    )
+    assert any(
+        event["action"] == "auth.required"
+        and event["details"]["request_id"] == "trace-missing-auth"
+        for event in events
+    )
+    assert any(
+        event["action"] == "auth.market.denied"
+        and event["details"]["request_id"] == "trace-market-denied"
+        and event["entity_id"] == "market-ng"
+        for event in events
+    )
+
+
 def test_signed_token_survives_missing_session_record(client: TestClient) -> None:
     token = client.headers["Authorization"].removeprefix("Bearer ")
     with Session(get_engine()) as session:

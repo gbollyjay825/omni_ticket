@@ -3,7 +3,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.api.v1.dependencies import get_store
@@ -18,8 +18,14 @@ from app.core.store import InMemoryStore
 from app.core.webhooks import verify_webhook_signature
 from app.db.connectors import connector_account_repository
 from app.db.management import management_repository
-from app.db.mappers import company_from_record, customer_from_record, market_from_record, user_from_record
-from app.db.models import CompanyRecord, CustomerRecord, MarketRecord, UserRecord
+from app.db.mappers import (
+    audit_event_from_record,
+    company_from_record,
+    customer_from_record,
+    market_from_record,
+    user_from_record,
+)
+from app.db.models import AuditEventRecord, CompanyRecord, CustomerRecord, MarketRecord, UserRecord
 from app.db.operations import operations_repository
 from app.db.outbound import outbound_repository
 from app.db.rate_limit import database_rate_limiter
@@ -874,10 +880,16 @@ def list_connector_events(
 @router.get("/audit", response_model=list[AuditEvent])
 def list_audit_events(
     context: RequestContext = Depends(require_context),
-    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
 ) -> list[AuditEvent]:
     require_audit_reader(context)
-    return [event for event in state.audit if event.market_id in {None, context.market_id}]
+    records = db.scalars(
+        select(AuditEventRecord)
+        .where(or_(AuditEventRecord.market_id.is_(None), AuditEventRecord.market_id == context.market_id))
+        .order_by(AuditEventRecord.created_at.desc())
+        .limit(500)
+    ).all()
+    return [audit_event_from_record(record) for record in records]
 
 
 @router.get("/tracker")

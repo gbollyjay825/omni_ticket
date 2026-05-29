@@ -104,6 +104,8 @@ The independent backend now exposes these routes and keeps them intentionally cl
 
 The current backend uses SQLAlchemy persistence with local PostgreSQL database `omni_ticket` through the backend `.env`; SQLite remains available as a fallback by changing `OMNI_DATABASE_URL`. Public replies now move through a durable outbound-message table before the local-dev provider adapter marks them sent or failed. Live Freshdesk/Freshworks import or sync is still out of scope unless explicitly requested.
 
+Security-sensitive backend paths now emit durable audit records for login success, failed login, rate-limit denial, explicit market selection, missing authentication, invalid sessions, and market-scope denial. These records include request IDs when available so operations admins can correlate audit entries with backend access logs and browser-visible request IDs.
+
 ## Backend Worker Boundary
 
 The backend now includes a worker entrypoint in the independent Python project:

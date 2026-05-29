@@ -110,6 +110,16 @@ Every API response includes:
 
 The API also emits structured JSON access logs through the `omni_ticket.access` logger with request ID, method, path, status code, and duration. These logs are intentionally provider-neutral so they can be captured by local Docker logs, Vercel logs, or a future OpenTelemetry/log drain integration without changing route handlers.
 
+## Security Audit Trail
+
+The database-backed audit endpoint includes operational and security events. Auth and access-control events now cover:
+
+- Successful login and explicit market selection.
+- Failed login and rate-limit denial.
+- Missing authentication, invalid sessions, expired sessions, inactive users, and denied market access.
+
+Audit details include the request ID when present so an administrator can correlate a UI incident, backend response, and log line.
+
 ## Signed Connector Webhooks
 
 Provider adapter callbacks can post to:

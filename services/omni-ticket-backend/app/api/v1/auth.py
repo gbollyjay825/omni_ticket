@@ -12,8 +12,9 @@ from app.core.rate_limit import (
     RateLimitExceeded,
     raise_rate_limit_exceeded,
 )
+from app.db.audit import write_audit_event
 from app.db.mappers import market_from_record, user_from_record
-from app.db.models import AuditEventRecord, MarketRecord, SessionRecord, UserRecord
+from app.db.models import MarketRecord, SessionRecord, UserRecord
 from app.db.rate_limit import database_rate_limiter
 from app.db.session import get_db
 from app.models.domain import (
@@ -62,28 +63,6 @@ def _normalize_market_assignment(
     return normalized_market_ids, resolved_default_market_id
 
 
-def _audit_user_write(
-    db: Session,
-    *,
-    actor: str,
-    action: str,
-    user_id: str,
-    market_id: str | None,
-    details: dict,
-) -> None:
-    db.add(
-        AuditEventRecord(
-            id=f"audit_{uuid4().hex}",
-            actor=actor,
-            action=action,
-            entity_type="user",
-            entity_id=user_id,
-            market_id=market_id,
-            details=details,
-        )
-    )
-
-
 @router.post("/login", response_model=AuthSession)
 def login(
     request: LoginRequest,
@@ -97,25 +76,93 @@ def login(
             window_seconds=settings.login_rate_limit_window_seconds,
         )
     except RateLimitExceeded as exc:
+        write_audit_event(
+            db,
+            actor=str(request.email).lower(),
+            action="auth.login.rate_limited",
+            entity_type="auth",
+            entity_id=str(request.email).lower(),
+            market_id=request.market_id,
+            details={"email": str(request.email).lower(), "requested_market_id": request.market_id},
+            commit=True,
+        )
         raise_rate_limit_exceeded(exc)
 
     user_record = db.scalar(
         select(UserRecord).where(UserRecord.email == str(request.email).lower())
     )
     if user_record is None or not user_record.active or request.password != DEMO_PASSWORD:
+        reason = "inactive_user" if user_record is not None and not user_record.active else "invalid_credentials"
+        write_audit_event(
+            db,
+            actor=str(request.email).lower(),
+            action="auth.login.denied",
+            entity_type="auth",
+            entity_id=str(request.email).lower(),
+            market_id=request.market_id or (user_record.default_market_id if user_record else None),
+            details={
+                "email": str(request.email).lower(),
+                "reason": reason,
+                "requested_market_id": request.market_id,
+            },
+            commit=True,
+        )
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 
     user = user_from_record(user_record)
     market_id = request.market_id or user.default_market_id
     if market_id not in user.market_ids:
+        write_audit_event(
+            db,
+            actor=user.id,
+            action="auth.market.denied",
+            entity_type="market",
+            entity_id=market_id,
+            market_id=market_id,
+            details={"email": str(request.email).lower(), "assigned_market_ids": user.market_ids},
+            commit=True,
+        )
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="User is not assigned to this market")
 
     market_record = db.get(MarketRecord, market_id)
     if market_record is None or not market_record.active:
+        write_audit_event(
+            db,
+            actor=user.id,
+            action="auth.login.denied",
+            entity_type="market",
+            entity_id=market_id,
+            market_id=market_id,
+            details={"email": str(request.email).lower(), "reason": "market_not_found_or_inactive"},
+            commit=True,
+        )
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Market not found")
 
     token, expires_at = create_session_token(user.id)
     db.add(SessionRecord(token=token, user_id=user.id, expires_at=expires_at))
+    write_audit_event(
+        db,
+        actor=user.id,
+        action="auth.login.success",
+        entity_type="auth_session",
+        entity_id=user.id,
+        market_id=market_id,
+        details={
+            "email": str(request.email).lower(),
+            "selected_market_id": market_id,
+            "explicit_market_selection": request.market_id is not None,
+        },
+    )
+    if request.market_id is not None:
+        write_audit_event(
+            db,
+            actor=user.id,
+            action="auth.market.selected",
+            entity_type="market",
+            entity_id=market_id,
+            market_id=market_id,
+            details={"email": str(request.email).lower(), "selected_market_id": market_id},
+        )
     db.commit()
 
     return AuthSession(
@@ -178,11 +225,12 @@ def create_user(
         active=request.active,
     )
     db.add(record)
-    _audit_user_write(
+    write_audit_event(
         db,
         actor=context.user.id,
         action="user.create",
-        user_id=record.id,
+        entity_type="user",
+        entity_id=record.id,
         market_id=context.market_id,
         details={"email": record.email, "role": record.role, "market_ids": market_ids},
     )
@@ -229,11 +277,12 @@ def update_user(
         record.default_market_id = default_market_id
     if request.active is not None:
         record.active = request.active
-    _audit_user_write(
+    write_audit_event(
         db,
         actor=context.user.id,
         action="user.update",
-        user_id=record.id,
+        entity_type="user",
+        entity_id=record.id,
         market_id=context.market_id,
         details=patch,
     )

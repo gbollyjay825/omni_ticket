@@ -20,6 +20,7 @@ This repository now runs a working FastAPI backend slice for Omni Ticket:
 - SQLAlchemy/Alembic persistence foundation with PostgreSQL-ready configuration and local SQLite fallback.
 - Local PostgreSQL runtime through `OMNI_DATABASE_URL=postgresql+psycopg:///omni_ticket`.
 - Database-backed local login/session validation.
+- Durable audit records for login success, login denial, rate-limit denial, explicit market selection, missing authentication, invalid sessions, and market access denial.
 - Database-backed admin user creation and management for role, active state, assigned markets, and default market.
 - Database-backed market settings, including durable AI Work Queue automation enable/disable behavior.
 - Database-backed customer and company APIs.

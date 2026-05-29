@@ -20,6 +20,7 @@ Completed in this build:
 - Connector intake simulation for email/WhatsApp/Facebook/Instagram/SMS-style payloads with idempotency.
 - Production persistence foundation with SQLAlchemy, Alembic, PostgreSQL-ready configuration, local SQLite fallback, and readiness endpoint.
 - Database-backed local auth/session validation with market access enforcement.
+- Durable audit records for login success, login denial, rate-limit denial, explicit market selection, missing authentication, invalid sessions, and market access denial.
 - Database-backed workspace settings with durable AI Work Queue automation enable/disable behavior.
 - Database-backed customer and company APIs with restart-safe rehydration before ticket creation.
 - Database-first ticket, timeline, reply/note, handoff, AI decision, and outbound connector-event workflows.
@@ -72,7 +73,7 @@ Known production dependencies:
 1. Implement authentication provider integration. Database-backed local sessions done; production provider pending.
 2. Add RBAC for agent, supervisor, admin, auditor, and service account roles. Route-level policy is done for current user roles; service-account policy remains pending.
 3. Add tenant isolation middleware and database scoping. Session/user/market scoping and the primary operational write/read paths now enforce market scope through database-backed routes.
-4. Add audit logging for every write action. Started.
+4. Add audit logging for every write action. Started, with auth, market-selection, access-denied, setup, ticketing, connector, worker, automation, and outbound events now durable.
 5. Add attachment metadata model and malware scanning integration point. Pending dependency.
 
 ## Phase 3: Ticket And Conversation APIs
@@ -162,6 +163,7 @@ Known production dependencies:
 - Added production-readiness endpoint at `GET /api/v1/platform/readiness` to verify database connectivity and required table presence.
 - Added `docs/PRODUCTION_BUILD_PLAN.md` as the long-running execution plan toward production readiness.
 - Auth login now creates durable `sessions` rows and protected endpoints validate user and market access through the database.
+- Auth and access-denied paths now write durable audit records with request IDs for login success, failed login, rate limiting, missing authentication, invalid sessions, explicit market selection, and market-scope denial.
 - Settings reads/writes now use `workspace_settings`; ticket creation and connector intake honor the persisted AI automation switch.
 - Customer and company endpoints now use database records directly and can rehydrate a customer/company into the runtime ticket service after API restart.
 - Ticket, timeline, reply/note, handoff, AI decision, and outbound connector-event endpoints now write database records directly.
