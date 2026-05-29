@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.v1.rbac import require_admin, require_supervisor
 from app.api.v1.security import RequestContext, require_context
 from app.core.auth import create_session_token
 from app.db.mappers import market_from_record, user_from_record
@@ -28,11 +29,6 @@ def _assigned_markets(db: Session, market_ids: list[str]) -> list[Market]:
     records = db.scalars(select(MarketRecord).where(MarketRecord.id.in_(market_ids))).all()
     records_by_id = {record.id: record for record in records}
     return [market_from_record(records_by_id[market_id]) for market_id in market_ids if market_id in records_by_id]
-
-
-def _require_admin(context: RequestContext) -> None:
-    if context.user.role != UserRole.admin:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Admin access required")
 
 
 def _normalize_market_assignment(
@@ -129,8 +125,7 @@ def list_users(
     context: RequestContext = Depends(require_context),
     db: Session = Depends(get_db),
 ) -> list[User]:
-    if context.user.role not in {UserRole.admin, UserRole.supervisor}:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Supervisor access required")
+    require_supervisor(context)
     records = db.scalars(select(UserRecord)).all()
     return [
         user_from_record(record)
@@ -145,7 +140,7 @@ def create_user(
     context: RequestContext = Depends(require_context),
     db: Session = Depends(get_db),
 ) -> User:
-    _require_admin(context)
+    require_admin(context)
     duplicate = db.scalar(select(UserRecord).where(UserRecord.email == str(request.email).lower()))
     if duplicate is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, detail="User already exists")
@@ -184,7 +179,7 @@ def update_user(
     context: RequestContext = Depends(require_context),
     db: Session = Depends(get_db),
 ) -> User:
-    _require_admin(context)
+    require_admin(context)
     record = db.get(UserRecord, user_id)
     if record is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="User not found")

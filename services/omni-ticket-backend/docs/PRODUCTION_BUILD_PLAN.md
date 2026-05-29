@@ -70,7 +70,7 @@ Build:
 
 - Replace prototype local-session shim with database-backed sessions. Done.
 - Add production identity adapter boundary for SSO/MFA provider.
-- Add role policy checks for agent, supervisor, admin, auditor, and service account.
+- Add role policy checks for agent, supervisor, admin, auditor, and service account. Done for current user roles; service-account policy remains pending.
 - Add market-access enforcement in reusable dependencies.
 - Add admin user management APIs.
 - Add admin user management APIs. Done for local backend.
@@ -81,6 +81,7 @@ Acceptance:
 - Unauthenticated users cannot enter the app or call protected APIs. Done for local bearer sessions.
 - A user assigned only to Ghana cannot read Nigeria/UK records. Done in API tests.
 - Admin can add/remove users from markets. Done for local backend and frontend Setup screen.
+- Agents, supervisors, admins, and auditors are constrained by route-level RBAC across operations, setup, audit, and readiness APIs. Done.
 
 ## Phase 3: Durable Ticketing And Customer Management
 

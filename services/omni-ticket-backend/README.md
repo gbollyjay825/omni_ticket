@@ -16,6 +16,7 @@ This repository now runs a working FastAPI backend slice for Omni Ticket:
 - Default-on AI Work Queue automation with an admin setting to disable it.
 - Login/session flow with user role and market context.
 - Market-scoped API access for one SPA serving multiple markets.
+- Route-level RBAC for agents, supervisors, admins, and auditors across operational writes, setup controls, audit visibility, and platform readiness.
 - SQLAlchemy/Alembic persistence foundation with PostgreSQL-ready configuration and local SQLite fallback.
 - Local PostgreSQL runtime through `OMNI_DATABASE_URL=postgresql+psycopg:///omni_ticket`.
 - Database-backed local login/session validation.

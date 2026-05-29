@@ -108,6 +108,144 @@ def test_market_scope_hides_other_market_customers(
     assert all(ticket["market_id"] == "market-gh" for ticket in ng_ticket_from_ghana.json())
 
 
+def test_role_policy_blocks_agent_from_admin_and_supervisor_controls(
+    client: TestClient,
+    login_as: Callable[[str, str], dict[str, str]],
+) -> None:
+    created = client.post(
+        "/api/v1/auth/users",
+        json={
+            "name": "Nia Agent",
+            "email": "nia.agent@omniticket.example.com",
+            "role": "agent",
+            "market_ids": ["market-ng"],
+            "default_market_id": "market-ng",
+        },
+    )
+    assert created.status_code == 201
+    agent_headers = login_as("nia.agent@omniticket.example.com", "market-ng")
+
+    assert client.get("/api/v1/tickets", headers=agent_headers).status_code == 200
+    assert client.get("/api/v1/work-queue", headers=agent_headers).status_code == 200
+    assert client.get("/api/v1/audit", headers=agent_headers).status_code == 403
+    assert client.get("/api/v1/platform/readiness", headers=agent_headers).status_code == 403
+    assert client.patch(
+        "/api/v1/settings",
+        json={"public_brand_name": "Blocked"},
+        headers=agent_headers,
+    ).status_code == 403
+    assert client.post(
+        "/api/v1/automation-rules",
+        json={
+            "name": "Blocked rule",
+            "trigger": "always",
+            "action": "assign escalation",
+        },
+        headers=agent_headers,
+    ).status_code == 403
+
+    ticket = client.get("/api/v1/tickets", headers=agent_headers).json()[0]
+    assert client.post(
+        f"/api/v1/work-queue/{ticket['id']}/override",
+        json={"reason": "Agent should not override the queue.", "priority": "urgent"},
+        headers=agent_headers,
+    ).status_code == 403
+
+
+def test_role_policy_allows_agent_ticket_work_but_keeps_auditor_read_only(
+    client: TestClient,
+    login_as: Callable[[str, str], dict[str, str]],
+) -> None:
+    auditor = client.post(
+        "/api/v1/auth/users",
+        json={
+            "name": "Ada Auditor",
+            "email": "ada.auditor@omniticket.example.com",
+            "role": "auditor",
+            "market_ids": ["market-ng"],
+            "default_market_id": "market-ng",
+        },
+    )
+    assert auditor.status_code == 201
+    agent = client.post(
+        "/api/v1/auth/users",
+        json={
+            "name": "Ola Agent",
+            "email": "ola.agent@omniticket.example.com",
+            "role": "agent",
+            "market_ids": ["market-ng"],
+            "default_market_id": "market-ng",
+        },
+    )
+    assert agent.status_code == 201
+
+    agent_headers = login_as("ola.agent@omniticket.example.com", "market-ng")
+    ticket = client.get("/api/v1/tickets", headers=agent_headers).json()[0]
+    reply = client.post(
+        f"/api/v1/tickets/{ticket['id']}/reply",
+        json={
+            "channel": ticket["channel"],
+            "actor": "ola.agent@omniticket.example.com",
+            "body": "I am checking this now.",
+            "public": False,
+        },
+        headers=agent_headers,
+    )
+    assert reply.status_code == 200
+
+    auditor_headers = login_as("ada.auditor@omniticket.example.com", "market-ng")
+    assert client.get("/api/v1/tickets", headers=auditor_headers).status_code == 200
+    assert client.get("/api/v1/audit", headers=auditor_headers).status_code == 200
+    assert client.get("/api/v1/auth/users", headers=auditor_headers).status_code == 403
+    assert client.post(
+        "/api/v1/tickets",
+        json={
+            "subject": "Auditor should not create tickets",
+            "description": "Read-only role enforcement.",
+            "customer_id": "cust-leo",
+            "channel": "email",
+        },
+        headers=auditor_headers,
+    ).status_code == 403
+
+
+def test_role_policy_limits_setup_to_admins_and_supervisor_tools_to_supervisors(
+    client: TestClient,
+    login_as: Callable[[str, str], dict[str, str]],
+) -> None:
+    supervisor_headers = login_as("amara.ng@omniticket.example.com", "market-ng")
+    assert client.get("/api/v1/auth/users", headers=supervisor_headers).status_code == 200
+    assert client.get("/api/v1/audit", headers=supervisor_headers).status_code == 200
+    assert client.get("/api/v1/platform/readiness", headers=supervisor_headers).status_code == 200
+    assert client.patch(
+        "/api/v1/channels/channel-email",
+        json={"queued": 41},
+        headers=supervisor_headers,
+    ).status_code == 200
+    assert client.post(
+        "/api/v1/auth/users",
+        json={
+            "name": "Blocked Supervisor Create",
+            "email": "blocked.supervisor@omniticket.example.com",
+            "role": "agent",
+            "market_ids": ["market-ng"],
+            "default_market_id": "market-ng",
+        },
+        headers=supervisor_headers,
+    ).status_code == 403
+    assert client.patch(
+        "/api/v1/settings",
+        json={"public_brand_name": "Supervisor blocked"},
+        headers=supervisor_headers,
+    ).status_code == 403
+    account = client.get("/api/v1/connectors/accounts").json()[0]
+    assert client.patch(
+        f"/api/v1/connectors/accounts/{account['id']}",
+        json={"status": "connected"},
+        headers=supervisor_headers,
+    ).status_code == 403
+
+
 def test_seeded_work_queue_has_ai_ranked_items(client: TestClient) -> None:
     response = client.get("/api/v1/work-queue")
     assert response.status_code == 200

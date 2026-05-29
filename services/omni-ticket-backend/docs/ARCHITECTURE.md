@@ -30,6 +30,7 @@ The production persistence foundation now includes:
 - Local SQLite fallback under `data/` for development.
 - `GET /api/v1/platform/readiness` to verify database connectivity and required tables.
 - Database-backed bearer sessions for local login and protected API request context.
+- Route-level RBAC for agents, supervisors, admins, and auditors across operational writes, setup controls, audit visibility, and platform readiness.
 - Database-backed workspace settings per market, including the AI Work Queue automation switch.
 - Database-backed customer and company APIs with state rehydration before ticket creation.
 - Database-first ticket, timeline, reply/note, handoff, AI decision, and outbound connector-event workflows.
@@ -71,6 +72,13 @@ Current local auth model:
 - `PATCH /api/v1/auth/users/{user_id}` updates user role, active state, market assignments, and default market.
 
 Production auth still needs a real identity provider, password policy, MFA/SSO, token expiry/refresh, deeper RBAC policy enforcement, and audit events for auth decisions.
+
+Current role policy:
+
+- Agents can read market work and perform day-to-day ticket, reply, note, customer, company, handoff, and connector-intake operations.
+- Supervisors can use workforce/channel controls, work-queue overrides, outbound retries, audit views, readiness checks, and knowledge publishing controls.
+- Admins can manage setup surfaces such as users, settings, connector accounts, and automation rules.
+- Auditors are read-only and can inspect operational records plus audit history without mutating customer or ticket data.
 
 ## Core Services
 

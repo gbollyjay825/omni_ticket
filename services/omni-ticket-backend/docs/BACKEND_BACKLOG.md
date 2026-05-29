@@ -15,6 +15,7 @@ Completed in this build:
 - Ticket, timeline, reply, handoff, customer, company, knowledge, rule, analytics, settings, connector, audit, and tracker APIs.
 - AI Work Queue automation default-on with admin disable switch.
 - Login/session flow with user role and market context.
+- Route-level RBAC for agents, supervisors, admins, and auditors across operational writes, setup controls, audit visibility, and platform readiness.
 - Market-scoped access so one SPA can serve Nigeria, Ghana, UK, and future markets.
 - Connector intake simulation for email/WhatsApp/Facebook/Instagram/SMS-style payloads with idempotency.
 - Production persistence foundation with SQLAlchemy, Alembic, PostgreSQL-ready configuration, local SQLite fallback, and readiness endpoint.
@@ -67,7 +68,7 @@ Known production dependencies:
 ## Phase 2: Auth, Tenancy, And Security
 
 1. Implement authentication provider integration. Database-backed local sessions done; production provider pending.
-2. Add RBAC for agent, supervisor, admin, auditor, and service account roles. Started with admin-only user management.
+2. Add RBAC for agent, supervisor, admin, auditor, and service account roles. Route-level policy is done for current user roles; service-account policy remains pending.
 3. Add tenant isolation middleware and database scoping. Session/user/market scoping and the primary operational write/read paths now enforce market scope through database-backed routes.
 4. Add audit logging for every write action. Started.
 5. Add attachment metadata model and malware scanning integration point. Pending dependency.

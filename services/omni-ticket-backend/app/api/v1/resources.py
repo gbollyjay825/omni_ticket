@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.v1.dependencies import get_store
+from app.api.v1.rbac import require_admin, require_audit_reader, require_operator, require_supervisor
 from app.api.v1.security import RequestContext, require_context
 from app.core.store import InMemoryStore
 from app.core.webhooks import verify_webhook_signature
@@ -58,18 +59,11 @@ from app.models.domain import (
     UpdateHandoffRequest,
     UpdateKnowledgeArticleRequest,
     UpdateTicketRequest,
-    UserRole,
     WorkQueueItem,
     WorkQueueOverrideRequest,
 )
 
 router = APIRouter(tags=["operations"])
-
-
-def _require_operator(context: RequestContext) -> None:
-    if context.user.role == UserRole.auditor:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Operator access required")
-
 
 def _company_record_or_404(db: Session, company_id: str, market_id: str) -> CompanyRecord:
     company = db.get(CompanyRecord, company_id)
@@ -110,6 +104,7 @@ def update_channel(
     state: InMemoryStore = Depends(get_store),
     db: Session = Depends(get_db),
 ) -> Channel:
+    require_supervisor(context)
     return management_repository.update_channel(db, state, channel_id, request, context.market_id)
 
 
@@ -130,6 +125,7 @@ def update_agent_status(
     state: InMemoryStore = Depends(get_store),
     db: Session = Depends(get_db),
 ) -> Agent:
+    require_supervisor(context)
     return management_repository.update_agent_status(db, state, agent_id, request, context.market_id)
 
 
@@ -162,6 +158,7 @@ def create_company(
     state: InMemoryStore = Depends(get_store),
     db: Session = Depends(get_db),
 ) -> Company:
+    require_operator(context)
     payload = request.model_dump(mode="json")
     payload["market_id"] = context.market_id
     company_id = f"company_{uuid4().hex}"
@@ -191,6 +188,7 @@ def update_company(
     state: InMemoryStore = Depends(get_store),
     db: Session = Depends(get_db),
 ) -> Company:
+    require_operator(context)
     record = _company_record_or_404(db, company_id, context.market_id)
     patch = request.model_dump(exclude_unset=True, mode="json")
     for key, value in patch.items():
@@ -219,6 +217,7 @@ def create_customer(
     state: InMemoryStore = Depends(get_store),
     db: Session = Depends(get_db),
 ) -> Customer:
+    require_operator(context)
     if request.company_id:
         company = _company_record_or_404(db, request.company_id, context.market_id)
         _sync_company_to_store(state, company_from_record(company))
@@ -283,6 +282,7 @@ def update_customer(
     state: InMemoryStore = Depends(get_store),
     db: Session = Depends(get_db),
 ) -> Customer:
+    require_operator(context)
     record = _customer_record_or_404(db, customer_id, context.market_id)
     patch = request.model_dump(exclude_unset=True, mode="json")
     patch.pop("market_id", None)
@@ -336,6 +336,7 @@ def create_ticket(
     state: InMemoryStore = Depends(get_store),
     db: Session = Depends(get_db),
 ) -> Ticket:
+    require_operator(context)
     customer_record = _customer_record_or_404(db, request.customer_id, context.market_id)
     customer = customer_from_record(customer_record)
     _sync_customer_to_store(state, customer)
@@ -370,6 +371,7 @@ def update_ticket(
     state: InMemoryStore = Depends(get_store),
     db: Session = Depends(get_db),
 ) -> Ticket:
+    require_operator(context)
     return ticket_repository.update_ticket(db, state, ticket_id, request, context.market_id)
 
 
@@ -391,6 +393,7 @@ def append_timeline(
     state: InMemoryStore = Depends(get_store),
     db: Session = Depends(get_db),
 ) -> TimelineEvent:
+    require_operator(context)
     return ticket_repository.append_event(db, state, ticket_id, request, context.market_id)
 
 
@@ -402,6 +405,7 @@ def reply_to_ticket(
     state: InMemoryStore = Depends(get_store),
     db: Session = Depends(get_db),
 ) -> TimelineEvent:
+    require_operator(context)
     return ticket_repository.reply(db, state, ticket_id, request, context.market_id)
 
 
@@ -430,7 +434,7 @@ def retry_outbound_message(
     state: InMemoryStore = Depends(get_store),
     db: Session = Depends(get_db),
 ) -> OutboundMessage:
-    _require_operator(context)
+    require_supervisor(context)
     message = outbound_repository.retry_message(
         db,
         state,
@@ -460,7 +464,7 @@ def override_work_queue(
     state: InMemoryStore = Depends(get_store),
     db: Session = Depends(get_db),
 ) -> Ticket:
-    _require_operator(context)
+    require_supervisor(context)
     return ticket_repository.override_work_queue(
         db,
         state,
@@ -479,6 +483,7 @@ def create_handoff(
     state: InMemoryStore = Depends(get_store),
     db: Session = Depends(get_db),
 ) -> Handoff:
+    require_operator(context)
     return ticket_repository.create_handoff(db, state, ticket_id, request, context.market_id)
 
 
@@ -499,6 +504,7 @@ def update_handoff(
     state: InMemoryStore = Depends(get_store),
     db: Session = Depends(get_db),
 ) -> Handoff:
+    require_operator(context)
     return ticket_repository.update_handoff(db, state, handoff_id, request, context.market_id)
 
 
@@ -518,6 +524,7 @@ def create_knowledge_article(
     state: InMemoryStore = Depends(get_store),
     db: Session = Depends(get_db),
 ) -> KnowledgeArticle:
+    require_supervisor(context)
     return management_repository.create_knowledge_article(db, state, request, context.market_id)
 
 
@@ -529,6 +536,7 @@ def update_knowledge_article(
     state: InMemoryStore = Depends(get_store),
     db: Session = Depends(get_db),
 ) -> KnowledgeArticle:
+    require_supervisor(context)
     return management_repository.update_knowledge_article(
         db,
         state,
@@ -554,6 +562,7 @@ def create_automation_rule(
     state: InMemoryStore = Depends(get_store),
     db: Session = Depends(get_db),
 ) -> AutomationRule:
+    require_admin(context)
     return management_repository.create_automation_rule(db, state, request, context.market_id)
 
 
@@ -565,6 +574,7 @@ def update_automation_rule(
     state: InMemoryStore = Depends(get_store),
     db: Session = Depends(get_db),
 ) -> AutomationRule:
+    require_admin(context)
     return management_repository.update_automation_rule(
         db,
         state,
@@ -599,6 +609,7 @@ def ingest_connector(
     state: InMemoryStore = Depends(get_store),
     db: Session = Depends(get_db),
 ) -> dict:
+    require_operator(context)
     market_id = request.market_id or context.market_id
     if market_id not in context.user.market_ids:
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="User is not assigned to this market")
@@ -800,6 +811,7 @@ def create_connector_account(
     state: InMemoryStore = Depends(get_store),
     db: Session = Depends(get_db),
 ) -> ConnectorAccount:
+    require_admin(context)
     return connector_account_repository.create_account(db, state, request, context.market_id)
 
 
@@ -812,6 +824,7 @@ def update_connector_account(
     state: InMemoryStore = Depends(get_store),
     db: Session = Depends(get_db),
 ) -> ConnectorAccount:
+    require_admin(context)
     return connector_account_repository.update_account(
         db,
         state,
@@ -835,6 +848,7 @@ def list_audit_events(
     context: RequestContext = Depends(require_context),
     state: InMemoryStore = Depends(get_store),
 ) -> list[AuditEvent]:
+    require_audit_reader(context)
     return [event for event in state.audit if event.market_id in {None, context.market_id}]
 
 
@@ -888,12 +902,14 @@ def read_frontend_snapshot(
             select(CustomerRecord).where(CustomerRecord.market_id == context.market_id)
         ).all()
     ]
-    user_records = db.scalars(select(UserRecord)).all()
-    users = [
-        user_from_record(record)
-        for record in user_records
-        if context.user.role == "admin" or context.market_id in record.market_ids
-    ]
+    users = []
+    if context.user.role in {"admin", "supervisor"}:
+        user_records = db.scalars(select(UserRecord)).all()
+        users = [
+            user_from_record(record)
+            for record in user_records
+            if context.user.role == "admin" or context.market_id in record.market_ids
+        ]
     return {
         "session": {"user": context.user, "market": context.market},
         "users": users,

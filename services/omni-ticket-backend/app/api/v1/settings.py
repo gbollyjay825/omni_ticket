@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.api.v1.dependencies import get_store
+from app.api.v1.rbac import require_admin
 from app.api.v1.security import RequestContext, require_context
 from app.core.store import InMemoryStore
 from app.db.models import AuditEventRecord
@@ -31,6 +32,7 @@ def update_settings(
     state: InMemoryStore = Depends(get_store),
     db: Session = Depends(get_db),
 ) -> WorkspaceSettings:
+    require_admin(context)
     record = get_or_create_workspace_settings(db, context.market)
     allowed = WorkspaceSettings.model_fields.keys()
     for key, value in patch.items():
@@ -68,6 +70,7 @@ def update_ai_work_queue_automation(
     state: InMemoryStore = Depends(get_store),
     db: Session = Depends(get_db),
 ) -> WorkspaceSettings:
+    require_admin(context)
     record = get_or_create_workspace_settings(db, context.market)
     enabled = patch.get("enabled")
     if enabled is not None:
