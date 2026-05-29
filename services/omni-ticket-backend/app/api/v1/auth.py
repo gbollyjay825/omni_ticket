@@ -1,6 +1,6 @@
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -10,7 +10,6 @@ from app.core.auth import create_session_token
 from app.core.config import settings
 from app.core.rate_limit import (
     RateLimitExceeded,
-    client_identity,
     raise_rate_limit_exceeded,
 )
 from app.db.mappers import market_from_record, user_from_record
@@ -88,13 +87,12 @@ def _audit_user_write(
 @router.post("/login", response_model=AuthSession)
 def login(
     request: LoginRequest,
-    http_request: Request,
     db: Session = Depends(get_db),
 ) -> AuthSession:
     try:
         database_rate_limiter.check(
             db,
-            f"auth-login:{client_identity(http_request)}:{str(request.email).lower()}",
+            f"auth-login:{str(request.email).lower()}",
             limit=settings.login_rate_limit_attempts,
             window_seconds=settings.login_rate_limit_window_seconds,
         )

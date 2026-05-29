@@ -99,7 +99,7 @@ The backend includes a database-backed fixed-window limiter for the routes most 
 - `POST /api/v1/connectors/inbound`
 - `POST /api/v1/webhooks/{provider}/{market_code}`
 
-When the limit is exceeded, the API returns `429` with a `Retry-After` header. The current implementation stores counters in the application database so serverless invocations share the same state. A high-scale multi-region deployment should still pair the same policy with Redis, gateway/WAF rules, or the hosting provider's edge rate limit.
+When the limit is exceeded, the API returns `429` with a `Retry-After` header. The current implementation stores counters in the application database so serverless invocations share the same state. Login limits are keyed by email address, connector intake by authenticated user, market, and provider, and signed webhooks by market and provider. A high-scale multi-region deployment should still pair the same policy with Redis, gateway/WAF rules, or the hosting provider's edge rate limit.
 
 ## Signed Connector Webhooks
 

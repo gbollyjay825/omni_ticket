@@ -12,7 +12,6 @@ from app.api.v1.security import RequestContext, require_context
 from app.core.config import settings as app_settings
 from app.core.rate_limit import (
     RateLimitExceeded,
-    client_identity,
     raise_rate_limit_exceeded,
 )
 from app.core.store import InMemoryStore
@@ -612,7 +611,6 @@ def read_analytics_overview(
 @router.post("/connectors/inbound", status_code=201)
 def ingest_connector(
     request: ConnectorInboundRequest,
-    http_request: Request,
     context: RequestContext = Depends(require_context),
     state: InMemoryStore = Depends(get_store),
     db: Session = Depends(get_db),
@@ -624,7 +622,7 @@ def ingest_connector(
             db,
             (
                 "connector-inbound:"
-                f"{client_identity(http_request)}:{context.user.id}:{market_id}:{request.provider.value}"
+                f"{context.user.id}:{market_id}:{request.provider.value}"
             ),
             limit=app_settings.connector_inbound_rate_limit_attempts,
             window_seconds=app_settings.connector_inbound_rate_limit_window_seconds,
@@ -665,7 +663,7 @@ async def ingest_signed_webhook(
     try:
         database_rate_limiter.check(
             db,
-            f"signed-webhook:{client_identity(http_request)}:{provider.value}:{market_record.id}",
+            f"signed-webhook:{provider.value}:{market_record.id}",
             limit=app_settings.webhook_rate_limit_attempts,
             window_seconds=app_settings.webhook_rate_limit_window_seconds,
         )
