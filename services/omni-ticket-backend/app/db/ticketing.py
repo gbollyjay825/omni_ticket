@@ -883,13 +883,16 @@ class TicketRepository:
         handoff_record = db.get(HandoffRecord, handoff_id)
         if handoff_record is None or handoff_record.market_id != market_id:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Handoff not found")
+        status_was = handoff_record.status
         if request.status is not None:
             handoff_record.status = request.status.value
+        if request.due_at is not None:
+            handoff_record.due_at = request.due_at
         if request.blocker is not None:
             handoff_record.blocker = request.blocker
             handoff_record.status = HandoffStatus.blocked.value
         if request.checklist_item_id and request.checklist_item_complete is not None:
-            checklist = list(handoff_record.checklist)
+            checklist = [dict(item) for item in handoff_record.checklist]
             for item in checklist:
                 if item["id"] == request.checklist_item_id:
                     item["complete"] = request.checklist_item_complete
@@ -897,11 +900,11 @@ class TicketRepository:
             handoff_record.checklist = checklist
         handoff_record.updated_at = utc_now()
         ticket_record = _ticket_record_or_404(db, handoff_record.ticket_id, market_id)
-        event_type = (
-            TimelineEventType.handoff_resolved
-            if handoff_record.status == HandoffStatus.resolved.value
-            else TimelineEventType.status_change
-        )
+        event_type = TimelineEventType.status_change
+        if handoff_record.status == HandoffStatus.accepted.value:
+            event_type = TimelineEventType.handoff_accepted
+        elif handoff_record.status == HandoffStatus.resolved.value:
+            event_type = TimelineEventType.handoff_resolved
         _add_timeline_record(
             db,
             state,
@@ -911,7 +914,12 @@ class TicketRepository:
             actor="handoff-service",
             body=f"Handoff {handoff_record.status}: {handoff_record.to_team}",
             public=False,
-            metadata={"handoff_id": handoff_record.id, "blocker": handoff_record.blocker},
+            metadata={
+                "handoff_id": handoff_record.id,
+                "blocker": handoff_record.blocker,
+                "status_was": status_was,
+                "due_at": handoff_record.due_at.isoformat(),
+            },
         )
         db.commit()
         db.refresh(handoff_record)

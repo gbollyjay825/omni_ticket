@@ -827,16 +827,64 @@ def test_handoff_lifecycle_writes_back_to_ticket_timeline(client: TestClient) ->
     handoff = create_response.json()
     assert handoff["status"] == "requested"
 
+    accepted_due_at = "2026-05-30T12:00:00Z"
     update_response = client.patch(
         f"/api/v1/handoffs/{handoff['id']}",
-        json={"status": "accepted"},
+        json={"status": "accepted", "due_at": accepted_due_at},
     )
     assert update_response.status_code == 200
-    assert update_response.json()["status"] == "accepted"
+    accepted = update_response.json()
+    assert accepted["status"] == "accepted"
+    assert accepted["due_at"].startswith("2026-05-30T12:00:00")
 
     timeline = client.get(f"/api/v1/tickets/{ticket['id']}/timeline").json()
     assert any(event["type"] == "handoff_requested" for event in timeline)
-    assert any(event["metadata"].get("handoff_id") == handoff["id"] for event in timeline)
+    assert any(
+        event["type"] == "handoff_accepted"
+        and event["metadata"].get("handoff_id") == handoff["id"]
+        and event["metadata"].get("status_was") == "requested"
+        for event in timeline
+    )
+
+
+def test_handoff_blocker_and_checklist_updates_persist(client: TestClient) -> None:
+    ticket = client.get("/api/v1/tickets").json()[0]
+    create_response = client.post(
+        f"/api/v1/tickets/{ticket['id']}/handoffs",
+        json={
+            "to_team": "Payments",
+            "requested_by": "agent-amara",
+            "reason": "Need processor confirmation.",
+            "due_minutes": 60,
+            "checklist": ["Check processor state"],
+        },
+    )
+    assert create_response.status_code == 201
+    handoff = create_response.json()
+    checklist_item_id = handoff["checklist"][0]["id"]
+
+    blocked_response = client.patch(
+        f"/api/v1/handoffs/{handoff['id']}",
+        json={
+            "blocker": "Waiting for gateway callback",
+            "checklist_item_id": checklist_item_id,
+            "checklist_item_complete": True,
+        },
+    )
+    assert blocked_response.status_code == 200
+    blocked = blocked_response.json()
+    assert blocked["status"] == "blocked"
+    assert blocked["blocker"] == "Waiting for gateway callback"
+    assert blocked["checklist"][0]["complete"] is True
+
+    store.seed()
+
+    persisted_handoffs = client.get("/api/v1/handoffs")
+    assert persisted_handoffs.status_code == 200
+    persisted = next(item for item in persisted_handoffs.json() if item["id"] == handoff["id"])
+    assert persisted["status"] == "blocked"
+    assert persisted["blocker"] == "Waiting for gateway callback"
+    assert persisted["checklist"][0]["complete"] is True
 
 
 def test_ticket_timeline_and_handoff_are_database_first_after_runtime_reset(

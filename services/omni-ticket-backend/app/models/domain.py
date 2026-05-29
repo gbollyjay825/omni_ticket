@@ -518,6 +518,7 @@ class CreateHandoffRequest(BaseModel):
 
 class UpdateHandoffRequest(BaseModel):
     status: HandoffStatus | None = None
+    due_at: datetime | None = None
     blocker: str | None = None
     checklist_item_id: str | None = None
     checklist_item_complete: bool | None = None

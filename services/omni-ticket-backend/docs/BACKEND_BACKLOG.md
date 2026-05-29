@@ -42,6 +42,7 @@ Completed in this build:
 - Database-backed mirror for channels, agents, companies, customers, tickets, timeline events, handoffs, knowledge, rules, connector events, AI decisions, and audit history, with startup rehydration into the runtime store.
 - Smoke tests, lint, and typecheck passing.
 - Root GitHub Actions CI workflow added for frontend lint/build plus backend `compileall`, `ruff`, `mypy`, `pytest`, migration sanity, and worker smoke.
+- Database-backed handoff lifecycle updates for acceptance, blocker capture, due-date changes, checklist progress, close-loop timeline events, and restart-safe persistence.
 
 Known production dependencies:
 
@@ -119,7 +120,7 @@ Known production dependencies:
 ## Phase 7: Handoffs And Internal Operations
 
 1. Implement structured handoff lifecycle. Done.
-2. Add receiving team acceptance, blocker, due date, checklist, and close-loop actions. Started.
+2. Add receiving team acceptance, blocker, due date, checklist, and close-loop actions. Done.
 3. Write handoff changes back into ticket timeline. Done.
 4. Add SLA impact and customer update prompts for blocked handoffs.
 

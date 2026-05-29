@@ -69,6 +69,7 @@ Last updated: 2026-05-29
 | B-050 | Add root GitHub Actions CI for frontend lint/build and backend compile, lint, typecheck, tests, migration sanity, and worker smoke | P0 | Done |
 | B-051 | Add request correlation headers, processing-time headers, and structured backend access logs | P0 | Done |
 | B-052 | Add durable audit records for login success/failure, rate-limit denial, explicit market selection, missing auth, invalid session, and market denial | P0 | Done |
+| B-053 | Complete database-backed handoff acceptance, blocker, due-date, checklist, and close-loop timeline updates | P0 | Done |
 
 ## Pending Items
 
@@ -128,3 +129,4 @@ Last updated: 2026-05-29
 | C-042 | Root GitHub Actions CI now gates push and pull request changes with frontend and backend production checks | 2026-05-29 |
 | C-043 | Backend responses now include request IDs and processing time while structured JSON access logs provide production traceability | 2026-05-29 |
 | C-044 | Auth and access-control decisions now write request-correlated audit records into the durable backend audit trail | 2026-05-29 |
+| C-045 | Handoff acceptance, blocker capture, due-date updates, checklist progress, and close-loop timeline history now persist through the database-backed lifecycle | 2026-05-29 |

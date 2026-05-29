@@ -34,6 +34,7 @@ The production persistence foundation now includes:
 - Database-backed workspace settings per market, including the AI Work Queue automation switch.
 - Database-backed customer and company APIs with state rehydration before ticket creation.
 - Database-first ticket, timeline, reply/note, handoff, AI decision, and outbound connector-event workflows.
+- Database-backed handoff lifecycle updates for acceptance, blocker capture, due-date changes, checklist progress, and close-loop timeline history.
 - Database-first ticket task completion updates through the existing ticket mutation path.
 - Database-first channel, agent status, knowledge article, and automation-rule management workflows.
 - Database-first automation-rule execution during ticket creation for routing, priority escalation, tags, checklist tasks, rule `last_fired_at`, failure count, timeline history, and audit history.
