@@ -5,6 +5,7 @@ from app.db.models import (
     AnalyticsRollupRecord,
     AuditEventRecord,
     AutomationRuleRecord,
+    BusinessHoursRecord,
     ChannelRecord,
     ConnectorAccountRecord,
     CompanyRecord,
@@ -38,6 +39,7 @@ from app.models.domain import (
     AttachmentLifecycleStatus,
     AttachmentScanStatus,
     AutomationRule,
+    BusinessHours,
     Channel,
     ChannelHealth,
     ChannelType,
@@ -199,6 +201,21 @@ def sla_policy_from_record(record: SlaPolicyRecord) -> SlaPolicy:
             "resolution_minutes": record.resolution_minutes,
             "business_hours": record.business_hours,
             "position": record.position,
+            "created_at": record.created_at,
+            "updated_at": record.updated_at,
+        }
+    )
+
+
+def business_hours_from_record(record: BusinessHoursRecord) -> BusinessHours:
+    return BusinessHours.model_validate(
+        {
+            "id": record.id,
+            "market_id": record.market_id,
+            "name": record.name,
+            "timezone": record.timezone,
+            "active": record.active,
+            "days": record.days or [],
             "created_at": record.created_at,
             "updated_at": record.updated_at,
         }

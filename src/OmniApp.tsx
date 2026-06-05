@@ -52,6 +52,8 @@ import {
 } from 'lucide-react'
 import type {
   AttachmentDraft,
+  BusinessHours,
+  BusinessHoursDay,
   ChannelId,
   ComposerMode,
   ContactMethod,
@@ -418,6 +420,7 @@ const setupModuleCatalog: Record<SetupSectionId, { title: string; modules: strin
 const setupBuiltModules = new Set<string>([
   'Agents',
   'Groups',
+  'Business hours',
   'Roles',
   'Permission profiles',
   'MFA',
@@ -853,6 +856,8 @@ function OmniApp() {
     updateSupportGroup,
     createSlaPolicy,
     updateSlaPolicy,
+    createBusinessHours,
+    updateBusinessHours,
     createTicketField,
     updateTicketField,
     changePassword,
@@ -966,7 +971,10 @@ function OmniApp() {
   })
   const [setupSection, setSetupSection] = useState<SetupSectionId>('people')
   const [setupModuleHint, setSetupModuleHint] = useState('')
-  const [peopleView, setPeopleView] = useState<'users' | 'groups' | 'security'>('users')
+  const [peopleView, setPeopleView] = useState<'users' | 'groups' | 'security' | 'hours'>('users')
+  const [businessHoursName, setBusinessHoursName] = useState('')
+  const [businessHoursTimezone, setBusinessHoursTimezone] = useState('Africa/Lagos')
+  const [businessHoursDrafts, setBusinessHoursDrafts] = useState<Record<string, BusinessHoursDay[]>>({})
   const [addUserOpen, setAddUserOpen] = useState(false)
   const [addGroupOpen, setAddGroupOpen] = useState(false)
   const [addSlaPolicyOpen, setAddSlaPolicyOpen] = useState(false)
@@ -2977,12 +2985,62 @@ function OmniApp() {
     }))
   }
 
+  async function handleCreateBusinessHours(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const name = businessHoursName.trim()
+    if (name.length < 2) return
+    const saved = await createBusinessHours({
+      name,
+      timezone: businessHoursTimezone.trim() || 'Africa/Lagos',
+    })
+    if (saved) {
+      setBusinessHoursName('')
+      setPrototypeNotice('Business hours saved.')
+    }
+  }
+
+  async function toggleBusinessHoursActive(calendar: BusinessHours) {
+    const saved = await updateBusinessHours(calendar.id, { active: !calendar.active })
+    if (saved) setPrototypeNotice(`Business hours ${calendar.active ? 'paused' : 'activated'}.`)
+  }
+
+  function businessHoursDraftFor(calendar: BusinessHours): BusinessHoursDay[] {
+    return businessHoursDrafts[calendar.id] ?? calendar.days
+  }
+
+  function setBusinessHoursDayField(
+    calendar: BusinessHours,
+    index: number,
+    patch: Partial<BusinessHoursDay>,
+  ) {
+    const current = businessHoursDraftFor(calendar)
+    setBusinessHoursDrafts((drafts) => ({
+      ...drafts,
+      [calendar.id]: current.map((day, dayIndex) => (dayIndex === index ? { ...day, ...patch } : day)),
+    }))
+  }
+
+  async function saveBusinessHoursSchedule(calendar: BusinessHours) {
+    const days = businessHoursDrafts[calendar.id]
+    if (!days) return
+    const saved = await updateBusinessHours(calendar.id, { days })
+    if (saved) {
+      setBusinessHoursDrafts((drafts) => {
+        const next = { ...drafts }
+        delete next[calendar.id]
+        return next
+      })
+      setPrototypeNotice('Business hours schedule saved.')
+    }
+  }
+
   function openSetupModule(moduleName: string) {
     // Route People modules to the right sub-view, then reveal the live settings panel.
-    const peopleRoutes: Record<string, 'users' | 'groups' | 'security'> = {
+    const peopleRoutes: Record<string, 'users' | 'groups' | 'security' | 'hours'> = {
       Agents: 'users',
       'Market access': 'users',
       Groups: 'groups',
+      'Business hours': 'hours',
       Roles: 'security',
       'Permission profiles': 'security',
       MFA: 'security',
@@ -7014,6 +7072,7 @@ function OmniApp() {
               {[
                 { id: 'users' as const, label: 'Users', icon: Users },
                 { id: 'groups' as const, label: 'Groups', icon: Building2 },
+                { id: 'hours' as const, label: 'Business hours', icon: Clock },
                 { id: 'security' as const, label: 'Security', icon: ShieldCheck },
               ].map(({ id, label, icon: SectionIcon }) => {
                 return (
@@ -7530,6 +7589,140 @@ function OmniApp() {
                       </button>
                     </article>
                   ))}
+                </div>
+              </section>
+            ) : null}
+
+            {peopleView === 'hours' ? (
+              <section className="people-section business-hours-panel" aria-label="Business hours">
+                <div className="support-group-head">
+                  <div>
+                    <span>Business hours</span>
+                    <h3>Operating calendars used by SLA timers</h3>
+                  </div>
+                </div>
+                <form className="user-create-form business-hours-form" onSubmit={handleCreateBusinessHours}>
+                  <label>
+                    <span>Calendar name</span>
+                    <input
+                      required
+                      value={businessHoursName}
+                      onChange={(event) => setBusinessHoursName(event.target.value)}
+                      placeholder="Weekend support hours"
+                      disabled={!canManageUsers}
+                    />
+                  </label>
+                  <label>
+                    <span>Time zone</span>
+                    <input
+                      value={businessHoursTimezone}
+                      onChange={(event) => setBusinessHoursTimezone(event.target.value)}
+                      placeholder="Africa/Lagos"
+                      disabled={!canManageUsers}
+                    />
+                  </label>
+                  <button
+                    type="submit"
+                    className="primary-action"
+                    disabled={!canManageUsers || businessHoursName.trim().length < 2}
+                  >
+                    <Plus size={16} />
+                    Add business hours
+                  </button>
+                </form>
+                <div className="business-hours-list">
+                  {state.businessHours.length === 0 ? (
+                    <p className="setup-module-hint">
+                      No business hours yet. Add a calendar to define when SLA timers run.
+                    </p>
+                  ) : (
+                    state.businessHours.map((calendar) => {
+                      const draft = businessHoursDraftFor(calendar)
+                      const dirty = Boolean(businessHoursDrafts[calendar.id])
+                      return (
+                        <article
+                          className={`business-hours-card ${calendar.active ? 'active' : 'inactive'}`}
+                          key={calendar.id}
+                        >
+                          <div className="business-hours-card-head">
+                            <div>
+                              <strong>{calendar.name}</strong>
+                              <span>{calendar.timezone}</span>
+                            </div>
+                            <button
+                              type="button"
+                              className={calendar.active ? 'secondary-action' : 'primary-action'}
+                              disabled={!canManageUsers}
+                              onClick={() => void toggleBusinessHoursActive(calendar)}
+                            >
+                              {calendar.active ? 'Pause' : 'Activate'}
+                            </button>
+                          </div>
+                          <div className="business-hours-grid">
+                            {draft.map((day, index) => (
+                              <div className={`business-hours-day ${day.enabled ? '' : 'off'}`} key={day.day}>
+                                <label className="business-hours-day-toggle">
+                                  <input
+                                    type="checkbox"
+                                    checked={day.enabled}
+                                    disabled={!canManageUsers}
+                                    onChange={(event) =>
+                                      setBusinessHoursDayField(calendar, index, { enabled: event.target.checked })
+                                    }
+                                  />
+                                  <span>{day.day}</span>
+                                </label>
+                                <input
+                                  type="time"
+                                  value={day.open}
+                                  disabled={!canManageUsers || !day.enabled}
+                                  onChange={(event) =>
+                                    setBusinessHoursDayField(calendar, index, { open: event.target.value })
+                                  }
+                                  aria-label={`${day.day} open time`}
+                                />
+                                <span className="business-hours-dash">–</span>
+                                <input
+                                  type="time"
+                                  value={day.close}
+                                  disabled={!canManageUsers || !day.enabled}
+                                  onChange={(event) =>
+                                    setBusinessHoursDayField(calendar, index, { close: event.target.value })
+                                  }
+                                  aria-label={`${day.day} close time`}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                          {dirty ? (
+                            <div className="business-hours-actions">
+                              <button
+                                type="button"
+                                className="primary-action"
+                                disabled={!canManageUsers}
+                                onClick={() => void saveBusinessHoursSchedule(calendar)}
+                              >
+                                Save schedule
+                              </button>
+                              <button
+                                type="button"
+                                className="secondary-action"
+                                onClick={() =>
+                                  setBusinessHoursDrafts((drafts) => {
+                                    const next = { ...drafts }
+                                    delete next[calendar.id]
+                                    return next
+                                  })
+                                }
+                              >
+                                Discard
+                              </button>
+                            </div>
+                          ) : null}
+                        </article>
+                      )
+                    })
+                  )}
                 </div>
               </section>
             ) : null}

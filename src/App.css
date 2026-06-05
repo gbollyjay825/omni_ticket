@@ -2271,6 +2271,129 @@ button:disabled {
   font-weight: 700;
 }
 
+.business-hours-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.business-hours-form label {
+  display: grid;
+  gap: 5px;
+  min-width: 200px;
+  flex: 1 1 200px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #506a82;
+}
+
+.business-hours-form input {
+  height: 38px;
+  border: 1px solid #d5e0ec;
+  border-radius: 7px;
+  padding: 0 10px;
+  font: inherit;
+}
+
+.business-hours-list {
+  display: grid;
+  gap: 12px;
+}
+
+.business-hours-card {
+  border: 1px solid #dce4ee;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 14px 16px;
+}
+
+.business-hours-card.inactive {
+  opacity: 0.72;
+}
+
+.business-hours-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.business-hours-card-head strong {
+  display: block;
+  color: #17314b;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.business-hours-card-head span {
+  color: #6b8195;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.business-hours-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+}
+
+.business-hours-day {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #eef2f7;
+  border-radius: 8px;
+  padding: 7px 10px;
+}
+
+.business-hours-day.off {
+  background: #f7f9fc;
+}
+
+.business-hours-day-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 96px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #17314b;
+  cursor: pointer;
+}
+
+.business-hours-day-toggle input {
+  width: 15px;
+  height: 15px;
+  accent-color: #2f6fed;
+}
+
+.business-hours-day input[type='time'] {
+  height: 30px;
+  border: 1px solid #d5e0ec;
+  border-radius: 6px;
+  padding: 0 6px;
+  font: inherit;
+  font-size: 12px;
+}
+
+.business-hours-day input[type='time']:disabled {
+  background: #f1f4f8;
+  color: #9aabbd;
+}
+
+.business-hours-dash {
+  color: #6b8195;
+}
+
+.business-hours-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 .freshworks-dashboard-grid > article,
 .report-card-grid > article,
 .freshchat-module-grid > article,

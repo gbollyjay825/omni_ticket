@@ -253,6 +253,22 @@ export interface SlaPolicy {
   updatedAt: string
 }
 
+export interface BusinessHoursDay {
+  day: string
+  enabled: boolean
+  open: string
+  close: string
+}
+
+export interface BusinessHours {
+  id: string
+  name: string
+  timezone: string
+  active: boolean
+  days: BusinessHoursDay[]
+  updatedAt: string
+}
+
 export interface OutboxItem {
   id: string
   conversationId: string
@@ -348,6 +364,7 @@ export interface OmniState {
   responseMacros: ResponseMacro[]
   rules: AutomationRule[]
   slaPolicies: SlaPolicy[]
+  businessHours: BusinessHours[]
   handoffs: HandoffRecord[]
   outbox: OutboxItem[]
   settings: WorkspaceSettings

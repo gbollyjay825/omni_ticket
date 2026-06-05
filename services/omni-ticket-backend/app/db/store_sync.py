@@ -8,6 +8,7 @@ from app.db.mappers import (
     ai_decision_from_record,
     audit_event_from_record,
     automation_rule_from_record,
+    business_hours_from_record,
     channel_from_record,
     company_from_record,
     connector_event_from_record,
@@ -30,6 +31,7 @@ from app.db.models import (
     AiDecisionRecord,
     AuditEventRecord,
     AutomationRuleRecord,
+    BusinessHoursRecord,
     ChannelRecord,
     CompanyRecord,
     ConnectorEventRecord,
@@ -193,6 +195,10 @@ def hydrate_store_state(db: Session, state: InMemoryStore) -> None:
     state.sla_policies = {
         policy.id: sla_policy_from_record(policy)
         for policy in db.scalars(select(SlaPolicyRecord)).all()
+    }
+    state.business_hours = {
+        calendar.id: business_hours_from_record(calendar)
+        for calendar in db.scalars(select(BusinessHoursRecord)).all()
     }
     state.companies = {
         company.id: company_from_record(company) for company in db.scalars(select(CompanyRecord)).all()

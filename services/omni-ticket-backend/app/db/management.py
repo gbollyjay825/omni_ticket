@@ -10,6 +10,7 @@ from app.db.mappers import (
     agent_from_record,
     audit_event_from_record,
     automation_rule_from_record,
+    business_hours_from_record,
     channel_from_record,
     knowledge_article_from_record,
     response_macro_from_record,
@@ -21,6 +22,7 @@ from app.db.models import (
     AgentRecord,
     AuditEventRecord,
     AutomationRuleRecord,
+    BusinessHoursRecord,
     ChannelRecord,
     HandoffRecord,
     KnowledgeArticleRecord,
@@ -33,8 +35,10 @@ from app.db.models import (
 from app.models.domain import (
     Agent,
     AutomationRule,
+    BusinessHours,
     Channel,
     CreateAutomationRuleRequest,
+    CreateBusinessHoursRequest,
     CreateKnowledgeArticleRequest,
     CreateResponseMacroRequest,
     CreateSlaPolicyRequest,
@@ -51,6 +55,7 @@ from app.models.domain import (
     TicketFieldType,
     UpdateAgentStatusRequest,
     UpdateAutomationRuleRequest,
+    UpdateBusinessHoursRequest,
     UpdateChannelRequest,
     UpdateKnowledgeArticleRequest,
     UpdateResponseMacroRequest,
@@ -396,6 +401,30 @@ def _sla_policy_payload(request: CreateSlaPolicyRequest | UpdateSlaPolicyRequest
             channels.append(channel)
         payload["channels"] = channels
     return payload
+
+
+def _business_hours_payload(
+    request: CreateBusinessHoursRequest | UpdateBusinessHoursRequest,
+) -> dict:
+    payload = request.model_dump(exclude_unset=True, mode="json")
+    if "name" in payload and payload["name"] is not None:
+        payload["name"] = _clean_group_name(payload["name"])
+        if not payload["name"]:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Business hours name is required",
+            )
+    if "timezone" in payload and payload["timezone"] is not None:
+        payload["timezone"] = payload["timezone"].strip() or "Africa/Lagos"
+    return payload
+
+
+def _default_business_days() -> list[dict]:
+    weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+    weekend = ["Saturday", "Sunday"]
+    return [
+        {"day": day, "enabled": True, "open": "09:00", "close": "17:00"} for day in weekdays
+    ] + [{"day": day, "enabled": False, "open": "09:00", "close": "17:00"} for day in weekend]
 
 
 def _apply_knowledge_status(
@@ -781,6 +810,107 @@ class ManagementRepository:
         policy = sla_policy_from_record(record)
         state.sla_policies[policy.id] = policy
         return policy
+
+    def list_business_hours(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        market_id: str,
+    ) -> list[BusinessHours]:
+        records = db.scalars(
+            select(BusinessHoursRecord).where(BusinessHoursRecord.market_id == market_id)
+        ).all()
+        calendars = [business_hours_from_record(record) for record in records]
+        calendars.sort(key=lambda calendar: (not calendar.active, calendar.name.lower()))
+        state.business_hours = {
+            **{
+                key: value
+                for key, value in state.business_hours.items()
+                if value.market_id != market_id
+            },
+            **{calendar.id: calendar for calendar in calendars},
+        }
+        return calendars
+
+    def create_business_hours(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        request: CreateBusinessHoursRequest,
+        market_id: str,
+        actor: str,
+    ) -> BusinessHours:
+        payload = _business_hours_payload(request)
+        name = payload["name"]
+        duplicate = db.scalar(
+            select(BusinessHoursRecord).where(
+                BusinessHoursRecord.market_id == market_id,
+                BusinessHoursRecord.name == name,
+            )
+        )
+        if duplicate is not None:
+            raise HTTPException(status.HTTP_409_CONFLICT, detail="Business hours already exist")
+        if not payload.get("days"):
+            payload["days"] = _default_business_days()
+        record = BusinessHoursRecord(id=_new_id("bh"), market_id=market_id, **payload)
+        db.add(record)
+        db.flush()
+        _audit(
+            db,
+            state,
+            actor=actor,
+            action="business_hours.create",
+            entity_type="business_hours",
+            entity_id=record.id,
+            market_id=market_id,
+            details={"name": record.name, "timezone": record.timezone, "active": record.active},
+        )
+        db.commit()
+        db.refresh(record)
+        calendar = business_hours_from_record(record)
+        state.business_hours[calendar.id] = calendar
+        return calendar
+
+    def update_business_hours(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        business_hours_id: str,
+        request: UpdateBusinessHoursRequest,
+        market_id: str,
+        actor: str,
+    ) -> BusinessHours:
+        record = db.get(BusinessHoursRecord, business_hours_id)
+        if record is None or record.market_id != market_id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Business hours not found")
+        patch = _business_hours_payload(request)
+        if "name" in patch and patch["name"] != record.name:
+            duplicate = db.scalar(
+                select(BusinessHoursRecord).where(
+                    BusinessHoursRecord.market_id == market_id,
+                    BusinessHoursRecord.name == patch["name"],
+                    BusinessHoursRecord.id != business_hours_id,
+                )
+            )
+            if duplicate is not None:
+                raise HTTPException(status.HTTP_409_CONFLICT, detail="Business hours already exist")
+        for key, value in patch.items():
+            setattr(record, key, value)
+        _audit(
+            db,
+            state,
+            actor=actor,
+            action="business_hours.update",
+            entity_type="business_hours",
+            entity_id=business_hours_id,
+            market_id=market_id,
+            details=patch,
+        )
+        db.commit()
+        db.refresh(record)
+        calendar = business_hours_from_record(record)
+        state.business_hours[calendar.id] = calendar
+        return calendar
 
     def list_knowledge(
         self,

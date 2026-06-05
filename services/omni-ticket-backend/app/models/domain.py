@@ -538,6 +538,24 @@ class SlaPolicy(BaseModel):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class BusinessHoursDay(BaseModel):
+    day: str = Field(max_length=12)
+    enabled: bool = True
+    open: str = Field(default="09:00", max_length=5)
+    close: str = Field(default="17:00", max_length=5)
+
+
+class BusinessHours(BaseModel):
+    id: str
+    market_id: str = "market-ng"
+    name: str
+    timezone: str = "Africa/Lagos"
+    active: bool = True
+    days: list[BusinessHoursDay] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 class TicketTask(BaseModel):
     id: str
     label: str
@@ -1272,6 +1290,20 @@ class UpdateSlaPolicyRequest(BaseModel):
     resolution_minutes: int | None = Field(default=None, ge=1, le=43200)
     business_hours: str | None = Field(default=None, max_length=120)
     position: int | None = None
+
+
+class CreateBusinessHoursRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=180)
+    timezone: str = Field(default="Africa/Lagos", max_length=64)
+    active: bool = True
+    days: list[BusinessHoursDay] = Field(default_factory=list)
+
+
+class UpdateBusinessHoursRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=180)
+    timezone: str | None = Field(default=None, max_length=64)
+    active: bool | None = None
+    days: list[BusinessHoursDay] | None = None
 
 
 class UpdateTicketRequest(BaseModel):

@@ -12,6 +12,7 @@ from app.db.models import (
     AuditEventRecord,
     AutomationRuleRecord,
     Base,
+    BusinessHoursRecord,
     ChannelRecord,
     ConnectorAccountRecord,
     CompanyRecord,
@@ -457,6 +458,20 @@ def seed_sla_policies(session: Session, source: InMemoryStore = store) -> None:
     session.commit()
 
 
+def seed_business_hours(session: Session, source: InMemoryStore = store) -> None:
+    for calendar in source.business_hours.values():
+        existing = session.get(BusinessHoursRecord, calendar.id) or session.scalar(
+            select(BusinessHoursRecord).where(
+                BusinessHoursRecord.market_id == calendar.market_id,
+                BusinessHoursRecord.name == calendar.name,
+            )
+        )
+        if existing is not None:
+            continue
+        session.add(BusinessHoursRecord(**_payload(calendar)))
+    session.commit()
+
+
 def seed_reference_data(session: Session, source: InMemoryStore = store) -> None:
     if session.scalar(select(MarketRecord.id).limit(1)):
         seed_connector_accounts(session)
@@ -464,6 +479,7 @@ def seed_reference_data(session: Session, source: InMemoryStore = store) -> None
         seed_ticket_fields(session, source)
         seed_support_groups(session, source)
         seed_sla_policies(session, source)
+        seed_business_hours(session, source)
         return
 
     session.add_all(
@@ -520,6 +536,12 @@ def seed_reference_data(session: Session, source: InMemoryStore = store) -> None
         [
             SlaPolicyRecord(**_payload(policy))
             for policy in source.sla_policies.values()
+        ]
+    )
+    session.add_all(
+        [
+            BusinessHoursRecord(**_payload(calendar))
+            for calendar in source.business_hours.values()
         ]
     )
     session.add_all(

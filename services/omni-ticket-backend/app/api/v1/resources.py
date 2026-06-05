@@ -68,6 +68,7 @@ from app.models.domain import (
     AuditEvent,
     AuditRetentionPolicy,
     AuditRetentionResult,
+    BusinessHours,
     InboundProviderConfig,
     Channel,
     ChannelType,
@@ -78,6 +79,7 @@ from app.models.domain import (
     CsatFeedback,
     CreateAutomationRuleRequest,
     CreateAttachmentRequest,
+    CreateBusinessHoursRequest,
     CreateCompanyRequest,
     CreateConnectorAccountRequest,
     CreateCsatFeedbackRequest,
@@ -136,6 +138,7 @@ from app.models.domain import (
     CreatePortalTicketRequest,
     UpdateAutomationRuleRequest,
     UpdateAgentStatusRequest,
+    UpdateBusinessHoursRequest,
     UpdateChannelRequest,
     UpdateCompanyRequest,
     UpdateConnectorAccountRequest,
@@ -1160,6 +1163,51 @@ def update_sla_policy(
         db,
         state,
         policy_id,
+        request,
+        context.market_id,
+        context.user.email,
+    )
+
+
+@router.get("/business-hours", response_model=list[BusinessHours])
+def list_business_hours(
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> list[BusinessHours]:
+    return management_repository.list_business_hours(db, state, context.market_id)
+
+
+@router.post("/business-hours", response_model=BusinessHours, status_code=status.HTTP_201_CREATED)
+def create_business_hours(
+    request: CreateBusinessHoursRequest,
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> BusinessHours:
+    require_admin(context)
+    return management_repository.create_business_hours(
+        db,
+        state,
+        request,
+        context.market_id,
+        context.user.email,
+    )
+
+
+@router.patch("/business-hours/{business_hours_id}", response_model=BusinessHours)
+def update_business_hours(
+    business_hours_id: str,
+    request: UpdateBusinessHoursRequest,
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> BusinessHours:
+    require_admin(context)
+    return management_repository.update_business_hours(
+        db,
+        state,
+        business_hours_id,
         request,
         context.market_id,
         context.user.email,
@@ -2958,6 +3006,7 @@ def read_frontend_snapshot(
         "agents": management_repository.list_agents(db, state, context.market_id),
         "support_groups": management_repository.list_support_groups(db, state, context.market_id),
         "sla_policies": management_repository.list_sla_policies(db, state, context.market_id),
+        "business_hours": management_repository.list_business_hours(db, state, context.market_id),
         "companies": companies,
         "customers": customers,
         "tickets": [

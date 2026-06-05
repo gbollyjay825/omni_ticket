@@ -1444,6 +1444,44 @@ def test_admin_manages_sla_policies_and_ticket_creation_uses_active_match(
     assert any(event["action"] == "sla_policy.update" for event in audit)
 
 
+def test_admin_manages_business_hours(client: TestClient) -> None:
+    suffix = uuid4().hex[:8]
+    created = client.post(
+        "/api/v1/business-hours",
+        json={"name": f"Lagos hours {suffix}", "timezone": "Africa/Lagos", "active": True},
+    )
+    assert created.status_code == 201
+    calendar = created.json()
+    # A new calendar gets a default Mon-Fri 09:00-17:00 schedule (no dummy/empty content).
+    assert len(calendar["days"]) == 7
+    assert sum(1 for day in calendar["days"] if day["enabled"]) == 5
+
+    listing = client.get("/api/v1/business-hours")
+    assert listing.status_code == 200
+    assert any(item["id"] == calendar["id"] for item in listing.json())
+
+    updated = client.patch(
+        f"/api/v1/business-hours/{calendar['id']}",
+        json={
+            "active": False,
+            "timezone": "Europe/London",
+            "days": [{"day": "Monday", "enabled": True, "open": "08:00", "close": "18:00"}],
+        },
+    )
+    assert updated.status_code == 200
+    assert updated.json()["active"] is False
+    assert updated.json()["timezone"] == "Europe/London"
+    assert updated.json()["days"][0]["open"] == "08:00"
+
+    snapshot = client.get("/api/v1/frontend/snapshot")
+    assert snapshot.status_code == 200
+    assert any(item["id"] == calendar["id"] for item in snapshot.json()["business_hours"])
+
+    audit = client.get("/api/v1/audit").json()
+    assert any(event["action"] == "business_hours.create" for event in audit)
+    assert any(event["action"] == "business_hours.update" for event in audit)
+
+
 def test_role_policy_blocks_agent_from_admin_and_supervisor_controls(
     client: TestClient,
     login_as: Callable[..., dict[str, str]],

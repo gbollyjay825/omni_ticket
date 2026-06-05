@@ -519,6 +519,7 @@ export interface BackendSnapshot {
   agents: BackendAgent[]
   supportGroups: BackendSupportGroup[]
   slaPolicies: BackendSlaPolicy[]
+  businessHours: BackendBusinessHours[]
   companies: BackendCompany[]
   customers: BackendCustomer[]
   tickets: BackendTicketContext[]
@@ -539,6 +540,7 @@ export interface BackendSnapshot {
   ticket_fields: BackendTicketField[]
   support_groups: BackendSupportGroup[]
   sla_policies: BackendSlaPolicy[]
+  business_hours: BackendBusinessHours[]
   knowledge: BackendKnowledgeArticle[]
   macros: BackendResponseMacro[]
   rules: BackendAutomationRule[]
@@ -890,6 +892,38 @@ export interface BackendUpdateSlaPolicyInput {
   resolution_minutes?: number
   business_hours?: string
   position?: number
+}
+
+export interface BackendBusinessHoursDay {
+  day: string
+  enabled: boolean
+  open: string
+  close: string
+}
+
+export interface BackendBusinessHours {
+  id: string
+  market_id: string
+  name: string
+  timezone: string
+  active: boolean
+  days: BackendBusinessHoursDay[]
+  created_at: string
+  updated_at: string
+}
+
+export interface BackendCreateBusinessHoursInput {
+  name: string
+  timezone?: string
+  active?: boolean
+  days?: BackendBusinessHoursDay[]
+}
+
+export interface BackendUpdateBusinessHoursInput {
+  name?: string
+  timezone?: string
+  active?: boolean
+  days?: BackendBusinessHoursDay[]
 }
 
 export interface BackendCompany {
@@ -1254,6 +1288,7 @@ interface BackendFrontendSnapshot {
   agents: BackendAgent[]
   support_groups: BackendSupportGroup[]
   sla_policies: BackendSlaPolicy[]
+  business_hours: BackendBusinessHours[]
   companies: BackendCompany[]
   customers: BackendCustomer[]
   tickets: BackendTicketContext[]
@@ -1414,6 +1449,7 @@ export async function fetchBackendSnapshot(
     ticketFields: frontendSnapshot.ticket_fields ?? [],
     supportGroups: frontendSnapshot.support_groups ?? [],
     slaPolicies: frontendSnapshot.sla_policies ?? [],
+    businessHours: frontendSnapshot.business_hours ?? [],
     connectorAccounts: frontendSnapshot.connector_accounts,
     outboundMessages: frontendSnapshot.outbound_messages,
     outboundProviderConfig: frontendSnapshot.outbound_provider_config ?? [],
@@ -1665,6 +1701,35 @@ export async function patchBackendSlaPolicy(
 ): Promise<BackendSlaPolicy> {
   return fetchJson<BackendSlaPolicy>(
     `/sla-policies/${policyId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    },
+    session,
+  )
+}
+
+export async function createBackendBusinessHours(
+  input: BackendCreateBusinessHoursInput,
+  session: BackendSession,
+): Promise<BackendBusinessHours> {
+  return fetchJson<BackendBusinessHours>(
+    '/business-hours',
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+    session,
+  )
+}
+
+export async function patchBackendBusinessHours(
+  businessHoursId: string,
+  patch: BackendUpdateBusinessHoursInput,
+  session: BackendSession,
+): Promise<BackendBusinessHours> {
+  return fetchJson<BackendBusinessHours>(
+    `/business-hours/${businessHoursId}`,
     {
       method: 'PATCH',
       body: JSON.stringify(patch),

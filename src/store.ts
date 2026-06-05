@@ -21,6 +21,7 @@ import type {
   ScreenId,
   Sentiment,
   SlaPolicy,
+  BusinessHours,
   SlaState,
   SupportGroup,
   TicketField,
@@ -35,6 +36,7 @@ import {
   confirmBackendMfa,
   createBackendAttachment,
   createBackendSlaPolicy,
+  createBackendBusinessHours,
   createBackendSupportGroup,
   createBackendTicketField,
   createBackendUser,
@@ -46,6 +48,7 @@ import {
   type BackendChannel,
   type BackendCompany,
   type BackendCreateSlaPolicyInput,
+  type BackendCreateBusinessHoursInput,
   type BackendCreateSupportGroupInput,
   type BackendCreateUserInput,
   type BackendCustomer,
@@ -64,6 +67,7 @@ import {
   patchBackendOperationalAlert,
   patchBackendSettings,
   patchBackendSlaPolicy,
+  patchBackendBusinessHours,
   patchBackendSupportGroup,
   patchBackendTicket,
   patchBackendTicketField,
@@ -76,8 +80,10 @@ import {
   type BackendResponseMacroSuggestion,
   type BackendSession,
   type BackendSlaPolicy,
+  type BackendBusinessHours,
   type BackendSyncState,
   type BackendUpdateSlaPolicyInput,
+  type BackendUpdateBusinessHoursInput,
   type BackendUpdateSupportGroupInput,
   type BackendUpdateUserInput,
   type BackendUpdateTicketFieldInput,
@@ -234,6 +240,7 @@ function mergeReferenceData(state: OmniState): OmniState {
     ticketFields: state.ticketFields ?? initialOmniState.ticketFields,
     supportGroups: state.supportGroups ?? initialOmniState.supportGroups,
     slaPolicies: state.slaPolicies ?? initialOmniState.slaPolicies,
+    businessHours: state.businessHours ?? initialOmniState.businessHours,
     responseMacros: state.responseMacros ?? initialOmniState.responseMacros,
     epics: initialOmniState.epics,
     backlog: initialOmniState.backlog,
@@ -439,6 +446,22 @@ function mapSlaPolicy(policy: BackendSlaPolicy): SlaPolicy {
     businessHours: policy.business_hours,
     position: policy.position,
     updatedAt: policy.updated_at,
+  }
+}
+
+function mapBusinessHours(calendar: BackendBusinessHours): BusinessHours {
+  return {
+    id: calendar.id,
+    name: calendar.name,
+    timezone: calendar.timezone,
+    active: calendar.active,
+    days: (calendar.days ?? []).map((day) => ({
+      day: day.day,
+      enabled: day.enabled,
+      open: day.open,
+      close: day.close,
+    })),
+    updatedAt: calendar.updated_at,
   }
 }
 
@@ -733,6 +756,7 @@ function mergeBackendSnapshot(current: OmniState, snapshot: BackendSnapshot): Om
   const handoffs = snapshot.handoffs.map((handoff) => mapHandoff(handoff, conversationsById))
   const supportGroups = (snapshot.support_groups ?? snapshot.supportGroups ?? []).map(mapSupportGroup)
   const slaPolicies = (snapshot.sla_policies ?? snapshot.slaPolicies ?? []).map(mapSlaPolicy)
+  const businessHours = (snapshot.business_hours ?? snapshot.businessHours ?? []).map(mapBusinessHours)
   const selectedConversationId =
     conversations.find((conversation) => conversation.id === current.selectedConversationId)?.id ??
     conversations[0]?.id ??
@@ -766,6 +790,7 @@ function mergeBackendSnapshot(current: OmniState, snapshot: BackendSnapshot): Om
     agents,
     supportGroups,
     slaPolicies,
+    businessHours,
     articles: snapshot.knowledge.map(mapKnowledgeArticle),
     ticketFields: (snapshot.ticket_fields ?? snapshot.ticketFields ?? []).map(mapTicketField),
     responseMacros: snapshot.macros.map(mapResponseMacro),
@@ -1899,6 +1924,14 @@ export function useOmniStore() {
     return syncBackendMutation((session) => patchBackendSlaPolicy(policyId, patch, session))
   }
 
+  function createBusinessHours(input: BackendCreateBusinessHoursInput) {
+    return syncBackendMutation((session) => createBackendBusinessHours(input, session))
+  }
+
+  function updateBusinessHours(businessHoursId: string, patch: BackendUpdateBusinessHoursInput) {
+    return syncBackendMutation((session) => patchBackendBusinessHours(businessHoursId, patch, session))
+  }
+
   function createTicketField(input: BackendCreateTicketFieldInput) {
     return syncBackendMutation((session) => createBackendTicketField(input, session))
   }
@@ -2147,6 +2180,8 @@ export function useOmniStore() {
     updateSupportGroup,
     createSlaPolicy,
     updateSlaPolicy,
+    createBusinessHours,
+    updateBusinessHours,
     createTicketField,
     updateTicketField,
     changePassword,

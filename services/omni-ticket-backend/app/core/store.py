@@ -9,6 +9,8 @@ from app.models.domain import (
     AiDecision,
     AuditEvent,
     AutomationRule,
+    BusinessHours,
+    BusinessHoursDay,
     Channel,
     ChannelHealth,
     ChannelType,
@@ -42,6 +44,14 @@ from app.models.domain import (
 )
 
 
+def _standard_business_week() -> list[BusinessHoursDay]:
+    weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+    weekend = ["Saturday", "Sunday"]
+    return [BusinessHoursDay(day=day, enabled=True, open="09:00", close="17:00") for day in weekdays] + [
+        BusinessHoursDay(day=day, enabled=False, open="09:00", close="17:00") for day in weekend
+    ]
+
+
 class InMemoryStore:
     """Thread-safe local store used until the PostgreSQL repository is attached."""
 
@@ -64,6 +74,7 @@ class InMemoryStore:
         self.response_macros: dict[str, ResponseMacro] = {}
         self.ticket_fields: dict[str, TicketField] = {}
         self.sla_policies: dict[str, SlaPolicy] = {}
+        self.business_hours: dict[str, BusinessHours] = {}
         self.rules: dict[str, AutomationRule] = {}
         self.connector_events: dict[str, ConnectorEvent] = {}
         self.outbound_messages: dict[str, OutboundMessage] = {}
@@ -447,6 +458,30 @@ class InMemoryStore:
                     resolution_minutes=1440,
                     business_hours="Business hours",
                     position=30,
+                ),
+            }
+
+            self.business_hours = {
+                "bh-ng-standard": BusinessHours(
+                    id="bh-ng-standard",
+                    market_id="market-ng",
+                    name="Nigeria business hours",
+                    timezone="Africa/Lagos",
+                    days=_standard_business_week(),
+                ),
+                "bh-gh-standard": BusinessHours(
+                    id="bh-gh-standard",
+                    market_id="market-gh",
+                    name="Ghana business hours",
+                    timezone="Africa/Accra",
+                    days=_standard_business_week(),
+                ),
+                "bh-uk-standard": BusinessHours(
+                    id="bh-uk-standard",
+                    market_id="market-uk",
+                    name="UK business hours",
+                    timezone="Europe/London",
+                    days=_standard_business_week(),
                 ),
             }
 

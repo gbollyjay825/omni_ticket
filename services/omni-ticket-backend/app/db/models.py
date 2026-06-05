@@ -213,6 +213,21 @@ class SlaPolicyRecord(TimestampMixin, Base):
     )
 
 
+class BusinessHoursRecord(TimestampMixin, Base):
+    __tablename__ = "business_hours"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    market_id: Mapped[str] = mapped_column(ForeignKey("markets.id"), index=True)
+    name: Mapped[str] = mapped_column(String(180), nullable=False)
+    timezone: Mapped[str] = mapped_column(String(64), default="Africa/Lagos")
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    days: Mapped[list] = mapped_column(JSON, default=list)
+
+    __table_args__ = (
+        UniqueConstraint("market_id", "name", name="uq_business_hours_market_name"),
+    )
+
+
 class ChannelRecord(TimestampMixin, Base):
     __tablename__ = "channels"
 
