@@ -113,8 +113,9 @@ class TicketService:
         )
         ticket.sla = default_sla(ticket.priority)
         ticket.sla = sla_service.refresh(ticket.sla)
-        ticket.ai_summary = automation_service.summary(ticket, customer)
-        ticket.recommended_action = automation_service.recommended_action(ticket, customer)
+        guidance = automation_service.generate_guidance(ticket, customer)
+        ticket.ai_summary = guidance.summary
+        ticket.recommended_action = guidance.recommended_action
 
         state.append_timeline(
             TimelineEvent(
@@ -129,7 +130,7 @@ class TicketService:
             )
         )
         if ai_enabled:
-            decision = automation_service.make_decision(ticket)
+            decision = automation_service.make_decision(ticket, guidance)
             state.ai_decisions.append(decision)
             state.append_timeline(
                 TimelineEvent(

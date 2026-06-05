@@ -17,6 +17,8 @@ dist-ssr
 .env.*
 !.env.example
 !.env.*.example
+AI_Key
+AI_Key.*
 *.zip
 *.db
 data/
@@ -29,6 +31,10 @@ data/
 
 __pycache__/
 *.pyc
+
+# Local tooling and test artifacts
+.claude/
+artifacts/
 
 # Editor directories and files
 .vscode/*

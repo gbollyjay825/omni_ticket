@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, MouseEvent } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import {
@@ -12,10 +12,13 @@ import {
   Building2,
   Check,
   CheckCircle2,
+  ChevronDown,
   ClipboardList,
   Clock,
   Code2,
   Command,
+  DatabaseZap,
+  Download,
   Filter,
   Gauge,
   GitBranch,
@@ -39,7 +42,7 @@ import {
   Settings,
   ShieldCheck,
   Sparkles,
-  Timer,
+  Star,
   UserCheck,
   Users,
   Wifi,
@@ -53,28 +56,186 @@ import type {
   ComposerMode,
   ContactMethod,
   ConversationStatus,
+  DuplicateTicketSuggestion,
   HandoffStatus,
   NewTicketInput,
   OmniConversation,
   Priority,
+  ResponseMacroSuggestion,
   ScreenId,
   Sentiment,
   SlaState,
+  TicketField,
+  TicketFieldType,
+  TimelineType,
 } from './domain'
+import type {
+  BackendAuditExportFormat,
+  BackendAttachmentProviderConfig,
+  BackendAttachmentRetentionPolicy,
+  BackendAuditRetentionPolicy,
+  BackendCreateSlaPolicyInput,
+  BackendCreatePortalTicketInput,
+  BackendEmailProviderSettings,
+  BackendGlobalSearchResult,
+  BackendIntegrationCredentialSettings,
+  BackendMfaEnrollment,
+  BackendOperationalAlert,
+  BackendOperationalAlertStatus,
+  BackendPermission,
+  BackendPermissionProfile,
+  BackendPortalAnswerSuggestion,
+  BackendPortalTicketDetail,
+  BackendProductionAccountReference,
+  BackendProductionAccountReferenceDocs,
+  BackendProductionAccountReferenceStatus,
+  BackendProductionAccountRequestDelivery,
+  BackendProductionAccountRequestPack,
+  BackendProductionReadinessChecklist,
+  BackendTicketField,
+  BackendUser,
+  BackendUpdateEmailProviderSettingsInput,
+  BackendUpdateIntegrationCredentialSettingsInput,
+} from './backend'
+import {
+  createBackendPortalTicket,
+  createBackendPortalTicketReply,
+  exportBackendAudit,
+  createBackendProductionAccountReference,
+  fetchBackendGlobalSearch,
+  fetchBackendAttachmentRetentionPolicy,
+  fetchBackendAuditRetentionPolicy,
+  fetchBackendProductionAccountReferenceDocs,
+  fetchBackendProductionAccountReferences,
+  fetchBackendProductionAccountRequests,
+  fetchBackendProductionReadinessChecklist,
+  fetchBackendPortalAnswers,
+  fetchBackendPortalTicket,
+  mergeBackendTickets,
+  patchBackendEmailSettings,
+  patchBackendIntegrationCredentialSettings,
+  patchBackendProductionAccountReference,
+  pruneBackendAttachmentRetention,
+  pruneBackendAuditRetention,
+  sendBackendProductionAccountRequestEmail,
+  uploadBackendPortalAttachment,
+} from './backend'
 import { useOmniStore } from './store'
+import { DASHBOARD_RANGES, computeDashboardMetrics, formatDuration, resolutionSeconds } from './metrics'
+import type { CsatFeedbackRecord, DashboardRange } from './metrics'
 import './App.css'
 
+interface DashboardTodo {
+  id: string
+  label: string
+  done: boolean
+}
+
+const TODO_STORAGE_PREFIX = 'omni.dashboard.todos:'
+
+const TIMELINE_LABELS: Record<TimelineType, string> = {
+  'customer-message': 'Customer message',
+  'agent-reply': 'Agent reply',
+  'internal-note': 'Internal note',
+  handoff: 'Handoff',
+  'voice-log': 'Voice log',
+  'chat-transcript': 'Chat transcript',
+  'social-dm': 'Social DM',
+  'portal-comment': 'Portal comment',
+  'api-event': 'API event',
+  automation: 'Automation',
+}
+
+function makeTodoId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID()
+  return `todo-${Math.random().toString(36).slice(2)}`
+}
+
+function loadDashboardTodos(userId: string): DashboardTodo[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = window.localStorage.getItem(`${TODO_STORAGE_PREFIX}${userId}`)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as DashboardTodo[]
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function saveDashboardTodos(userId: string, todos: DashboardTodo[]): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(`${TODO_STORAGE_PREFIX}${userId}`, JSON.stringify(todos))
+  } catch {
+    // Ignore storage write failures (private mode / quota); the widget still works in-session.
+  }
+}
+
+const WATCH_STORAGE_PREFIX = 'omni.watched.tickets:'
+
+function loadWatchedTickets(userId: string): string[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = window.localStorage.getItem(`${WATCH_STORAGE_PREFIX}${userId}`)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as string[]
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function saveWatchedTickets(userId: string, ids: string[]): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(`${WATCH_STORAGE_PREFIX}${userId}`, JSON.stringify(ids))
+  } catch {
+    // Ignore storage write failures; watch state still works in-session.
+  }
+}
+
+interface TicketTimeLog {
+  id: string
+  minutes: number
+  agent: string
+  at: string
+}
+
+const TIMELOG_STORAGE_KEY = 'omni.ticket.timelogs'
+
+function loadTimeLogs(): Record<string, TicketTimeLog[]> {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = window.localStorage.getItem(TIMELOG_STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as Record<string, TicketTimeLog[]>
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function saveTimeLogs(logs: Record<string, TicketTimeLog[]>): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(TIMELOG_STORAGE_KEY, JSON.stringify(logs))
+  } catch {
+    // Ignore storage write failures; time logs still work in-session.
+  }
+}
+
 const screenConfig: { id: ScreenId; label: string; icon: LucideIcon }[] = [
-  { id: 'command', label: 'Command Center', icon: Command },
-  { id: 'inbox', label: 'Work Queue', icon: Inbox },
-  { id: 'channels', label: 'Channel Chats', icon: MessageCircle },
-  { id: 'customers', label: 'Customer 360', icon: Users },
-  { id: 'knowledge', label: 'Answers', icon: BookOpen },
-  { id: 'automation', label: 'Rules & Promises', icon: Workflow },
+  { id: 'command', label: 'Dashboard', icon: Command },
+  { id: 'inbox', label: 'Tickets', icon: Inbox },
+  { id: 'channels', label: 'Omnichat', icon: MessageCircle },
+  { id: 'customers', label: 'Contacts', icon: Users },
+  { id: 'knowledge', label: 'Solutions', icon: BookOpen },
+  { id: 'automation', label: 'Workflows', icon: Workflow },
   { id: 'handoffs', label: 'Team Handoffs', icon: Handshake },
-  { id: 'analytics', label: 'Insights', icon: BarChart3 },
-  { id: 'workforce', label: 'Staffing', icon: UserCheck },
-  { id: 'admin', label: 'Setup', icon: Settings },
+  { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+  { id: 'workforce', label: 'Scheduling dashboard', icon: UserCheck },
+  { id: 'admin', label: 'Admin', icon: Settings },
   { id: 'tracker', label: 'Delivery Plan', icon: GitBranch },
 ]
 
@@ -93,17 +254,86 @@ const channelIcons: Record<ChannelId, LucideIcon> = {
 
 const priorityOptions: (Priority | 'all')[] = ['all', 'urgent', 'high', 'medium', 'low']
 const directMessageChannelIds: ChannelId[] = ['whatsapp', 'instagram', 'facebook']
+const solutionCategoryCatalog = [
+  {
+    title: 'Operations Team knowledge base',
+    folders: [
+      ['Cross Selling', '08'],
+      ['Refunds', '06'],
+      ['PSS', '00'],
+    ],
+    more: 'View all 17 folders',
+  },
+  {
+    title: 'Nigeria',
+    folders: [
+      ['Flight Reservations', '15'],
+      ['Cancellation and Changing of Flight Ticket', '08'],
+      ['HOTEL RESERVATION', '10'],
+    ],
+    more: 'View all 09 folders',
+  },
+  {
+    title: 'Ghana',
+    folders: [
+      ['Flight Reservations', '14'],
+      ['Cancellation and Changing of Flight Ticket', '07'],
+      ['Hotel Reservation', '10'],
+    ],
+    more: 'View all 06 folders',
+  },
+  {
+    title: 'Liberia',
+    folders: [
+      ['Visa', '01'],
+      ['Flight Reservation', '01'],
+    ],
+  },
+  { title: 'Sierra Leone', folders: [['Visa', '01']] },
+  { title: 'Gambia', folders: [['Visa', '01']] },
+  {
+    title: 'Getting started with us',
+    folders: [
+      ['Your account', '02'],
+      ['Your documents', '01'],
+    ],
+  },
+  {
+    title: 'Files and folders',
+    folders: [
+      ['Shared files', '02'],
+      ['Deleted files', '01'],
+    ],
+  },
+  {
+    title: 'Premium club',
+    folders: [
+      ['Premium features', '02'],
+      ['Premium subscription', '02'],
+    ],
+  },
+  {
+    title: 'AI Knowledge Base',
+    folders: [
+      ['Knowledge Base for AI', '03'],
+      ['Visa', '03'],
+      ['Lounge and Protocol', '04'],
+    ],
+    more: 'View all 05 folders',
+  },
+]
 const screenLead: Record<ScreenId, string> = {
-  command: 'One view of demand, risk, team load, and the manager decisions needed today.',
-  inbox: 'Prioritized customer work with history, owner, promise time, and next action in one place.',
-  channels: 'WhatsApp, Instagram, and Facebook stay as native chat windows while still rolling into tickets.',
-  customers: 'Customer profile, open value, history, mood, and preferred contact routes.',
-  knowledge: 'Approved answers agents can reuse to resolve faster and reduce repeat work.',
-  automation: 'Clear routing and response promises that keep work moving without manual chasing.',
+  command: 'Omnichannel Dashboard with ticket trends, chat trends, CSAT, agents, to-do, and recent activity.',
+  inbox: 'Familiar ticket views, filters, ticket details, reply, note, forward, linked work, and time logs.',
+  channels: 'Omnichat Team Inbox, dashboard, campaigns, people, reports, marketplace, settings, and AI Studio.',
+  customers: 'Omni Contacts view with customer profile, value, history, mood, and preferred contact routes.',
+  knowledge: 'Solutions and reusable answers agents can apply to resolve faster and reduce repeat work.',
+  automation: 'Workflows, SLA policies, automations, notifications, CSAT surveys, and proactive outreach.',
   handoffs: 'Cross-team work with owner, due time, blockers, and closure checklist.',
-  analytics: 'Executive service signals across volume, timeliness, quality, and staffing pressure.',
-  workforce: 'Agent availability, load, skills, and shift coverage for real-time balancing.',
-  admin: 'Simple controls for people, channels, fields, security, and operating readiness.',
+  analytics: 'Omni Analytics report catalog, saved reports, scheduled exports, and live service signals.',
+  workforce: 'Service tasks, technician availability, appointment duration, and dispatch coverage.',
+  admin: 'Omni Admin categories for team, channels, workflows, productivity, operations, and account controls.',
+  portal: 'Customer self-service for answer deflection and ticket intake.',
   tracker: 'What is complete, what is pending, and what remains before production buildout.',
 }
 const handoffTeams = [
@@ -113,7 +343,287 @@ const handoffTeams = [
   'Account Operations',
   'Compliance',
 ]
-const userRoleOptions = ['agent', 'supervisor', 'admin', 'auditor'] as const
+const userRoleOptions = ['agent', 'supervisor', 'admin', 'auditor', 'service_account'] as const
+const ticketFieldTypeOptions: TicketFieldType[] = [
+  'text',
+  'textarea',
+  'select',
+  'multiselect',
+  'checkbox',
+  'number',
+  'date',
+]
+const setupSectionOptions = [
+  { id: 'people', label: 'People' },
+  { id: 'forms', label: 'Ticket forms' },
+  { id: 'governance', label: 'Governance' },
+  { id: 'connectors', label: 'Connectors' },
+  { id: 'automation', label: 'Automation' },
+] as const
+type SetupSectionId = (typeof setupSectionOptions)[number]['id']
+type TicketDetailTab = 'activities' | 'threads' | 'linked' | 'time'
+type ChannelConsoleView =
+  | 'inbox'
+  | 'dashboard'
+  | 'campaigns'
+  | 'people'
+  | 'reports'
+  | 'marketplace'
+  | 'settings'
+  | 'ai-studio'
+type AnalyticsReportGroup = 'catalog' | 'saved' | 'scheduled'
+const freshdeskTicketActionItems = [
+  { id: 'watch', label: 'Watch', shortcut: 'w', icon: Bell },
+  { id: 'reply', label: 'Reply', shortcut: 'r', icon: Send },
+  { id: 'note', label: 'Note', shortcut: 'n', icon: ClipboardList },
+  { id: 'forward', label: 'Forward', shortcut: 'f', icon: Mail },
+  { id: 'child', label: 'Child task', shortcut: '', icon: GitBranch },
+  { id: 'close-silent', label: 'Close no email', shortcut: 'shift', icon: CheckCircle2 },
+] as const
+const freshchatConsoleViews: { id: ChannelConsoleView; label: string; icon: LucideIcon }[] = [
+  { id: 'inbox', label: 'Team Inbox', icon: Inbox },
+  { id: 'dashboard', label: 'Dashboard', icon: Gauge },
+  { id: 'campaigns', label: 'Campaigns', icon: Workflow },
+  { id: 'people', label: 'People', icon: Users },
+  { id: 'reports', label: 'Reports', icon: BarChart3 },
+  { id: 'marketplace', label: 'Marketplace', icon: DatabaseZap },
+  { id: 'settings', label: 'Settings', icon: Settings },
+  { id: 'ai-studio', label: 'AI Studio', icon: Bot },
+]
+const setupModuleCatalog: Record<SetupSectionId, { title: string; modules: string[] }[]> = {
+  people: [
+    { title: 'Team', modules: ['Agents', 'Groups', 'Roles', 'Business hours', 'Profile settings'] },
+    { title: 'Security', modules: ['MFA', 'Enterprise SSO', 'Permission profiles', 'Market access', 'API status'] },
+  ],
+  forms: [
+    { title: 'Ticket setup', modules: ['Ticket fields', 'Ticket forms', 'Contact fields', 'Company fields', 'Custom objects'] },
+    { title: 'Products', modules: ['Multiple products', 'Advanced ticketing', 'Portal branding', 'Purchase history'] },
+  ],
+  governance: [
+    { title: 'Operations', modules: ['Audit export', 'Retention', 'Attachment lifecycle', 'Operational alerts', 'Scheduled exports'] },
+    { title: 'Support ops', modules: ['Forums', 'Field service scheduling', 'Security controls', 'Helpdesk settings'] },
+  ],
+  connectors: [
+    { title: 'Channels', modules: ['Email', 'Widgets', 'Phone', 'Omnichat', 'WhatsApp', 'Facebook', 'Feedback form'] },
+    { title: 'Accounts', modules: ['Provider credentials', 'Marketplace apps', 'Account exports', 'Production account pack'] },
+  ],
+  automation: [
+    { title: 'Workflows', modules: ['SLA policies', 'Automations', 'Email notifications', 'CSAT surveys', 'Proactive outreach'] },
+    { title: 'Productivity', modules: ['Canned responses', 'Ticket templates', 'Scenario automations', 'Canned forms', 'Threads'] },
+  ],
+}
+// Admin-catalog modules that map to a real, configurable Setup panel today. Only these
+// render as clickable tiles so nothing in the catalog is a dead link; the rest land here
+// as we build their panels (B-112/B-113).
+const setupBuiltModules = new Set<string>([
+  'Agents',
+  'Groups',
+  'Roles',
+  'Permission profiles',
+  'MFA',
+  'Enterprise SSO',
+  'Market access',
+  'API status',
+  'Ticket fields',
+  'Ticket forms',
+  'Audit export',
+  'Retention',
+  'Attachment lifecycle',
+  'Operational alerts',
+  'Email',
+  'Provider credentials',
+  'Production account pack',
+  'SLA policies',
+  'Automations',
+])
+const analyticsReportCatalog: Record<AnalyticsReportGroup, { title: string; detail: string; badge: string }[]> = {
+  catalog: [
+    { title: 'Omnichannel Dashboard', detail: 'Tickets, chats, CSAT, available agents, and today filters.', badge: 'Live' },
+    { title: 'Chat Analytics', detail: 'Speed of response, SLA metrics, conversation volume, and wait time.', badge: 'Chat' },
+    { title: 'Team Performance', detail: 'Agent load, resolution movement, first response, and quality signals.', badge: 'Team' },
+    { title: 'Customer Satisfaction', detail: 'Ticket CSAT, chat CSAT, feedback comments, and trend movement.', badge: 'CSAT' },
+    { title: 'AI Agent Analytics', detail: 'Bot deflection, handoff reasons, session consumption, and answer gaps.', badge: 'AI' },
+  ],
+  saved: [
+    { title: 'Executive service review', detail: 'Saved leadership view across open work and breached promises.', badge: 'Saved' },
+    { title: 'Refund desk backlog', detail: 'Refund group backlog, average handling time, and overdue work.', badge: 'Saved' },
+    { title: 'Market channel health', detail: 'NG, GH, UK, and Dubai channel readiness with queue load.', badge: 'Saved' },
+  ],
+  scheduled: [
+    { title: 'Daily service digest', detail: 'Queued at 08:00 with tickets, chats, breaches, and blockers.', badge: 'Email' },
+    { title: 'Weekly CSAT board', detail: 'Every Monday with CSAT, feedback themes, and agent availability.', badge: 'Email' },
+    { title: 'Monthly export pack', detail: 'Audit-safe CSV and JSON exports for operations reporting.', badge: 'Export' },
+  ],
+}
+const productionReferenceStatusOptions: BackendProductionAccountReferenceStatus[] = [
+  'requested',
+  'provisioned',
+  'connected',
+  'blocked',
+  'retired',
+]
+type EmailSettingsDraft = {
+  inboundEnabled: boolean
+  inboundHost: string
+  inboundPort: number
+  inboundUsername: string
+  inboundPassword: string
+  inboundMailbox: string
+  inboundUseSsl: boolean
+  inboundMarkSeen: boolean
+  clearInboundPassword: boolean
+  outboundEnabled: boolean
+  outboundHost: string
+  outboundPort: number
+  outboundUsername: string
+  outboundPassword: string
+  outboundFromEmail: string
+  outboundUseStarttls: boolean
+  outboundUseSsl: boolean
+  clearOutboundPassword: boolean
+}
+const defaultEmailSettingsDraft: EmailSettingsDraft = {
+  inboundEnabled: false,
+  inboundHost: '',
+  inboundPort: 993,
+  inboundUsername: '',
+  inboundPassword: '',
+  inboundMailbox: 'INBOX',
+  inboundUseSsl: true,
+  inboundMarkSeen: true,
+  clearInboundPassword: false,
+  outboundEnabled: false,
+  outboundHost: '',
+  outboundPort: 587,
+  outboundUsername: '',
+  outboundPassword: '',
+  outboundFromEmail: '',
+  outboundUseStarttls: true,
+  outboundUseSsl: false,
+  clearOutboundPassword: false,
+}
+type IntegrationCredentialDraft = {
+  aiProvider: string
+  anthropicApiKey: string
+  anthropicApiBaseUrl: string
+  anthropicModel: string
+  clearAnthropicApiKey: boolean
+  alertWebhookUrl: string
+  alertWebhookSecret: string
+  alertDeliveryMinSeverity: 'info' | 'warning' | 'critical'
+  clearAlertWebhookSecret: boolean
+  smsHttpEndpoint: string
+  smsHttpAuthToken: string
+  smsHttpFrom: string
+  smsHttpAuthHeader: string
+  smsHttpAuthScheme: string
+  smsHttpDeliveryCallbackUrl: string
+  clearSmsHttpAuthToken: boolean
+  voiceHttpEndpoint: string
+  voiceHttpAuthToken: string
+  voiceHttpFrom: string
+  voiceHttpAuthHeader: string
+  voiceHttpAuthScheme: string
+  voiceHttpStatusCallbackUrl: string
+  clearVoiceHttpAuthToken: boolean
+  whatsappCloudApiBaseUrl: string
+  whatsappPhoneNumberId: string
+  whatsappAccessToken: string
+  whatsappPreviewUrls: boolean
+  clearWhatsappAccessToken: boolean
+  facebookGraphApiBaseUrl: string
+  facebookPageId: string
+  facebookPageAccessToken: string
+  facebookMessagingType: string
+  clearFacebookPageAccessToken: boolean
+  instagramGraphApiBaseUrl: string
+  instagramBusinessAccountId: string
+  instagramAccessToken: string
+  clearInstagramAccessToken: boolean
+}
+const defaultIntegrationCredentialDraft: IntegrationCredentialDraft = {
+  aiProvider: 'auto',
+  anthropicApiKey: '',
+  anthropicApiBaseUrl: 'https://api.anthropic.com',
+  anthropicModel: 'claude-sonnet-4-6',
+  clearAnthropicApiKey: false,
+  alertWebhookUrl: '',
+  alertWebhookSecret: '',
+  alertDeliveryMinSeverity: 'warning',
+  clearAlertWebhookSecret: false,
+  smsHttpEndpoint: '',
+  smsHttpAuthToken: '',
+  smsHttpFrom: '',
+  smsHttpAuthHeader: 'Authorization',
+  smsHttpAuthScheme: 'Bearer',
+  smsHttpDeliveryCallbackUrl: '',
+  clearSmsHttpAuthToken: false,
+  voiceHttpEndpoint: '',
+  voiceHttpAuthToken: '',
+  voiceHttpFrom: '',
+  voiceHttpAuthHeader: 'Authorization',
+  voiceHttpAuthScheme: 'Bearer',
+  voiceHttpStatusCallbackUrl: '',
+  clearVoiceHttpAuthToken: false,
+  whatsappCloudApiBaseUrl: 'https://graph.facebook.com/v25.0',
+  whatsappPhoneNumberId: '',
+  whatsappAccessToken: '',
+  whatsappPreviewUrls: false,
+  clearWhatsappAccessToken: false,
+  facebookGraphApiBaseUrl: 'https://graph.facebook.com/v25.0',
+  facebookPageId: '',
+  facebookPageAccessToken: '',
+  facebookMessagingType: 'RESPONSE',
+  clearFacebookPageAccessToken: false,
+  instagramGraphApiBaseUrl: 'https://graph.instagram.com/v25.0',
+  instagramBusinessAccountId: '',
+  instagramAccessToken: '',
+  clearInstagramAccessToken: false,
+}
+const permissionProfileOptions: BackendPermissionProfile[] = [
+  'role_default',
+  'read_only',
+  'operations',
+  'supervisor',
+  'admin',
+  'custom',
+]
+const permissionOptions: { value: BackendPermission; label: string }[] = [
+  { value: 'operations.write', label: 'Operations write' },
+  { value: 'supervisor.control', label: 'Supervisor tools' },
+  { value: 'audit.read', label: 'Audit read' },
+  { value: 'setup.manage', label: 'Setup manage' },
+]
+const portalMarketOptions = [
+  { code: 'ng', label: 'NG · Nigeria' },
+  { code: 'gh', label: 'GH · Ghana' },
+  { code: 'uk', label: 'UK · United Kingdom' },
+]
+const portalPriorityOptions: NonNullable<BackendCreatePortalTicketInput['priority']>[] = [
+  'normal',
+  'high',
+  'urgent',
+  'low',
+]
+
+function userHasPermission(user: BackendUser, permission: BackendPermission) {
+  if (Array.isArray(user.effective_permissions)) {
+    return user.effective_permissions.includes(permission)
+  }
+  if (user.role === 'admin') return true
+  if (permission === 'audit.read') return user.role === 'supervisor' || user.role === 'auditor'
+  if (permission === 'supervisor.control') return user.role === 'supervisor'
+  if (permission === 'operations.write') {
+    return user.role === 'agent' || user.role === 'supervisor' || user.role === 'service_account'
+  }
+  return false
+}
+
+function userPermissionCount(user: BackendUser) {
+  if (Array.isArray(user.effective_permissions)) return user.effective_permissions.length
+  return permissionOptions.filter((permission) => userHasPermission(user, permission.value)).length
+}
+
 const handoffStatusOrder: HandoffStatus[] = ['requested', 'accepted', 'in-progress', 'blocked', 'completed']
 const statusOptions: (ConversationStatus | 'all')[] = [
   'all',
@@ -130,12 +640,6 @@ const sentimentOptions: (Sentiment | 'all')[] = [
   'neutral',
   'frustrated',
   'at-risk',
-]
-
-const macros = [
-  'Thanks for reaching out. I am reviewing the full conversation history and will keep this thread updated with the next confirmed action.',
-  'I can see this is time-sensitive. I am escalating it now and will share the owner, status, and next update time in this thread.',
-  'I found the relevant help article and included the key steps below. I will keep the ticket open until you confirm it resolves the issue.',
 ]
 
 const composerModeLabels: Record<ComposerMode, string> = {
@@ -168,9 +672,17 @@ const sentimentLabels: Record<Sentiment, string> = {
 
 function titleCase(value: string) {
   return value
-    .split('-')
+    .split(/[-_]/)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ')
+}
+
+function backendChannelId(value: ChannelId) {
+  return value === 'phone' ? 'voice' : value
+}
+
+function backendPriorityId(value: Priority): NonNullable<BackendCreateSlaPolicyInput['priority']> {
+  return value === 'medium' ? 'normal' : value
 }
 
 function initials(value: string) {
@@ -191,12 +703,33 @@ function formatTime(value: string) {
   }).format(new Date(value))
 }
 
-function percent(value: number, total: number) {
-  return total === 0 ? 0 : Math.round((value / total) * 100)
+function relativeWorkTime(value: string) {
+  const deltaMs = Date.now() - new Date(value).getTime()
+  const minute = 60 * 1000
+  const hour = 60 * minute
+  const day = 24 * hour
+  if (Number.isNaN(deltaMs)) return formatTime(value)
+  if (deltaMs < minute) return 'a few seconds ago'
+  if (deltaMs < hour) {
+    const minutes = Math.max(1, Math.round(deltaMs / minute))
+    return `${minutes} minute${minutes === 1 ? '' : 's'} ago`
+  }
+  if (deltaMs < day) {
+    const hours = Math.max(1, Math.round(deltaMs / hour))
+    return `${hours} hour${hours === 1 ? '' : 's'} ago`
+  }
+  const days = Math.max(1, Math.round(deltaMs / day))
+  return `${days} day${days === 1 ? '' : 's'} ago`
 }
 
-function queueNoun(value: number) {
-  return value === 1 ? 'customer' : 'customers'
+function formatFileSize(value: number) {
+  if (value >= 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`
+  if (value >= 1024) return `${Math.max(1, Math.round(value / 1024))} KB`
+  return `${value} B`
+}
+
+function percent(value: number, total: number) {
+  return total === 0 ? 0 : Math.round((value / total) * 100)
 }
 
 function isDirectMessageChannel(channelId: ChannelId | 'all'): channelId is ChannelId {
@@ -243,36 +776,6 @@ function contactHref(method: ContactMethod, customerId: string) {
   return routeHref({ screen: 'channels', channel: 'facebook', customer: customerId })
 }
 
-const priorityRank: Record<Priority, number> = {
-  urgent: 4,
-  high: 3,
-  medium: 2,
-  low: 1,
-}
-
-const slaRank: Record<SlaState, number> = {
-  breached: 4,
-  risk: 3,
-  paused: 2,
-  healthy: 1,
-}
-
-const sentimentRank: Record<Sentiment, number> = {
-  'at-risk': 4,
-  frustrated: 3,
-  neutral: 2,
-  positive: 1,
-}
-
-function triageScore(conversation: OmniConversation) {
-  return (
-    priorityRank[conversation.priority] * 24 +
-    slaRank[conversation.slaState] * 18 +
-    sentimentRank[conversation.sentiment] * 12 +
-    (conversation.unread ? 10 : 0)
-  )
-}
-
 function promiseTarget(conversation: OmniConversation) {
   return conversation.status === 'new' ? conversation.firstResponseDue : conversation.resolutionDue
 }
@@ -283,17 +786,6 @@ function promiseLabel(conversation: OmniConversation) {
   if (conversation.slaState === 'risk') return `Due soon ${target}`
   if (conversation.slaState === 'paused') return `Paused until owner confirms`
   return `Due ${target}`
-}
-
-function channelWorkMode(channelId: ChannelId) {
-  if (channelId === 'phone') return 'Call or callback'
-  if (channelId === 'email') return 'Email reply'
-  if (channelId === 'sms') return 'SMS update'
-  if (channelId === 'portal') return 'Portal reply'
-  if (channelId === 'api') return 'Partner update'
-  if (channelId === 'internal') return 'Internal handoff'
-  if (isDirectMessageChannel(channelId)) return 'Native chat'
-  return 'Customer reply'
 }
 
 function connectorStatusLabel(status: string) {
@@ -317,6 +809,23 @@ function deliveryLabel(status: NonNullable<OmniConversation['timeline'][number][
   return 'Sent'
 }
 
+function operationalAlertStatusTone(status: BackendOperationalAlert['status']) {
+  if (status === 'resolved') return 'done'
+  if (status === 'acknowledged') return 'pending'
+  return 'risk'
+}
+
+function operationalAlertEntityLabel(alert: BackendOperationalAlert) {
+  return `${titleCase(alert.entity_type)} · ${alert.entity_id}`
+}
+
+function productionRequestTone(status: string) {
+  if (status === 'ready') return 'done'
+  if (status === 'blocked') return 'risk'
+  if (status === 'missing') return 'risk'
+  return 'pending'
+}
+
 function OmniApp() {
   const {
     state,
@@ -338,17 +847,29 @@ function OmniApp() {
     toggleTask,
     toggleChannelIntake,
     toggleRule,
-    publishArticle,
     createUser,
     updateUser,
+    createSupportGroup,
+    updateSupportGroup,
+    createSlaPolicy,
+    updateSlaPolicy,
+    createTicketField,
+    updateTicketField,
     changePassword,
+    enrollMfa,
+    confirmMfa,
+    disableMfa,
     retryOutboundMessage,
+    updateOperationalAlertStatus,
     updateSettings,
     updateHandoffStatus,
     toggleHandoffChecklist,
+    recordResponseMacroUse,
     resetDemo,
     backendSession,
     login,
+    beginOidcLogin,
+    completeOidcLogin,
     logout,
     switchMarket,
     refreshBackend,
@@ -364,10 +885,50 @@ function OmniApp() {
   const [prototypeNotice, setPrototypeNotice] = useState('')
   const [quickCreateOpen, setQuickCreateOpen] = useState(false)
   const [notificationOpen, setNotificationOpen] = useState(false)
+  const [globalSearchOpen, setGlobalSearchOpen] = useState(false)
+  const [globalSearchResults, setGlobalSearchResults] = useState<BackendGlobalSearchResult[]>([])
+  const [globalSearchLoading, setGlobalSearchLoading] = useState(false)
+  const [globalSearchError, setGlobalSearchError] = useState('')
   const [attachmentDraft, setAttachmentDraft] = useState<AttachmentDraft | null>(null)
+  const [mergeTicketBusy, setMergeTicketBusy] = useState('')
+  const [dashboardRange, setDashboardRange] = useState<DashboardRange>('all')
+  const [dashboardTicketGroup, setDashboardTicketGroup] = useState('all')
+  const [dashboardChatGroup, setDashboardChatGroup] = useState('all')
+  const [todos, setTodos] = useState<DashboardTodo[]>(() =>
+    loadDashboardTodos(backendSession?.user.id ?? 'local'),
+  )
+  const [todoDraft, setTodoDraft] = useState('')
+  const [watchedTicketIds, setWatchedTicketIds] = useState<string[]>(() =>
+    loadWatchedTickets(backendSession?.user.id ?? 'local'),
+  )
+  const [timeLogs, setTimeLogs] = useState<Record<string, TicketTimeLog[]>>(() => loadTimeLogs())
+  const [timeLogDraft, setTimeLogDraft] = useState('')
+  const [inboxView, setInboxView] = useState('all-open')
+  const [inboxSort, setInboxSort] = useState<'created' | 'updated' | 'priority'>('created')
+  const [inboxLayout, setInboxLayout] = useState<'card' | 'table'>('card')
+  const [inboxPage, setInboxPage] = useState(0)
+  const [inboxFiltersOpen, setInboxFiltersOpen] = useState(true)
+  const [inboxGroup, setInboxGroup] = useState('all')
+  const [inboxCreated, setInboxCreated] = useState<'all' | 'today' | 'week' | 'last-30'>('all')
+  const [inboxDue, setInboxDue] = useState<'any' | 'today' | 'overdue'>('any')
+  const [selectedTicketIds, setSelectedTicketIds] = useState<string[]>([])
+  const [ticketDetailTab, setTicketDetailTab] = useState<TicketDetailTab>('activities')
+
+  // Reset ticket-list pagination to the first page when filters/sort change.
+  // (React's "adjust state during render" pattern — no effect, no cascading renders.)
+  const inboxFilterKey = `${state.filters.search}|${state.filters.assignee}|${state.filters.status}|${state.filters.priority}|${state.filters.channel}|${state.filters.sentiment}|${state.filters.sla}|${inboxGroup}|${inboxCreated}|${inboxDue}|${inboxSort}`
+  const [prevInboxFilterKey, setPrevInboxFilterKey] = useState(inboxFilterKey)
+  if (inboxFilterKey !== prevInboxFilterKey) {
+    setPrevInboxFilterKey(inboxFilterKey)
+    setInboxPage(0)
+  }
+  const [channelConsoleView, setChannelConsoleView] = useState<ChannelConsoleView>('inbox')
+  const [analyticsReportGroup, setAnalyticsReportGroup] = useState<AnalyticsReportGroup>('catalog')
   const [loginEmail, setLoginEmail] = useState('gbolahan@omniticket.example.com')
-  const [loginPassword, setLoginPassword] = useState('omni-demo')
+  const [loginPassword, setLoginPassword] = useState('')
+  const [loginMfaCode, setLoginMfaCode] = useState('')
   const [loginMarket, setLoginMarket] = useState('market-ng')
+  const oidcCallbackHandledRef = useRef(false)
   const [quickTicket, setQuickTicket] = useState<NewTicketInput>({
     customerId: state.customers[0]?.id ?? '',
     channelId: 'email',
@@ -382,14 +943,122 @@ function OmniApp() {
     email: '',
     temporaryPassword: '',
     role: 'agent' as (typeof userRoleOptions)[number],
+    permissionProfile: 'role_default' as BackendPermissionProfile,
     marketIds: ['market-ng'],
     defaultMarketId: 'market-ng',
   })
+  const [supportGroupDraft, setSupportGroupDraft] = useState({
+    name: '',
+    description: '',
+    teamEmail: '',
+    skills: '',
+    channels: [] as ChannelId[],
+  })
+  const [slaPolicyDraft, setSlaPolicyDraft] = useState({
+    name: '',
+    priority: 'medium' as Priority,
+    firstResponseMinutes: 60,
+    resolutionMinutes: 1440,
+    businessHours: 'Business hours',
+    channels: [] as ChannelId[],
+    active: true,
+    position: 40,
+  })
+  const [setupSection, setSetupSection] = useState<SetupSectionId>('people')
+  const [setupModuleHint, setSetupModuleHint] = useState('')
+  const [peopleView, setPeopleView] = useState<'users' | 'groups' | 'security'>('users')
+  const [addUserOpen, setAddUserOpen] = useState(false)
+  const [addGroupOpen, setAddGroupOpen] = useState(false)
+  const [addSlaPolicyOpen, setAddSlaPolicyOpen] = useState(false)
+  const [emailSettingsDraft, setEmailSettingsDraft] =
+    useState<EmailSettingsDraft>(defaultEmailSettingsDraft)
+  const [emailSettingsBusy, setEmailSettingsBusy] = useState(false)
+  const [integrationCredentialDraft, setIntegrationCredentialDraft] =
+    useState<IntegrationCredentialDraft>(defaultIntegrationCredentialDraft)
+  const [integrationCredentialBusy, setIntegrationCredentialBusy] = useState(false)
+  const [productionAccountPack, setProductionAccountPack] =
+    useState<BackendProductionAccountRequestPack | null>(null)
+  const [productionAccountBusy, setProductionAccountBusy] = useState(false)
+  const [productionAccountDelivery, setProductionAccountDelivery] =
+    useState<BackendProductionAccountRequestDelivery | null>(null)
+  const [productionAccountSendBusy, setProductionAccountSendBusy] = useState(false)
+  const [productionAccountReferences, setProductionAccountReferences] =
+    useState<BackendProductionAccountReference[]>([])
+  const [productionAccountReferenceDocs, setProductionAccountReferenceDocs] =
+    useState<BackendProductionAccountReferenceDocs | null>(null)
+  const [productionAccountReferenceBusy, setProductionAccountReferenceBusy] = useState(false)
+  const [productionAccountReferenceDraft, setProductionAccountReferenceDraft] = useState({
+    provider: 'email',
+    area: 'Email inbound/outbound',
+    accountName: '',
+    accountIdentifier: '',
+    status: 'requested' as BackendProductionAccountReferenceStatus,
+    ownerEmail: '',
+    credentialReference: '',
+    docsReference: 'API_DOCS.md#external-accounts-needed',
+    callbackUrls: '',
+    notes: '',
+  })
+  const [productionReadinessChecklist, setProductionReadinessChecklist] =
+    useState<BackendProductionReadinessChecklist | null>(null)
+  const [productionReadinessBusy, setProductionReadinessBusy] = useState(false)
+  const [userSearch, setUserSearch] = useState('')
+  const [ticketFieldDraft, setTicketFieldDraft] = useState({
+    label: '',
+    key: '',
+    fieldType: 'text' as TicketFieldType,
+    options: '',
+    channels: [] as ChannelId[],
+    required: false,
+    active: true,
+    position: 100,
+  })
+  const [userActionBusy, setUserActionBusy] = useState(false)
+  const [groupActionBusy, setGroupActionBusy] = useState(false)
+  const [slaPolicyActionBusy, setSlaPolicyActionBusy] = useState(false)
   const [passwordChange, setPasswordChange] = useState({
     currentPassword: '',
     newPassword: '',
   })
+  const [mfaEnrollment, setMfaEnrollment] = useState<BackendMfaEnrollment | null>(null)
+  const [mfaConfirmCode, setMfaConfirmCode] = useState('')
+  const [mfaDisable, setMfaDisable] = useState({
+    currentPassword: '',
+    code: '',
+  })
   const [passwordResetDrafts, setPasswordResetDrafts] = useState<Record<string, string>>({})
+  const [auditRetention, setAuditRetention] = useState<BackendAuditRetentionPolicy | null>(null)
+  const [attachmentRetention, setAttachmentRetention] = useState<BackendAttachmentRetentionPolicy | null>(null)
+  const [auditActionBusy, setAuditActionBusy] = useState(false)
+  const [attachmentActionBusy, setAttachmentActionBusy] = useState(false)
+  const [portalMarket, setPortalMarket] = useState('ng')
+  const [portalQuery, setPortalQuery] = useState('')
+  const [portalAnswers, setPortalAnswers] = useState<BackendPortalAnswerSuggestion[]>([])
+  const [portalTicketFields, setPortalTicketFields] = useState<BackendTicketField[]>([])
+  const [portalLoading, setPortalLoading] = useState(false)
+  const [portalSubmitting, setPortalSubmitting] = useState(false)
+  const [portalNotice, setPortalNotice] = useState('')
+  const [portalSearchError, setPortalSearchError] = useState('')
+  const [portalDraft, setPortalDraft] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    subject: '',
+    description: '',
+    priority: 'normal' as NonNullable<BackendCreatePortalTicketInput['priority']>,
+    customFields: {} as Record<string, unknown>,
+  })
+  const [portalLookup, setPortalLookup] = useState({
+    publicId: '',
+    email: '',
+  })
+  const [portalTicketDetail, setPortalTicketDetail] = useState<BackendPortalTicketDetail | null>(null)
+  const [portalLookupBusy, setPortalLookupBusy] = useState(false)
+  const [portalReplyBusy, setPortalReplyBusy] = useState(false)
+  const [portalReplyBody, setPortalReplyBody] = useState('')
+  const [portalAttachmentFile, setPortalAttachmentFile] = useState<File | null>(null)
+  const [portalReplyAttachmentFile, setPortalReplyAttachmentFile] = useState<File | null>(null)
+  const [portalLookupNotice, setPortalLookupNotice] = useState('')
 
   const selectedAgent = state.agents.find((agent) => agent.id === selectedConversation.assigneeId)
   const selectedChannel =
@@ -397,28 +1066,37 @@ function OmniApp() {
   const focusedChannel =
     state.channels.find((channel) => channel.id === state.selectedChannelId) ?? undefined
 
-  const channelTotals = useMemo(() => {
-    return state.channels.map((channel) => ({
-      channel,
-      conversations: state.conversations.filter((conversation) => conversation.channelId === channel.id),
-    }))
-  }, [state.channels, state.conversations])
+  const composerMacroOptions = useMemo<ResponseMacroSuggestion[]>(() => {
+    const suggested = selectedConversation.copilot.responseMacros ?? []
+    const suggestedIds = new Set(suggested.map((item) => item.macro.id))
+    const catalog = state.responseMacros
+      .filter(
+        (macro) =>
+          macro.active &&
+          !suggestedIds.has(macro.id) &&
+          (macro.channels.length === 0 || macro.channels.includes(composerChannel)),
+      )
+      .sort((a, b) => b.usageCount - a.usageCount || a.name.localeCompare(b.name))
+      .map((macro) => ({
+        macro,
+        score: 0,
+        reasons: macro.shortcut ? [macro.shortcut] : [],
+        matchedTerms: macro.tags,
+      }))
+    return [...suggested, ...catalog]
+  }, [composerChannel, selectedConversation.copilot.responseMacros, state.responseMacros])
 
-  const prioritizedWork = useMemo(
-    () =>
-      state.conversations
-        .filter((conversation) => conversation.status !== 'resolved')
-        .map((conversation) => ({
-          conversation,
-          customer: state.customers.find((customer) => customer.id === conversation.customerId),
-          channel: state.channels.find((channel) => channel.id === conversation.channelId),
-          owner: state.agents.find((agent) => agent.id === conversation.assigneeId),
-          score: triageScore(conversation),
-        }))
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 5),
-    [state.agents, state.channels, state.conversations, state.customers],
+  const activeSupportGroups = useMemo(
+    () => state.supportGroups.filter((group) => group.active),
+    [state.supportGroups],
   )
+  const handoffTeamOptions = useMemo(
+    () => (activeSupportGroups.length ? activeSupportGroups.map((group) => group.name) : handoffTeams),
+    [activeSupportGroups],
+  )
+  const effectiveHandoffTeam = handoffTeamOptions.includes(handoffTeam)
+    ? handoffTeam
+    : handoffTeamOptions[0] ?? handoffTeams[0]
 
   const selectedCustomerOpenWork = state.conversations.filter(
     (conversation) =>
@@ -430,13 +1108,174 @@ function OmniApp() {
   )
   const aiWorkQueueAutomationEnabled = state.settings?.aiWorkQueueAutomationEnabled ?? true
   const backendSnapshot = backendSync.snapshot
+  const oidcProviderConfig = backendSync.oidcProviderConfig
   const currentMarket = backendSession?.market
+  const emailProviderSettings: BackendEmailProviderSettings | null =
+    backendSnapshot?.emailProviderSettings ?? backendSnapshot?.email_provider_settings ?? null
+  const integrationCredentialSettings: BackendIntegrationCredentialSettings | null =
+    backendSnapshot?.integrationCredentialSettings ?? backendSnapshot?.integration_credential_settings ?? null
   const availableMarkets = backendSession?.available_markets ?? []
+  const operationalAlerts = backendSnapshot?.operationalAlerts ?? backendSnapshot?.operational_alerts ?? []
+  const alertDeliveries = backendSnapshot?.alertDeliveries ?? backendSnapshot?.alert_deliveries ?? []
+  const alertDeliveryConfig =
+    backendSnapshot?.alertDeliveryConfig ?? backendSnapshot?.alert_delivery_config
+  const outboundProviderConfig =
+    backendSnapshot?.outboundProviderConfig ?? backendSnapshot?.outbound_provider_config ?? []
+  const attachmentProviderConfig: BackendAttachmentProviderConfig | null =
+    backendSnapshot?.attachmentProviderConfig ?? backendSnapshot?.attachment_provider_config ?? null
+  const productionAccountActionItems =
+    productionAccountPack?.items.filter((item) => item.status !== 'ready') ?? []
+  const activeOperationalAlerts = operationalAlerts.filter((alert) => alert.status !== 'resolved')
+  const operationalAlertHref = `${routeHref({ screen: 'admin' }).split('#')[0]}#operational-alerts`
 
   const activeDirectChannelId = isDirectMessageChannel(state.selectedChannelId)
     ? state.selectedChannelId
     : 'whatsapp'
+  const isPortalRoute =
+    state.selectedScreen === 'portal' ||
+    (typeof window !== 'undefined' &&
+      new URLSearchParams(window.location.search).get('screen') === 'portal')
 
+  // Personal dashboard to-dos persist per user in localStorage (personal scratch,
+  // not shared content). Reload when the signed-in user changes; persist on edit.
+  const todoUserId = backendSession?.user.id ?? 'local'
+  const previousTodoUser = useRef(todoUserId)
+  useEffect(() => {
+    if (previousTodoUser.current === todoUserId) return
+    previousTodoUser.current = todoUserId
+    setTodos(loadDashboardTodos(todoUserId))
+    setWatchedTicketIds(loadWatchedTickets(todoUserId))
+  }, [todoUserId])
+  useEffect(() => {
+    saveDashboardTodos(todoUserId, todos)
+  }, [todoUserId, todos])
+  useEffect(() => {
+    saveWatchedTickets(todoUserId, watchedTicketIds)
+  }, [todoUserId, watchedTicketIds])
+  useEffect(() => {
+    saveTimeLogs(timeLogs)
+  }, [timeLogs])
+
+  // Keyboard shortcuts for the open ticket (the action bar advertises these via <kbd>).
+  // A ref always points at the latest handler so the listener stays subscribed once.
+  const ticketActionRef = useRef(handleTicketAction)
+  useEffect(() => {
+    ticketActionRef.current = handleTicketAction
+  })
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (state.selectedScreen !== 'inbox') return
+      if (event.metaKey || event.ctrlKey || event.altKey) return
+      const target = event.target as HTMLElement | null
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return
+      }
+      const action = freshdeskTicketActionItems.find((item) => item.shortcut === event.key.toLowerCase())
+      if (action) {
+        event.preventDefault()
+        ticketActionRef.current(action.id)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [state.selectedScreen])
+
+  useEffect(() => {
+    const syncDraft = () => {
+      if (!emailProviderSettings) {
+        setEmailSettingsDraft((current) => ({
+          ...current,
+          inboundUsername: current.inboundUsername || currentMarket?.support_email || '',
+          outboundUsername: current.outboundUsername || currentMarket?.support_email || '',
+          outboundFromEmail: current.outboundFromEmail || currentMarket?.support_email || '',
+        }))
+        return
+      }
+      setEmailSettingsDraft({
+        inboundEnabled: emailProviderSettings.inbound_enabled,
+        inboundHost: emailProviderSettings.inbound_host,
+        inboundPort: emailProviderSettings.inbound_port,
+        inboundUsername: emailProviderSettings.inbound_username || currentMarket?.support_email || '',
+        inboundPassword: '',
+        inboundMailbox: emailProviderSettings.inbound_mailbox || 'INBOX',
+        inboundUseSsl: emailProviderSettings.inbound_use_ssl,
+        inboundMarkSeen: emailProviderSettings.inbound_mark_seen,
+        clearInboundPassword: false,
+        outboundEnabled: emailProviderSettings.outbound_enabled,
+        outboundHost: emailProviderSettings.outbound_host,
+        outboundPort: emailProviderSettings.outbound_port,
+        outboundUsername: emailProviderSettings.outbound_username || currentMarket?.support_email || '',
+        outboundPassword: '',
+        outboundFromEmail: emailProviderSettings.outbound_from_email || currentMarket?.support_email || '',
+        outboundUseStarttls: emailProviderSettings.outbound_use_starttls,
+        outboundUseSsl: emailProviderSettings.outbound_use_ssl,
+        clearOutboundPassword: false,
+      })
+    }
+    const timeoutId = window.setTimeout(syncDraft, 0)
+    return () => window.clearTimeout(timeoutId)
+  }, [currentMarket?.support_email, emailProviderSettings])
+
+  useEffect(() => {
+    const syncDraft = () => {
+      if (!integrationCredentialSettings) return
+      setIntegrationCredentialDraft({
+        aiProvider: integrationCredentialSettings.ai_provider,
+        anthropicApiKey: '',
+        anthropicApiBaseUrl: integrationCredentialSettings.anthropic_api_base_url,
+        anthropicModel: integrationCredentialSettings.anthropic_model,
+        clearAnthropicApiKey: false,
+        alertWebhookUrl: integrationCredentialSettings.alert_webhook_url,
+        alertWebhookSecret: '',
+        alertDeliveryMinSeverity: integrationCredentialSettings.alert_delivery_min_severity,
+        clearAlertWebhookSecret: false,
+        smsHttpEndpoint: integrationCredentialSettings.sms_http_endpoint,
+        smsHttpAuthToken: '',
+        smsHttpFrom: integrationCredentialSettings.sms_http_from,
+        smsHttpAuthHeader: integrationCredentialSettings.sms_http_auth_header,
+        smsHttpAuthScheme: integrationCredentialSettings.sms_http_auth_scheme,
+        smsHttpDeliveryCallbackUrl: integrationCredentialSettings.sms_http_delivery_callback_url,
+        clearSmsHttpAuthToken: false,
+        voiceHttpEndpoint: integrationCredentialSettings.voice_http_endpoint,
+        voiceHttpAuthToken: '',
+        voiceHttpFrom: integrationCredentialSettings.voice_http_from,
+        voiceHttpAuthHeader: integrationCredentialSettings.voice_http_auth_header,
+        voiceHttpAuthScheme: integrationCredentialSettings.voice_http_auth_scheme,
+        voiceHttpStatusCallbackUrl: integrationCredentialSettings.voice_http_status_callback_url,
+        clearVoiceHttpAuthToken: false,
+        whatsappCloudApiBaseUrl: integrationCredentialSettings.whatsapp_cloud_api_base_url,
+        whatsappPhoneNumberId: integrationCredentialSettings.whatsapp_phone_number_id,
+        whatsappAccessToken: '',
+        whatsappPreviewUrls: integrationCredentialSettings.whatsapp_preview_urls,
+        clearWhatsappAccessToken: false,
+        facebookGraphApiBaseUrl: integrationCredentialSettings.facebook_graph_api_base_url,
+        facebookPageId: integrationCredentialSettings.facebook_page_id,
+        facebookPageAccessToken: '',
+        facebookMessagingType: integrationCredentialSettings.facebook_messaging_type,
+        clearFacebookPageAccessToken: false,
+        instagramGraphApiBaseUrl: integrationCredentialSettings.instagram_graph_api_base_url,
+        instagramBusinessAccountId: integrationCredentialSettings.instagram_business_account_id,
+        instagramAccessToken: '',
+        clearInstagramAccessToken: false,
+      })
+    }
+    const timeoutId = window.setTimeout(syncDraft, 0)
+    return () => window.clearTimeout(timeoutId)
+  }, [integrationCredentialSettings])
+
+  const operationalNotifications = activeOperationalAlerts.slice(0, 3).map((alert) => ({
+    id: alert.id,
+    title: alert.title,
+    body: alert.message,
+    action: () => selectScreen('admin'),
+    href: operationalAlertHref,
+  }))
   const riskNotifications = state.conversations
     .filter((conversation) => conversation.slaState !== 'healthy')
     .slice(0, 4)
@@ -463,6 +1302,7 @@ function OmniApp() {
       }
     })
   const serviceNotifications = [
+    ...operationalNotifications,
     ...riskNotifications,
     ...blockedNotifications,
     {
@@ -480,6 +1320,572 @@ function OmniApp() {
     return () => window.clearTimeout(timer)
   }, [prototypeNotice])
 
+  useEffect(() => {
+    if (!isPortalRoute) return undefined
+    let cancelled = false
+    const query = portalQuery.trim()
+    const timer = window.setTimeout(() => {
+      setPortalLoading(true)
+      fetchBackendPortalAnswers(portalMarket, query, 5)
+        .then((response) => {
+          if (cancelled) return
+          setPortalAnswers(response.suggestions)
+          setPortalTicketFields(response.ticket_fields)
+          setPortalSearchError('')
+        })
+        .catch((error) => {
+          if (cancelled) return
+          setPortalAnswers([])
+          setPortalTicketFields([])
+          setPortalSearchError(error instanceof Error ? error.message : 'Help Center is unavailable.')
+        })
+        .finally(() => {
+          if (!cancelled) setPortalLoading(false)
+        })
+    }, query ? 240 : 0)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [isPortalRoute, portalMarket, portalQuery])
+
+  useEffect(() => {
+    if (backendSession || oidcCallbackHandledRef.current) return
+    const params = new URLSearchParams(window.location.search)
+    const code = params.get('code')
+    const stateValue = params.get('state')
+    if (!code || !stateValue) return
+    oidcCallbackHandledRef.current = true
+    completeOidcLogin({ code, state: stateValue }).then((success) => {
+      if (!success) return
+      const nextParams = new URLSearchParams(window.location.search)
+      nextParams.delete('auth')
+      nextParams.delete('code')
+      nextParams.delete('state')
+      nextParams.delete('error')
+      nextParams.set('screen', 'command')
+      window.history.replaceState(null, '', `${window.location.pathname}?${nextParams.toString()}`)
+    })
+  }, [backendSession, completeOidcLogin])
+
+  useEffect(() => {
+    let cancelled = false
+    if (!backendSession) {
+      return undefined
+    }
+
+    fetchBackendAuditRetentionPolicy(backendSession)
+      .then((policy) => {
+        if (!cancelled) setAuditRetention(policy)
+      })
+      .catch(() => {
+        if (!cancelled) setAuditRetention(null)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [backendSession, backendSync.lastSyncAt])
+
+  useEffect(() => {
+    let cancelled = false
+    if (!backendSession || setupSection !== 'connectors') {
+      return undefined
+    }
+
+    fetchBackendProductionAccountRequests(backendSession)
+      .then((pack) => {
+        if (!cancelled) setProductionAccountPack(pack)
+      })
+      .catch(() => {
+        if (!cancelled) setProductionAccountPack(null)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [backendSession, backendSync.lastSyncAt, setupSection])
+
+  useEffect(() => {
+    let cancelled = false
+    if (!backendSession || setupSection !== 'connectors') {
+      return undefined
+    }
+
+    fetchBackendProductionReadinessChecklist(backendSession)
+      .then((checklist) => {
+        if (!cancelled) setProductionReadinessChecklist(checklist)
+      })
+      .catch(() => {
+        if (!cancelled) setProductionReadinessChecklist(null)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [backendSession, backendSync.lastSyncAt, setupSection])
+
+  useEffect(() => {
+    let cancelled = false
+    if (!backendSession || setupSection !== 'connectors') {
+      return undefined
+    }
+
+    Promise.all([
+      fetchBackendProductionAccountReferences(backendSession),
+      fetchBackendProductionAccountReferenceDocs(backendSession),
+    ])
+      .then(([references, docs]) => {
+        if (!cancelled) {
+          setProductionAccountReferences(references)
+          setProductionAccountReferenceDocs(docs)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setProductionAccountReferences([])
+          setProductionAccountReferenceDocs(null)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [backendSession, backendSync.lastSyncAt, setupSection])
+
+  useEffect(() => {
+    let cancelled = false
+    if (!backendSession) {
+      return undefined
+    }
+
+    fetchBackendAttachmentRetentionPolicy(backendSession)
+      .then((policy) => {
+        if (!cancelled) setAttachmentRetention(policy)
+      })
+      .catch(() => {
+        if (!cancelled) setAttachmentRetention(null)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [backendSession, backendSync.lastSyncAt])
+
+  useEffect(() => {
+    const query = state.filters.search.trim()
+    if (!backendSession || query.length < 2) {
+      return undefined
+    }
+
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => {
+      setGlobalSearchLoading(true)
+      setGlobalSearchError('')
+      fetchBackendGlobalSearch(query, backendSession, 10, controller.signal)
+        .then((results) => {
+          setGlobalSearchResults(results)
+        })
+        .catch((error) => {
+          if (controller.signal.aborted) return
+          setGlobalSearchResults([])
+          setGlobalSearchError(error instanceof Error ? error.message : 'Search is unavailable.')
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setGlobalSearchLoading(false)
+        })
+    }, 220)
+
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [backendSession, state.filters.search])
+
+  function downloadAuditExport(content: string, contentType: string, filename: string) {
+    const blob = new Blob([content], { type: contentType })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    link.click()
+    window.URL.revokeObjectURL(url)
+  }
+
+  async function handleAuditExport(format: BackendAuditExportFormat) {
+    if (!backendSession || auditActionBusy) return
+    setAuditActionBusy(true)
+    try {
+      const exportPayload = await exportBackendAudit(
+        {
+          format,
+          limit: auditRetention?.export_max_rows ?? 1000,
+        },
+        backendSession,
+      )
+      downloadAuditExport(exportPayload.content, exportPayload.contentType, exportPayload.filename)
+      setPrototypeNotice(`Audit ${format.toUpperCase()} export downloaded.`)
+      const policy = await fetchBackendAuditRetentionPolicy(backendSession)
+      setAuditRetention(policy)
+    } catch (error) {
+      setPrototypeNotice(error instanceof Error ? error.message : 'Audit export failed.')
+    } finally {
+      setAuditActionBusy(false)
+    }
+  }
+
+  async function handleAuditPrune() {
+    if (!backendSession || auditActionBusy) return
+    setAuditActionBusy(true)
+    try {
+      const result = await pruneBackendAuditRetention(backendSession)
+      setAuditRetention(result.policy)
+      setPrototypeNotice(`${result.deleted_events} audit event(s) pruned by retention policy.`)
+      await refreshBackend()
+    } catch (error) {
+      setPrototypeNotice(error instanceof Error ? error.message : 'Audit retention prune failed.')
+    } finally {
+      setAuditActionBusy(false)
+    }
+  }
+
+  async function handleAttachmentPrune() {
+    if (!backendSession || attachmentActionBusy) return
+    setAttachmentActionBusy(true)
+    try {
+      const result = await pruneBackendAttachmentRetention(backendSession)
+      setAttachmentRetention(result.policy)
+      setPrototypeNotice(`${result.purged_attachments} attachment(s) purged by retention policy.`)
+      await refreshBackend()
+    } catch (error) {
+      setPrototypeNotice(error instanceof Error ? error.message : 'Attachment retention prune failed.')
+    } finally {
+      setAttachmentActionBusy(false)
+    }
+  }
+
+  async function handleEmailSettingsSave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!backendSession || emailSettingsBusy) return
+    if (emailSettingsDraft.outboundUseSsl && emailSettingsDraft.outboundUseStarttls) {
+      setPrototypeNotice('SMTP can use SSL or STARTTLS, not both.')
+      return
+    }
+    setEmailSettingsBusy(true)
+    try {
+      const patch: BackendUpdateEmailProviderSettingsInput = {
+        inbound_enabled: emailSettingsDraft.inboundEnabled,
+        inbound_host: emailSettingsDraft.inboundHost.trim(),
+        inbound_port: Number(emailSettingsDraft.inboundPort || 993),
+        inbound_username: emailSettingsDraft.inboundUsername.trim(),
+        inbound_mailbox: emailSettingsDraft.inboundMailbox.trim() || 'INBOX',
+        inbound_use_ssl: emailSettingsDraft.inboundUseSsl,
+        inbound_mark_seen: emailSettingsDraft.inboundMarkSeen,
+        clear_inbound_password: emailSettingsDraft.clearInboundPassword,
+        outbound_enabled: emailSettingsDraft.outboundEnabled,
+        outbound_host: emailSettingsDraft.outboundHost.trim(),
+        outbound_port: Number(emailSettingsDraft.outboundPort || 587),
+        outbound_username: emailSettingsDraft.outboundUsername.trim(),
+        outbound_from_email: emailSettingsDraft.outboundFromEmail.trim(),
+        outbound_use_starttls: emailSettingsDraft.outboundUseStarttls,
+        outbound_use_ssl: emailSettingsDraft.outboundUseSsl,
+        clear_outbound_password: emailSettingsDraft.clearOutboundPassword,
+      }
+      if (emailSettingsDraft.inboundPassword.trim()) {
+        patch.inbound_password = emailSettingsDraft.inboundPassword.trim()
+      }
+      if (emailSettingsDraft.outboundPassword.trim()) {
+        patch.outbound_password = emailSettingsDraft.outboundPassword.trim()
+      }
+      const updated = await patchBackendEmailSettings(patch, backendSession)
+      setEmailSettingsDraft({
+        inboundEnabled: updated.inbound_enabled,
+        inboundHost: updated.inbound_host,
+        inboundPort: updated.inbound_port,
+        inboundUsername: updated.inbound_username || currentMarket?.support_email || '',
+        inboundPassword: '',
+        inboundMailbox: updated.inbound_mailbox || 'INBOX',
+        inboundUseSsl: updated.inbound_use_ssl,
+        inboundMarkSeen: updated.inbound_mark_seen,
+        clearInboundPassword: false,
+        outboundEnabled: updated.outbound_enabled,
+        outboundHost: updated.outbound_host,
+        outboundPort: updated.outbound_port,
+        outboundUsername: updated.outbound_username || currentMarket?.support_email || '',
+        outboundPassword: '',
+        outboundFromEmail: updated.outbound_from_email || currentMarket?.support_email || '',
+        outboundUseStarttls: updated.outbound_use_starttls,
+        outboundUseSsl: updated.outbound_use_ssl,
+        clearOutboundPassword: false,
+      })
+      setPrototypeNotice('Email setup saved.')
+      await refreshBackend()
+    } catch (error) {
+      setPrototypeNotice(error instanceof Error ? error.message : 'Email setup save failed.')
+    } finally {
+      setEmailSettingsBusy(false)
+    }
+  }
+
+  async function handleIntegrationCredentialSave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!backendSession || integrationCredentialBusy) return
+    setIntegrationCredentialBusy(true)
+    try {
+      const patch: BackendUpdateIntegrationCredentialSettingsInput = {
+        ai_provider: integrationCredentialDraft.aiProvider,
+        anthropic_api_base_url: integrationCredentialDraft.anthropicApiBaseUrl.trim(),
+        anthropic_model: integrationCredentialDraft.anthropicModel.trim(),
+        clear_anthropic_api_key: integrationCredentialDraft.clearAnthropicApiKey,
+        alert_webhook_url: integrationCredentialDraft.alertWebhookUrl.trim(),
+        alert_delivery_min_severity: integrationCredentialDraft.alertDeliveryMinSeverity,
+        clear_alert_webhook_secret: integrationCredentialDraft.clearAlertWebhookSecret,
+        sms_http_endpoint: integrationCredentialDraft.smsHttpEndpoint.trim(),
+        sms_http_from: integrationCredentialDraft.smsHttpFrom.trim(),
+        sms_http_auth_header: integrationCredentialDraft.smsHttpAuthHeader.trim() || 'Authorization',
+        sms_http_auth_scheme: integrationCredentialDraft.smsHttpAuthScheme.trim(),
+        sms_http_delivery_callback_url: integrationCredentialDraft.smsHttpDeliveryCallbackUrl.trim(),
+        clear_sms_http_auth_token: integrationCredentialDraft.clearSmsHttpAuthToken,
+        voice_http_endpoint: integrationCredentialDraft.voiceHttpEndpoint.trim(),
+        voice_http_from: integrationCredentialDraft.voiceHttpFrom.trim(),
+        voice_http_auth_header: integrationCredentialDraft.voiceHttpAuthHeader.trim() || 'Authorization',
+        voice_http_auth_scheme: integrationCredentialDraft.voiceHttpAuthScheme.trim(),
+        voice_http_status_callback_url: integrationCredentialDraft.voiceHttpStatusCallbackUrl.trim(),
+        clear_voice_http_auth_token: integrationCredentialDraft.clearVoiceHttpAuthToken,
+        whatsapp_cloud_api_base_url: integrationCredentialDraft.whatsappCloudApiBaseUrl.trim(),
+        whatsapp_phone_number_id: integrationCredentialDraft.whatsappPhoneNumberId.trim(),
+        whatsapp_preview_urls: integrationCredentialDraft.whatsappPreviewUrls,
+        clear_whatsapp_access_token: integrationCredentialDraft.clearWhatsappAccessToken,
+        facebook_graph_api_base_url: integrationCredentialDraft.facebookGraphApiBaseUrl.trim(),
+        facebook_page_id: integrationCredentialDraft.facebookPageId.trim(),
+        facebook_messaging_type: integrationCredentialDraft.facebookMessagingType.trim() || 'RESPONSE',
+        clear_facebook_page_access_token: integrationCredentialDraft.clearFacebookPageAccessToken,
+        instagram_graph_api_base_url: integrationCredentialDraft.instagramGraphApiBaseUrl.trim(),
+        instagram_business_account_id: integrationCredentialDraft.instagramBusinessAccountId.trim(),
+        clear_instagram_access_token: integrationCredentialDraft.clearInstagramAccessToken,
+      }
+      if (integrationCredentialDraft.anthropicApiKey.trim()) {
+        patch.anthropic_api_key = integrationCredentialDraft.anthropicApiKey.trim()
+      }
+      if (integrationCredentialDraft.alertWebhookSecret.trim()) {
+        patch.alert_webhook_secret = integrationCredentialDraft.alertWebhookSecret.trim()
+      }
+      if (integrationCredentialDraft.smsHttpAuthToken.trim()) {
+        patch.sms_http_auth_token = integrationCredentialDraft.smsHttpAuthToken.trim()
+      }
+      if (integrationCredentialDraft.voiceHttpAuthToken.trim()) {
+        patch.voice_http_auth_token = integrationCredentialDraft.voiceHttpAuthToken.trim()
+      }
+      if (integrationCredentialDraft.whatsappAccessToken.trim()) {
+        patch.whatsapp_access_token = integrationCredentialDraft.whatsappAccessToken.trim()
+      }
+      if (integrationCredentialDraft.facebookPageAccessToken.trim()) {
+        patch.facebook_page_access_token = integrationCredentialDraft.facebookPageAccessToken.trim()
+      }
+      if (integrationCredentialDraft.instagramAccessToken.trim()) {
+        patch.instagram_access_token = integrationCredentialDraft.instagramAccessToken.trim()
+      }
+      const updated = await patchBackendIntegrationCredentialSettings(patch, backendSession)
+      setIntegrationCredentialDraft({
+        aiProvider: updated.ai_provider,
+        anthropicApiKey: '',
+        anthropicApiBaseUrl: updated.anthropic_api_base_url,
+        anthropicModel: updated.anthropic_model,
+        clearAnthropicApiKey: false,
+        alertWebhookUrl: updated.alert_webhook_url,
+        alertWebhookSecret: '',
+        alertDeliveryMinSeverity: updated.alert_delivery_min_severity,
+        clearAlertWebhookSecret: false,
+        smsHttpEndpoint: updated.sms_http_endpoint,
+        smsHttpAuthToken: '',
+        smsHttpFrom: updated.sms_http_from,
+        smsHttpAuthHeader: updated.sms_http_auth_header,
+        smsHttpAuthScheme: updated.sms_http_auth_scheme,
+        smsHttpDeliveryCallbackUrl: updated.sms_http_delivery_callback_url,
+        clearSmsHttpAuthToken: false,
+        voiceHttpEndpoint: updated.voice_http_endpoint,
+        voiceHttpAuthToken: '',
+        voiceHttpFrom: updated.voice_http_from,
+        voiceHttpAuthHeader: updated.voice_http_auth_header,
+        voiceHttpAuthScheme: updated.voice_http_auth_scheme,
+        voiceHttpStatusCallbackUrl: updated.voice_http_status_callback_url,
+        clearVoiceHttpAuthToken: false,
+        whatsappCloudApiBaseUrl: updated.whatsapp_cloud_api_base_url,
+        whatsappPhoneNumberId: updated.whatsapp_phone_number_id,
+        whatsappAccessToken: '',
+        whatsappPreviewUrls: updated.whatsapp_preview_urls,
+        clearWhatsappAccessToken: false,
+        facebookGraphApiBaseUrl: updated.facebook_graph_api_base_url,
+        facebookPageId: updated.facebook_page_id,
+        facebookPageAccessToken: '',
+        facebookMessagingType: updated.facebook_messaging_type,
+        clearFacebookPageAccessToken: false,
+        instagramGraphApiBaseUrl: updated.instagram_graph_api_base_url,
+        instagramBusinessAccountId: updated.instagram_business_account_id,
+        instagramAccessToken: '',
+        clearInstagramAccessToken: false,
+      })
+      setPrototypeNotice('Production credentials saved.')
+      await refreshBackend()
+    } catch (error) {
+      setPrototypeNotice(error instanceof Error ? error.message : 'Credential save failed.')
+    } finally {
+      setIntegrationCredentialBusy(false)
+    }
+  }
+
+  async function handleProductionAccountRefresh() {
+    if (!backendSession || productionAccountBusy) return
+    setProductionAccountBusy(true)
+    try {
+      const pack = await fetchBackendProductionAccountRequests(backendSession)
+      setProductionAccountPack(pack)
+      setPrototypeNotice('Account request pack refreshed.')
+    } catch (error) {
+      setPrototypeNotice(error instanceof Error ? error.message : 'Account request refresh failed.')
+    } finally {
+      setProductionAccountBusy(false)
+    }
+  }
+
+  async function handleProductionAccountCopy() {
+    if (!productionAccountPack) {
+      setPrototypeNotice('Account request pack is not loaded yet.')
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(productionAccountPack.body)
+      setPrototypeNotice('Account request body copied.')
+    } catch {
+      setPrototypeNotice('Clipboard unavailable; open the email draft instead.')
+    }
+  }
+
+  async function handleProductionAccountSend() {
+    if (!backendSession || productionAccountSendBusy) return
+    setProductionAccountSendBusy(true)
+    try {
+      const delivery = await sendBackendProductionAccountRequestEmail(backendSession)
+      setProductionAccountDelivery(delivery)
+      setProductionAccountPack(delivery.pack)
+      setPrototypeNotice(
+        delivery.already_queued
+          ? `Account request already queued on ${delivery.ticket_public_id}.`
+          : `Account request queued on ${delivery.ticket_public_id}.`,
+      )
+      const checklist = await fetchBackendProductionReadinessChecklist(backendSession)
+      setProductionReadinessChecklist(checklist)
+      await refreshBackend()
+    } catch (error) {
+      setPrototypeNotice(error instanceof Error ? error.message : 'Account request email queue failed.')
+    } finally {
+      setProductionAccountSendBusy(false)
+    }
+  }
+
+  async function refreshProductionAccountReferences() {
+    if (!backendSession) return
+    const [references, docs, checklist] = await Promise.all([
+      fetchBackendProductionAccountReferences(backendSession),
+      fetchBackendProductionAccountReferenceDocs(backendSession),
+      fetchBackendProductionReadinessChecklist(backendSession),
+    ])
+    setProductionAccountReferences(references)
+    setProductionAccountReferenceDocs(docs)
+    setProductionReadinessChecklist(checklist)
+  }
+
+  async function handleProductionReadinessRefresh() {
+    if (!backendSession || productionReadinessBusy) return
+    setProductionReadinessBusy(true)
+    try {
+      const checklist = await fetchBackendProductionReadinessChecklist(backendSession)
+      setProductionReadinessChecklist(checklist)
+      setPrototypeNotice('Production readiness checklist refreshed.')
+    } catch (error) {
+      setPrototypeNotice(error instanceof Error ? error.message : 'Production readiness refresh failed.')
+    } finally {
+      setProductionReadinessBusy(false)
+    }
+  }
+
+  async function handleProductionAccountReferenceSave(event: FormEvent) {
+    event.preventDefault()
+    if (!backendSession || productionAccountReferenceBusy) return
+    if (!productionAccountReferenceDraft.accountName.trim()) {
+      setPrototypeNotice('Account name is required.')
+      return
+    }
+    setProductionAccountReferenceBusy(true)
+    try {
+      await createBackendProductionAccountReference(
+        {
+          provider: productionAccountReferenceDraft.provider,
+          area: productionAccountReferenceDraft.area,
+          account_name: productionAccountReferenceDraft.accountName,
+          account_identifier: productionAccountReferenceDraft.accountIdentifier,
+          status: productionAccountReferenceDraft.status,
+          owner_email: productionAccountReferenceDraft.ownerEmail || null,
+          credential_reference: productionAccountReferenceDraft.credentialReference,
+          docs_reference: productionAccountReferenceDraft.docsReference,
+          callback_urls: productionAccountReferenceDraft.callbackUrls
+            .split('\n')
+            .map((item) => item.trim())
+            .filter(Boolean),
+          notes: productionAccountReferenceDraft.notes,
+        },
+        backendSession,
+      )
+      setProductionAccountReferenceDraft((current) => ({
+        ...current,
+        accountName: '',
+        accountIdentifier: '',
+        ownerEmail: '',
+        credentialReference: '',
+        callbackUrls: '',
+        notes: '',
+      }))
+      await refreshProductionAccountReferences()
+      setPrototypeNotice('Production account reference saved.')
+    } catch (error) {
+      setPrototypeNotice(error instanceof Error ? error.message : 'Account reference save failed.')
+    } finally {
+      setProductionAccountReferenceBusy(false)
+    }
+  }
+
+  async function handleProductionAccountReferenceStatus(
+    reference: BackendProductionAccountReference,
+    status: BackendProductionAccountReferenceStatus,
+  ) {
+    if (!backendSession || productionAccountReferenceBusy) return
+    setProductionAccountReferenceBusy(true)
+    try {
+      await patchBackendProductionAccountReference(reference.id, { status }, backendSession)
+      await refreshProductionAccountReferences()
+      setPrototypeNotice(`${reference.account_name} marked ${titleCase(status)}.`)
+    } catch (error) {
+      setPrototypeNotice(error instanceof Error ? error.message : 'Account reference update failed.')
+    } finally {
+      setProductionAccountReferenceBusy(false)
+    }
+  }
+
+  async function handleProductionAccountReferenceDocsCopy() {
+    const markdown = productionAccountReferenceDocs?.markdown
+    if (!markdown) {
+      setPrototypeNotice('No account reference snippet is available yet.')
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(markdown)
+      setPrototypeNotice('Account reference snippet copied.')
+    } catch {
+      setPrototypeNotice('Clipboard unavailable.')
+    }
+  }
+
   function toggleNewUserMarket(marketId: string) {
     setNewUser((current) => {
       const nextMarketIds = current.marketIds.includes(marketId)
@@ -493,8 +1899,9 @@ function OmniApp() {
     })
   }
 
-  function handleCreateUser(event: FormEvent<HTMLFormElement>) {
+  async function handleCreateUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (userActionBusy) return
     const name = newUser.name.trim()
     const email = newUser.email.trim().toLowerCase()
     const temporaryPassword = newUser.temporaryPassword.trim()
@@ -505,36 +1912,859 @@ function OmniApp() {
       ? newUser.defaultMarketId
       : marketIds[0]
 
-    if (
-      createUser({
+    setUserActionBusy(true)
+    try {
+      const saved = await createUser({
         name,
         email,
         temporary_password: temporaryPassword,
         role: newUser.role,
         market_ids: marketIds,
         default_market_id: defaultMarketId,
+        permission_profile: newUser.permissionProfile,
         active: true,
       })
-    ) {
-      setNewUser({
-        name: '',
-        email: '',
-        temporaryPassword: '',
-        role: 'agent',
-        marketIds: [currentMarket.id],
-        defaultMarketId: currentMarket.id,
-      })
-      setPrototypeNotice('User saved with a temporary password.')
+      if (saved) {
+        setNewUser({
+          name: '',
+          email: '',
+          temporaryPassword: '',
+          role: 'agent',
+          permissionProfile: 'role_default',
+          marketIds: [currentMarket.id],
+          defaultMarketId: currentMarket.id,
+        })
+        setAddUserOpen(false)
+        setPrototypeNotice('User saved with a temporary password.')
+      }
+    } finally {
+      setUserActionBusy(false)
     }
   }
 
-  function handleChangePassword(event: FormEvent<HTMLFormElement>) {
+  function toggleSupportGroupDraftChannel(channelId: ChannelId) {
+    setSupportGroupDraft((current) => ({
+      ...current,
+      channels: current.channels.includes(channelId)
+        ? current.channels.filter((item) => item !== channelId)
+        : [...current.channels, channelId],
+    }))
+  }
+
+  async function handleCreateSupportGroup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (passwordChange.currentPassword.length < 1 || passwordChange.newPassword.length < 8) return
-    if (changePassword(passwordChange.currentPassword, passwordChange.newPassword)) {
-      setPasswordChange({ currentPassword: '', newPassword: '' })
-      setPrototypeNotice('Your password was updated.')
+    if (groupActionBusy) return
+    const name = supportGroupDraft.name.trim()
+    if (!name) return
+    const skills = supportGroupDraft.skills
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+    setGroupActionBusy(true)
+    try {
+      const saved = await createSupportGroup({
+        name,
+        description: supportGroupDraft.description.trim(),
+        team_email: supportGroupDraft.teamEmail.trim() || null,
+        channels: supportGroupDraft.channels.map(backendChannelId),
+        skills,
+        active: true,
+      })
+      if (saved) {
+        setSupportGroupDraft({ name: '', description: '', teamEmail: '', skills: '', channels: [] })
+        setPrototypeNotice('Support group saved.')
+      }
+    } finally {
+      setGroupActionBusy(false)
     }
+  }
+
+  async function handleToggleSupportGroup(groupId: string, active: boolean) {
+    if (groupActionBusy) return
+    setGroupActionBusy(true)
+    try {
+      const saved = await updateSupportGroup(groupId, { active })
+      if (saved) {
+        setPrototypeNotice(`Support group ${active ? 'activated' : 'paused'}.`)
+      }
+    } finally {
+      setGroupActionBusy(false)
+    }
+  }
+
+  function toggleSlaPolicyDraftChannel(channelId: ChannelId) {
+    setSlaPolicyDraft((current) => ({
+      ...current,
+      channels: current.channels.includes(channelId)
+        ? current.channels.filter((item) => item !== channelId)
+        : [...current.channels, channelId],
+    }))
+  }
+
+  async function handleCreateSlaPolicy(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (slaPolicyActionBusy) return
+    const name = slaPolicyDraft.name.trim()
+    if (!name) return
+    setSlaPolicyActionBusy(true)
+    try {
+      const saved = await createSlaPolicy({
+        name,
+        priority: backendPriorityId(slaPolicyDraft.priority),
+        first_response_minutes: Math.max(1, Number(slaPolicyDraft.firstResponseMinutes)),
+        resolution_minutes: Math.max(1, Number(slaPolicyDraft.resolutionMinutes)),
+        business_hours: slaPolicyDraft.businessHours.trim() || 'Business hours',
+        channels: slaPolicyDraft.channels.map(backendChannelId),
+        active: slaPolicyDraft.active,
+        position: Number(slaPolicyDraft.position) || 100,
+      })
+      if (saved) {
+        setSlaPolicyDraft({
+          name: '',
+          priority: 'medium',
+          firstResponseMinutes: 60,
+          resolutionMinutes: 1440,
+          businessHours: 'Business hours',
+          channels: [],
+          active: true,
+          position: 40,
+        })
+        setAddSlaPolicyOpen(false)
+        setPrototypeNotice('SLA policy saved.')
+      }
+    } finally {
+      setSlaPolicyActionBusy(false)
+    }
+  }
+
+  async function handleToggleSlaPolicy(policyId: string, active: boolean) {
+    if (slaPolicyActionBusy) return
+    setSlaPolicyActionBusy(true)
+    try {
+      const saved = await updateSlaPolicy(policyId, { active })
+      if (saved) {
+        setPrototypeNotice(`SLA policy ${active ? 'activated' : 'paused'}.`)
+      }
+    } finally {
+      setSlaPolicyActionBusy(false)
+    }
+  }
+
+  function toggleTicketFieldDraftChannel(channelId: ChannelId) {
+    setTicketFieldDraft((current) => ({
+      ...current,
+      channels: current.channels.includes(channelId)
+        ? current.channels.filter((item) => item !== channelId)
+        : [...current.channels, channelId],
+    }))
+  }
+
+  async function handleCreateTicketField(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const label = ticketFieldDraft.label.trim()
+    const key = normalizeTicketFieldKey(ticketFieldDraft.key || label)
+    const options = ticketFieldOptions(ticketFieldDraft.options)
+    if (!label || !key) return
+    if (
+      (ticketFieldDraft.fieldType === 'select' || ticketFieldDraft.fieldType === 'multiselect') &&
+      options.length === 0
+    ) {
+      setPrototypeNotice('Select fields need at least one option.')
+      return
+    }
+
+    const saved = await createTicketField({
+      key,
+      label,
+      field_type: ticketFieldDraft.fieldType,
+      required: ticketFieldDraft.required,
+      active: ticketFieldDraft.active,
+      options,
+      channels: ticketFieldDraft.channels.map(backendChannelId),
+      position: ticketFieldDraft.position,
+    })
+    if (!saved) return
+    setTicketFieldDraft({
+      label: '',
+      key: '',
+      fieldType: 'text',
+      options: '',
+      channels: [],
+      required: false,
+      active: true,
+      position: 100,
+    })
+    setPrototypeNotice('Ticket field saved.')
+  }
+
+  async function handleChangePassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (userActionBusy) return
+    if (passwordChange.currentPassword.length < 1 || passwordChange.newPassword.length < 8) return
+    setUserActionBusy(true)
+    try {
+      const saved = await changePassword(passwordChange.currentPassword, passwordChange.newPassword)
+      if (saved) {
+        setPasswordChange({ currentPassword: '', newPassword: '' })
+        setPrototypeNotice('Your password was updated.')
+      }
+    } finally {
+      setUserActionBusy(false)
+    }
+  }
+
+  function updateUserPermissionOverride(
+    user: BackendUser,
+    permission: BackendPermission,
+    mode: 'default' | 'allow' | 'deny',
+  ) {
+    const allow = user.permission_overrides.allow.filter((item) => item !== permission)
+    const deny = user.permission_overrides.deny.filter((item) => item !== permission)
+    if (mode === 'allow') allow.push(permission)
+    if (mode === 'deny') deny.push(permission)
+    updateUser(user.id, {
+      permission_profile: mode === 'default' ? user.permission_profile : 'custom',
+      permission_overrides: { allow, deny },
+    })
+  }
+
+  async function handleStartMfaEnrollment() {
+    const enrollment = await enrollMfa()
+    if (!enrollment) return
+    setMfaEnrollment(enrollment)
+    setMfaConfirmCode('')
+    setPrototypeNotice('MFA enrollment started.')
+  }
+
+  async function handleConfirmMfa(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const code = mfaConfirmCode.trim()
+    if (code.length < 6) return
+    const confirmed = await confirmMfa(code)
+    if (!confirmed) return
+    setMfaEnrollment(null)
+    setMfaConfirmCode('')
+    setPrototypeNotice('MFA is now enabled.')
+  }
+
+  async function handleDisableMfa(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (mfaDisable.currentPassword.length < 1) return
+    const disabled = await disableMfa(mfaDisable.currentPassword, mfaDisable.code.trim())
+    if (!disabled) return
+    setMfaDisable({ currentPassword: '', code: '' })
+    setMfaEnrollment(null)
+    setPrototypeNotice('MFA was disabled.')
+  }
+
+  async function handleOperationalAlertUpdate(
+    alert: BackendOperationalAlert,
+    status: BackendOperationalAlertStatus,
+  ) {
+    const saved = await updateOperationalAlertStatus(
+      alert.id,
+      status,
+      `${titleCase(status)} from Omni Setup operations panel.`,
+    )
+    if (saved) {
+      setPrototypeNotice(`Operational alert ${titleCase(status).toLowerCase()}.`)
+    }
+  }
+
+  function updatePortalDraft(patch: Partial<typeof portalDraft>) {
+    setPortalDraft((current) => ({ ...current, ...patch }))
+  }
+
+  function updatePortalCustomField(field: BackendTicketField, value: unknown) {
+    setPortalDraft((current) => ({
+      ...current,
+      customFields: {
+        ...current.customFields,
+        [field.key]: value,
+      },
+    }))
+  }
+
+  function portalCustomFieldIsMissing(field: BackendTicketField, value: unknown) {
+    if (field.field_type === 'checkbox') return value !== true
+    return value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0)
+  }
+
+  function compactPortalCustomFields() {
+    return Object.fromEntries(
+      Object.entries(portalDraft.customFields).filter(([, value]) => {
+        if (Array.isArray(value)) return value.length > 0
+        return value !== undefined && value !== null && value !== ''
+      }),
+    )
+  }
+
+  function renderPortalFieldInput(field: BackendTicketField) {
+    const id = `portal-field-${field.id}`
+    const value = portalDraft.customFields[field.key]
+    if (field.field_type === 'select') {
+      return (
+        <select
+          id={id}
+          value={typeof value === 'string' ? value : ''}
+          required={field.required}
+          onChange={(event) => updatePortalCustomField(field, event.target.value)}
+        >
+          <option value="">Not set</option>
+          {field.options.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+      )
+    }
+    if (field.field_type === 'multiselect') {
+      const currentValues = Array.isArray(value) ? value.map(String) : []
+      return (
+        <div className="portal-field-options" id={id}>
+          {field.options.map((option) => (
+            <label key={option}>
+              <input
+                type="checkbox"
+                checked={currentValues.includes(option)}
+                onChange={(event) => {
+                  updatePortalCustomField(
+                    field,
+                    event.target.checked
+                      ? [...currentValues, option]
+                      : currentValues.filter((item) => item !== option),
+                  )
+                }}
+              />
+              {option}
+            </label>
+          ))}
+        </div>
+      )
+    }
+    if (field.field_type === 'checkbox') {
+      return (
+        <label className="portal-field-check" htmlFor={id}>
+          <input
+            id={id}
+            type="checkbox"
+            checked={value === true}
+            required={field.required}
+            onChange={(event) => updatePortalCustomField(field, event.target.checked)}
+          />
+          <span>{field.placeholder || field.help_text || field.label}</span>
+        </label>
+      )
+    }
+    if (field.field_type === 'textarea') {
+      return (
+        <textarea
+          id={id}
+          required={field.required}
+          value={typeof value === 'string' ? value : ''}
+          placeholder={field.placeholder}
+          onChange={(event) => updatePortalCustomField(field, event.target.value)}
+        />
+      )
+    }
+    return (
+      <input
+        id={id}
+        required={field.required}
+        type={field.field_type === 'number' ? 'number' : field.field_type === 'date' ? 'date' : 'text'}
+        value={value === undefined || value === null ? '' : String(value)}
+        placeholder={field.placeholder}
+        onChange={(event) => {
+          if (field.field_type === 'number') {
+            updatePortalCustomField(field, event.target.value === '' ? '' : Number(event.target.value))
+            return
+          }
+          updatePortalCustomField(field, event.target.value)
+        }}
+      />
+    )
+  }
+
+  async function uploadPortalAttachment(publicId: string, email: string, file: File | null) {
+    if (!file) return ''
+    const attachment = await uploadBackendPortalAttachment(portalMarket, publicId, email, file)
+    if (attachment.scan_status === 'clean') {
+      return `${attachment.filename} was attached.`
+    }
+    return `${attachment.filename} was received and marked ${titleCase(attachment.scan_status)}.`
+  }
+
+  async function handlePortalTicketSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (portalSubmitting) return
+    const name = portalDraft.name.trim()
+    const email = portalDraft.email.trim().toLowerCase()
+    const subject = portalDraft.subject.trim()
+    const description = portalDraft.description.trim()
+    if (!name || !email || !subject || !description) {
+      setPortalNotice('Name, email, subject, and details are required.')
+      return
+    }
+    const missingField = portalTicketFields.find((field) =>
+      field.required && portalCustomFieldIsMissing(field, portalDraft.customFields[field.key]),
+    )
+    if (missingField) {
+      setPortalNotice(`${missingField.label} is required.`)
+      return
+    }
+
+    setPortalSubmitting(true)
+    setPortalNotice('')
+    try {
+      const response = await createBackendPortalTicket(portalMarket, {
+        name,
+        email,
+        phone: portalDraft.phone.trim() || undefined,
+        subject,
+        description,
+        priority: portalDraft.priority,
+        custom_fields: compactPortalCustomFields(),
+        search_query: portalQuery.trim() || subject,
+      })
+      if (response.article_suggestions.length) {
+        setPortalAnswers(response.article_suggestions)
+      }
+      let attachmentMessage = ''
+      if (portalAttachmentFile) {
+        try {
+          attachmentMessage = ` ${await uploadPortalAttachment(response.public_id, email, portalAttachmentFile)}`
+          setPortalAttachmentFile(null)
+        } catch (uploadError) {
+          attachmentMessage = ` Ticket created, but the attachment failed: ${
+            uploadError instanceof Error ? uploadError.message : 'upload failed'
+          }.`
+        }
+      }
+      setPortalNotice(`Ticket ${response.public_id} was created. Our support team has the details.${attachmentMessage}`)
+      setPortalLookup({ publicId: response.public_id, email })
+      setPortalTicketDetail(null)
+      setPortalLookupNotice('Use the check-ticket panel to follow progress or add more details.')
+      setPortalDraft((current) => ({
+        ...current,
+        subject: '',
+        description: '',
+        priority: 'normal',
+        customFields: {},
+      }))
+    } catch (error) {
+      setPortalNotice(error instanceof Error ? error.message : 'Ticket submission failed.')
+    } finally {
+      setPortalSubmitting(false)
+    }
+  }
+
+  async function handlePortalTicketLookup(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (portalLookupBusy) return
+    const publicId = portalLookup.publicId.trim().toUpperCase()
+    const email = portalLookup.email.trim().toLowerCase()
+    if (!publicId || !email) {
+      setPortalLookupNotice('Ticket number and email are required.')
+      return
+    }
+    setPortalLookupBusy(true)
+    setPortalLookupNotice('')
+    try {
+      const detail = await fetchBackendPortalTicket(portalMarket, publicId, email)
+      setPortalTicketDetail(detail)
+      setPortalReplyBody('')
+      setPortalAnswers(detail.article_suggestions)
+      setPortalLookup((current) => ({ ...current, publicId: detail.public_id, email }))
+      setPortalLookupNotice(`Ticket ${detail.public_id} is ${detail.customer_status.toLowerCase()}.`)
+    } catch (error) {
+      setPortalTicketDetail(null)
+      setPortalLookupNotice(error instanceof Error ? error.message : 'Ticket lookup failed.')
+    } finally {
+      setPortalLookupBusy(false)
+    }
+  }
+
+  async function handlePortalTicketReply(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (portalReplyBusy || !portalTicketDetail) return
+    const email = portalLookup.email.trim().toLowerCase()
+    const body = portalReplyBody.trim()
+    const replyAttachment = portalReplyAttachmentFile
+    if (!email || (body.length < 2 && !replyAttachment)) {
+      setPortalLookupNotice('Add a reply or attachment before sending.')
+      return
+    }
+    setPortalReplyBusy(true)
+    setPortalLookupNotice('')
+    try {
+      let detail = await createBackendPortalTicketReply(
+        portalMarket,
+        portalTicketDetail.public_id,
+        { email, body: body || `Attachment added: ${replyAttachment?.name ?? 'customer file'}.` },
+      )
+      let attachmentMessage = ''
+      if (replyAttachment) {
+        try {
+          attachmentMessage = ` ${await uploadPortalAttachment(detail.public_id, email, replyAttachment)}`
+          setPortalReplyAttachmentFile(null)
+          detail = await fetchBackendPortalTicket(portalMarket, detail.public_id, email)
+        } catch (uploadError) {
+          attachmentMessage = ` Reply added, but the attachment failed: ${
+            uploadError instanceof Error ? uploadError.message : 'upload failed'
+          }.`
+        }
+      }
+      setPortalTicketDetail(detail)
+      setPortalReplyBody('')
+      setPortalAnswers(detail.article_suggestions)
+      setPortalLookupNotice(
+        `Reply added. Ticket ${detail.public_id} is ${detail.customer_status.toLowerCase()}.${attachmentMessage}`,
+      )
+    } catch (error) {
+      setPortalLookupNotice(error instanceof Error ? error.message : 'Reply failed.')
+    } finally {
+      setPortalReplyBusy(false)
+    }
+  }
+
+  function renderPortalHelpCenter() {
+    return (
+      <main className="portal-shell">
+        <header className="portal-topbar">
+          <a className="portal-brand" href={routeHref({ screen: 'portal' })}>
+            <span className="brand-mark">
+              <LifeBuoy size={22} />
+            </span>
+            <span>
+              <strong>Omni Ticket</strong>
+              <small>Wakanow support</small>
+            </span>
+          </a>
+          <div className="portal-topbar-actions">
+            <label>
+              <span>Market</span>
+              <select
+                value={portalMarket}
+                onChange={(event) => {
+                  setPortalMarket(event.target.value)
+                  setPortalTicketDetail(null)
+                  setPortalLookupNotice('')
+                }}
+              >
+                {portalMarketOptions.map((market) => (
+                  <option key={market.code} value={market.code}>
+                    {market.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <a className="secondary-action" href={routeHref({ screen: 'command' })}>
+              <Lock size={16} />
+              Staff sign in
+            </a>
+          </div>
+        </header>
+
+        <section className="portal-hero">
+          <div className="portal-hero-copy">
+            <span className="section-kicker">Help Center</span>
+            <h1>Search answers or raise a support ticket</h1>
+            <form className="portal-search" onSubmit={(event) => event.preventDefault()}>
+              <Search size={20} />
+              <input
+                value={portalQuery}
+                onChange={(event) => setPortalQuery(event.target.value)}
+                placeholder="Search payments, refunds, booking changes"
+                aria-label="Search Help Center answers"
+              />
+              {portalLoading ? <RefreshCw size={18} className="spin-icon" /> : null}
+            </form>
+            {portalSearchError ? <strong className="portal-error">{portalSearchError}</strong> : null}
+          </div>
+          <div className="portal-service-strip" aria-label="Support routes">
+            <article>
+              <Mail size={18} />
+              <strong>Email</strong>
+              <span>Support receives a ticket copy.</span>
+            </article>
+            <article>
+              <Globe2 size={18} />
+              <strong>Portal</strong>
+              <span>Market-specific routing and fields.</span>
+            </article>
+            <article>
+              <BookOpen size={18} />
+              <strong>Answers</strong>
+              <span>Approved guidance before submission.</span>
+            </article>
+          </div>
+        </section>
+
+        <section className="portal-workspace">
+          <div className="portal-column">
+            <section className="portal-panel portal-results" aria-label="Suggested answers">
+              <div className="portal-section-head">
+                <div>
+                  <span>Suggested answers</span>
+                  <h2>{portalAnswers.length ? `${portalAnswers.length} article(s) found` : 'No matching answer yet'}</h2>
+                </div>
+                <BookOpen size={20} />
+              </div>
+              <div className="portal-answer-list">
+                {portalAnswers.map((answer) => (
+                  <article className="portal-answer-card" key={answer.article_id}>
+                    <div>
+                      <strong>{answer.title}</strong>
+                      <small>
+                        Updated {formatTime(answer.updated_at)}
+                        {answer.language ? ` · ${answer.language.toUpperCase()}` : ''}
+                      </small>
+                    </div>
+                    <p>{answer.body.length > 320 ? `${answer.body.slice(0, 317)}...` : answer.body}</p>
+                    <div className="portal-answer-meta">
+                      {answer.reasons.slice(0, 2).map((reason) => (
+                        <span key={reason}>{reason}</span>
+                      ))}
+                      {answer.tags.slice(0, 3).map((tag) => (
+                        <span key={tag}>{tag}</span>
+                      ))}
+                    </div>
+                  </article>
+                ))}
+                {!portalLoading && portalAnswers.length === 0 ? (
+                  <article className="portal-empty">
+                    <MessageSquare size={18} />
+                    <span>Create a ticket and the support team will follow up.</span>
+                  </article>
+                ) : null}
+              </div>
+            </section>
+
+            <section className="portal-panel portal-status-panel" aria-label="Ticket status">
+              <div className="portal-section-head">
+                <div>
+                  <span>Ticket status</span>
+                  <h2>Check progress</h2>
+                </div>
+                <Clock size={20} />
+              </div>
+              <form className="portal-lookup-form" onSubmit={handlePortalTicketLookup}>
+                <label>
+                  Ticket number
+                  <input
+                    value={portalLookup.publicId}
+                    onChange={(event) =>
+                      setPortalLookup((current) => ({ ...current, publicId: event.target.value }))
+                    }
+                    placeholder="OMNI-1005"
+                    required
+                  />
+                </label>
+                <label>
+                  Email
+                  <input
+                    type="email"
+                    value={portalLookup.email}
+                    onChange={(event) =>
+                      setPortalLookup((current) => ({ ...current, email: event.target.value }))
+                    }
+                    required
+                  />
+                </label>
+                <button className="secondary-action" type="submit" disabled={portalLookupBusy}>
+                  {portalLookupBusy ? <RefreshCw size={16} className="spin-icon" /> : <Search size={16} />}
+                  Check
+                </button>
+              </form>
+              {portalLookupNotice ? <strong className="portal-notice">{portalLookupNotice}</strong> : null}
+              {portalTicketDetail ? (
+                <div className="portal-ticket-detail">
+                  <div className="portal-ticket-summary">
+                    <em className={`chip status-${portalTicketDetail.status === 'open' ? 'healthy' : portalTicketDetail.status === 'closed' ? 'done' : 'pending'}`}>
+                      {portalTicketDetail.customer_status}
+                    </em>
+                    <strong>{portalTicketDetail.subject}</strong>
+                    <p>{portalTicketDetail.description}</p>
+                    <div className="portal-ticket-facts">
+                      <span>
+                        <b>Ticket</b>
+                        {portalTicketDetail.public_id}
+                      </span>
+                      <span>
+                        <b>Priority</b>
+                        {titleCase(portalTicketDetail.priority)}
+                      </span>
+                      <span>
+                        <b>Updated</b>
+                        {formatTime(portalTicketDetail.updated_at)}
+                      </span>
+                    </div>
+                    <small>{portalTicketDetail.next_step}</small>
+                    {portalTicketDetail.attachments.length ? (
+                      <div className="portal-attachment-list" aria-label="Customer attachments">
+                        {portalTicketDetail.attachments.map((attachment) => (
+                          <span key={attachment.id}>
+                            <Paperclip size={14} />
+                            {attachment.filename}
+                            <small>
+                              {formatFileSize(attachment.size_bytes)} · {titleCase(attachment.scan_status)}
+                            </small>
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="portal-public-timeline" aria-label="Public ticket conversation">
+                    {portalTicketDetail.timeline.map((event) => (
+                      <article key={event.id}>
+                        <div>
+                          <strong>{event.actor}</strong>
+                          <small>{formatTime(event.created_at)} · {titleCase(event.channel)}</small>
+                        </div>
+                        <p>{event.body}</p>
+                      </article>
+                    ))}
+                  </div>
+                  <form className="portal-reply-form" onSubmit={handlePortalTicketReply}>
+                    <label>
+                      Add reply
+                      <textarea
+                        value={portalReplyBody}
+                        onChange={(event) => setPortalReplyBody(event.target.value)}
+                      />
+                    </label>
+                    <label className="portal-file-field">
+                      Attach file
+                      <input
+                        type="file"
+                        onChange={(event) => setPortalReplyAttachmentFile(event.target.files?.[0] ?? null)}
+                      />
+                      {portalReplyAttachmentFile ? (
+                        <small>{portalReplyAttachmentFile.name} · {formatFileSize(portalReplyAttachmentFile.size)}</small>
+                      ) : null}
+                    </label>
+                    <button className="primary-action portal-submit" type="submit" disabled={portalReplyBusy}>
+                      {portalReplyBusy ? <RefreshCw size={16} className="spin-icon" /> : <Send size={16} />}
+                      Send reply
+                    </button>
+                  </form>
+                </div>
+              ) : null}
+            </section>
+          </div>
+
+          <form className="portal-panel portal-ticket-form" onSubmit={handlePortalTicketSubmit}>
+            <div className="portal-section-head">
+              <div>
+                <span>Support ticket</span>
+                <h2>Send the request</h2>
+              </div>
+              <Send size={20} />
+            </div>
+            {portalNotice ? <strong className="portal-notice">{portalNotice}</strong> : null}
+            <div className="portal-form-grid">
+              <label>
+                Name
+                <input
+                  value={portalDraft.name}
+                  onChange={(event) => updatePortalDraft({ name: event.target.value })}
+                  autoComplete="name"
+                  required
+                />
+              </label>
+              <label>
+                Email
+                <input
+                  type="email"
+                  value={portalDraft.email}
+                  onChange={(event) => updatePortalDraft({ email: event.target.value })}
+                  autoComplete="email"
+                  required
+                />
+              </label>
+              <label>
+                Phone
+                <input
+                  value={portalDraft.phone}
+                  onChange={(event) => updatePortalDraft({ phone: event.target.value })}
+                  autoComplete="tel"
+                />
+              </label>
+              <label>
+                Priority
+                <select
+                  value={portalDraft.priority}
+                  onChange={(event) =>
+                    updatePortalDraft({
+                      priority: event.target.value as NonNullable<BackendCreatePortalTicketInput['priority']>,
+                    })
+                  }
+                >
+                  {portalPriorityOptions.map((priority) => (
+                    <option key={priority} value={priority}>
+                      {titleCase(priority)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="span-all">
+                Subject
+                <input
+                  value={portalDraft.subject}
+                  onChange={(event) => updatePortalDraft({ subject: event.target.value })}
+                  required
+                />
+              </label>
+              <label className="span-all">
+                Details
+                <textarea
+                  value={portalDraft.description}
+                  onChange={(event) => updatePortalDraft({ description: event.target.value })}
+                  required
+                />
+              </label>
+              <label className="span-all portal-file-field">
+                Attach proof
+                <input
+                  type="file"
+                  onChange={(event) => setPortalAttachmentFile(event.target.files?.[0] ?? null)}
+                />
+                {portalAttachmentFile ? (
+                  <small>{portalAttachmentFile.name} · {formatFileSize(portalAttachmentFile.size)}</small>
+                ) : null}
+              </label>
+            </div>
+            {portalTicketFields.length ? (
+              <div className="portal-custom-fields" aria-label="Ticket details">
+                {portalTicketFields.map((field) => (
+                  <label className={field.field_type === 'textarea' ? 'span-all' : ''} key={field.id}>
+                    <span>
+                      {field.label}
+                      {field.required ? <em>Required</em> : null}
+                    </span>
+                    {renderPortalFieldInput(field)}
+                    {field.help_text ? <small>{field.help_text}</small> : null}
+                  </label>
+                ))}
+              </div>
+            ) : null}
+            <button
+              className="primary-action portal-submit"
+              type="submit"
+              disabled={portalSubmitting}
+            >
+              {portalSubmitting ? <RefreshCw size={16} className="spin-icon" /> : <Send size={16} />}
+              Submit ticket
+            </button>
+          </form>
+        </section>
+      </main>
+    )
+  }
+
+  if (isPortalRoute) {
+    return renderPortalHelpCenter()
   }
 
   if (!backendSession) {
@@ -554,7 +2784,12 @@ function OmniApp() {
             className="login-form"
             onSubmit={(event) => {
               event.preventDefault()
-              login({ email: loginEmail, password: loginPassword, market_id: loginMarket })
+              login({
+                email: loginEmail,
+                password: loginPassword,
+                market_id: loginMarket,
+                mfa_code: loginMfaCode.trim() || undefined,
+              })
             }}
           >
             <label>
@@ -578,6 +2813,17 @@ function OmniApp() {
               />
             </label>
             <label>
+              Verification code
+              <input
+                inputMode="numeric"
+                value={loginMfaCode}
+                onChange={(event) => {
+                  setLoginMfaCode(event.target.value)
+                }}
+                placeholder="Authenticator code"
+              />
+            </label>
+            <label>
               Market
               <select value={loginMarket} onChange={(event) => setLoginMarket(event.target.value)}>
                 <option value="market-ng">Nigeria</option>
@@ -590,39 +2836,23 @@ function OmniApp() {
               Sign in
             </button>
           </form>
-          {backendSync.error ? <strong className="login-error">{backendSync.error}</strong> : null}
-          <div className="login-demo-users">
+          <div className="login-sso-panel">
+            <div>
+              <strong>{oidcProviderConfig?.provider_name ?? 'Enterprise SSO'}</strong>
+              <span>{oidcProviderConfig?.notes ?? 'Checking identity provider readiness.'}</span>
+            </div>
             <button
               type="button"
+              disabled={!oidcProviderConfig?.login_available || backendSync.status === 'syncing'}
               onClick={() => {
-                setLoginEmail('gbolahan@omniticket.example.com')
-                setLoginPassword('omni-demo')
-                setLoginMarket('market-ng')
-                login({
-                  email: 'gbolahan@omniticket.example.com',
-                  password: 'omni-demo',
-                  market_id: 'market-ng',
-                })
+                beginOidcLogin(loginMarket)
               }}
             >
-              Admin · all markets
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setLoginEmail('kofi.gh@omniticket.example.com')
-                setLoginPassword('omni-demo')
-                setLoginMarket('market-gh')
-                login({
-                  email: 'kofi.gh@omniticket.example.com',
-                  password: 'omni-demo',
-                  market_id: 'market-gh',
-                })
-              }}
-            >
-              Ghana agent
+              <ShieldCheck size={16} />
+              Continue with SSO
             </button>
           </div>
+          {backendSync.error ? <strong className="login-error">{backendSync.error}</strong> : null}
         </section>
       </main>
     )
@@ -647,6 +2877,290 @@ function OmniApp() {
     setPrototypeNotice(message)
   }
 
+  function addTodo() {
+    const label = todoDraft.trim()
+    if (!label) return
+    setTodos((current) => [...current, { id: makeTodoId(), label, done: false }])
+    setTodoDraft('')
+  }
+
+  function toggleTodo(id: string) {
+    setTodos((current) =>
+      current.map((todo) => (todo.id === id ? { ...todo, done: !todo.done } : todo)),
+    )
+  }
+
+  function removeTodo(id: string) {
+    setTodos((current) => current.filter((todo) => todo.id !== id))
+  }
+
+  function exportTicketsCsv(rows: OmniConversation[]) {
+    if (typeof window === 'undefined') return
+    const header = [
+      'Ticket',
+      'Subject',
+      'Status',
+      'Priority',
+      'Channel',
+      'Group',
+      'Owner',
+      'Customer',
+      'Created',
+      'Resolution due',
+    ]
+    const body = rows.map((conversation) => {
+      const owner = state.agents.find((agent) => agent.id === conversation.assigneeId)
+      const customer = state.customers.find((entry) => entry.id === conversation.customerId)
+      return [
+        conversation.ticketNumber,
+        conversation.subject,
+        conversation.status,
+        conversation.priority,
+        conversation.channelId,
+        conversation.group,
+        owner?.name ?? 'Unassigned',
+        customer?.name ?? '',
+        conversation.createdAt,
+        conversation.resolutionDue,
+      ]
+    })
+    const csv = [header, ...body]
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      .join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `omni-tickets-${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    announcePrototype(`Exported ${rows.length} ticket${rows.length === 1 ? '' : 's'} to CSV.`)
+  }
+
+  function toggleTicketSelection(id: string) {
+    setSelectedTicketIds((current) =>
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
+    )
+  }
+
+  function toggleSelectAllTickets(ids: string[]) {
+    setSelectedTicketIds((current) => (ids.length > 0 && ids.every((id) => current.includes(id)) ? [] : ids))
+  }
+
+  function applyBulkTicketUpdate(patch: Partial<OmniConversation>) {
+    selectedTicketIds.forEach((id) => updateConversation(id, patch))
+    setSelectedTicketIds([])
+  }
+
+  function resetAllInboxFilters() {
+    resetFilters()
+    setInboxGroup('all')
+    setInboxCreated('all')
+    setInboxDue('any')
+  }
+
+  function addTimeLog(ticketId: string) {
+    const minutes = Number.parseInt(timeLogDraft, 10)
+    if (!Number.isFinite(minutes) || minutes <= 0) return
+    const agent = backendSession?.user.name ?? backendSession?.user.email ?? 'You'
+    const entry: TicketTimeLog = { id: makeTodoId(), minutes, agent, at: new Date().toISOString() }
+    setTimeLogs((current) => ({ ...current, [ticketId]: [...(current[ticketId] ?? []), entry] }))
+    setTimeLogDraft('')
+  }
+
+  function removeTimeLog(ticketId: string, id: string) {
+    setTimeLogs((current) => ({
+      ...current,
+      [ticketId]: (current[ticketId] ?? []).filter((log) => log.id !== id),
+    }))
+  }
+
+  function openSetupModule(moduleName: string) {
+    // Route People modules to the right sub-view, then reveal the live settings panel.
+    const peopleRoutes: Record<string, 'users' | 'groups' | 'security'> = {
+      Agents: 'users',
+      'Market access': 'users',
+      Groups: 'groups',
+      Roles: 'security',
+      'Permission profiles': 'security',
+      MFA: 'security',
+      'Enterprise SSO': 'security',
+      'API status': 'security',
+    }
+    if (peopleRoutes[moduleName]) {
+      setPeopleView(peopleRoutes[moduleName])
+    }
+    setSetupModuleHint(`Showing ${moduleName} settings below.`)
+    if (typeof document !== 'undefined') {
+      window.requestAnimationFrame(() => {
+        document
+          .getElementById('setup-section-panels')
+          ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      })
+    }
+  }
+
+  async function mergeDuplicateTicket(suggestion: DuplicateTicketSuggestion) {
+    if (!backendSession) {
+      announcePrototype('Backend login is required before merging tickets.')
+      return
+    }
+    const confirmed = window.confirm(
+      `Merge ${suggestion.ticketNumber} into ${selectedConversation.ticketNumber}? The source ticket will close and keep an audit note.`,
+    )
+    if (!confirmed) return
+    setMergeTicketBusy(suggestion.ticketId)
+    try {
+      await mergeBackendTickets(
+        selectedConversation.id,
+        {
+          source_ticket_id: suggestion.ticketId,
+          reason: `Operator confirmed duplicate from ${selectedConversation.ticketNumber}.`,
+          actor: backendSession.user.email,
+          close_source: true,
+        },
+        backendSession,
+      )
+      await refreshBackend()
+      announcePrototype(`${suggestion.ticketNumber} merged into ${selectedConversation.ticketNumber}.`)
+    } catch (error) {
+      announcePrototype(`Merge failed: ${error instanceof Error ? error.message : 'backend request failed'}`)
+    } finally {
+      setMergeTicketBusy('')
+    }
+  }
+
+  function ticketFieldsForChannel(channelId: ChannelId) {
+    return state.ticketFields
+      .filter((field) => field.active && (field.channels.length === 0 || field.channels.includes(channelId)))
+      .sort((a, b) => a.position - b.position || a.label.localeCompare(b.label))
+  }
+
+  function customFieldIsMissing(field: TicketField, value: unknown) {
+    if (field.fieldType === 'checkbox') return value !== true
+    return value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0)
+  }
+
+  function normalizeTicketFieldKey(value: string) {
+    return value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .replace(/^[^a-z]+/, '')
+      .slice(0, 64)
+  }
+
+  function ticketFieldOptions(value: string) {
+    const seen = new Set<string>()
+    return value
+      .split(',')
+      .map((option) => option.trim())
+      .filter((option) => {
+        const key = option.toLowerCase()
+        if (!option || seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+  }
+
+  function updateQuickCustomField(field: TicketField, value: unknown) {
+    setQuickTicket((current) => ({
+      ...current,
+      customFields: {
+        ...(current.customFields ?? {}),
+        [field.key]: value,
+      },
+    }))
+  }
+
+  function updateConversationCustomField(field: TicketField, value: unknown) {
+    updateConversation(selectedConversation.id, {
+      customFields: {
+        ...selectedConversation.customFields,
+        [field.key]: value,
+      },
+    })
+  }
+
+  function renderTicketFieldInput(
+    field: TicketField,
+    value: unknown,
+    onChange: (value: unknown) => void,
+  ) {
+    const id = `field-${field.id}`
+    if (field.fieldType === 'select') {
+      return (
+        <select id={id} value={typeof value === 'string' ? value : ''} onChange={(event) => onChange(event.target.value)}>
+          <option value="">Not set</option>
+          {field.options.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+      )
+    }
+    if (field.fieldType === 'multiselect') {
+      const currentValues = Array.isArray(value) ? value.map(String) : []
+      return (
+        <div className="custom-field-options" id={id}>
+          {field.options.map((option) => (
+            <label key={option}>
+              <input
+                type="checkbox"
+                checked={currentValues.includes(option)}
+                onChange={(event) => {
+                  onChange(
+                    event.target.checked
+                      ? [...currentValues, option]
+                      : currentValues.filter((item) => item !== option),
+                  )
+                }}
+              />
+              {option}
+            </label>
+          ))}
+        </div>
+      )
+    }
+    if (field.fieldType === 'checkbox') {
+      return (
+        <label className="custom-field-check" htmlFor={id}>
+          <input id={id} type="checkbox" checked={value === true} onChange={(event) => onChange(event.target.checked)} />
+          <span>{field.placeholder || field.helpText || 'Enabled'}</span>
+        </label>
+      )
+    }
+    if (field.fieldType === 'textarea') {
+      return (
+        <textarea
+          id={id}
+          value={typeof value === 'string' ? value : ''}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={field.placeholder}
+        />
+      )
+    }
+    return (
+      <input
+        id={id}
+        type={field.fieldType === 'number' ? 'number' : field.fieldType === 'date' ? 'date' : 'text'}
+        value={value === undefined || value === null ? '' : String(value)}
+        onChange={(event) => {
+          if (field.fieldType === 'number') {
+            onChange(event.target.value === '' ? '' : Number(event.target.value))
+            return
+          }
+          onChange(event.target.value)
+        }}
+        placeholder={field.placeholder}
+      />
+    )
+  }
+
   function updateQuickTicket(patch: Partial<NewTicketInput>) {
     setQuickTicket((current) => ({ ...current, ...patch }))
   }
@@ -664,9 +3178,16 @@ function OmniApp() {
 
   function submitQuickTicket() {
     if (!quickTicket.subject.trim() || !quickTicket.body.trim()) return
+    const missingRequiredField = ticketFieldsForChannel(quickTicket.channelId).find((field) =>
+      field.required && customFieldIsMissing(field, quickTicket.customFields?.[field.key]),
+    )
+    if (missingRequiredField) {
+      announcePrototype(`${missingRequiredField.label} is required before creating this ticket.`)
+      return
+    }
     createConversation(quickTicket)
     setQuickCreateOpen(false)
-    setQuickTicket((current) => ({ ...current, subject: '', body: '' }))
+    setQuickTicket((current) => ({ ...current, subject: '', body: '', customFields: {} }))
     announcePrototype('New ticket created and opened in the Work Queue.')
   }
 
@@ -692,6 +3213,56 @@ function OmniApp() {
       return
     }
     selectScreen('inbox')
+  }
+
+  function applyInboxView(viewId: string) {
+    setInboxView(viewId)
+    resetFilters()
+    if (viewId === 'my-open') setFilters({ assignee: selectedAgent?.id ?? 'all', status: 'open' })
+    if (viewId === 'unassigned') setFilters({ assignee: 'all', status: 'new' })
+    if (viewId === 'overdue') setFilters({ sla: 'breached' })
+    if (viewId === 'resolved') setFilters({ status: 'resolved' })
+    if (viewId === 'ai-escalations') setFilters({ sentiment: 'at-risk' })
+    if (viewId === 'whatsapp') setFilters({ channel: 'whatsapp' })
+  }
+
+  function handleTicketAction(actionId: (typeof freshdeskTicketActionItems)[number]['id']) {
+    if (actionId === 'reply') {
+      setComposerMode('reply')
+      announcePrototype('Reply composer selected.')
+      return
+    }
+    if (actionId === 'note') {
+      setComposerMode('note')
+      announcePrototype('Private note composer selected.')
+      return
+    }
+    if (actionId === 'forward') {
+      setComposerMode('handoff')
+      announcePrototype('Forward/handoff composer selected with full case context.')
+      return
+    }
+    if (actionId === 'child') {
+      setComposerMode('handoff')
+      announcePrototype('Child service task will create a linked internal team ticket.')
+      return
+    }
+    if (actionId === 'close-silent') {
+      updateConversation(selectedConversation.id, { status: 'resolved', slaState: 'healthy' })
+      announcePrototype('Ticket closed without a customer notification email.')
+      return
+    }
+    // watch: toggle this operator's watch on the ticket (persisted per user)
+    const ticketId = selectedConversation.id
+    const watching = watchedTicketIds.includes(ticketId)
+    setWatchedTicketIds((current) =>
+      watching ? current.filter((id) => id !== ticketId) : [...current, ticketId],
+    )
+    announcePrototype(
+      watching
+        ? `Stopped watching ${selectedConversation.ticketNumber}.`
+        : `You are now watching ${selectedConversation.ticketNumber}.`,
+    )
   }
 
   function openDirectChannel(channelId: ChannelId) {
@@ -728,6 +3299,13 @@ function OmniApp() {
     }))
   }
 
+  function insertResponseMacro(macroId: string) {
+    const suggestion = composerMacroOptions.find((item) => item.macro.id === macroId)
+    if (!suggestion) return
+    setComposerText(suggestion.macro.body)
+    recordResponseMacroUse(suggestion.macro.id, selectedConversation.id)
+  }
+
   function sendComposer() {
     submitComposer({
       conversationId: selectedConversation.id,
@@ -735,7 +3313,7 @@ function OmniApp() {
       channelId: composerChannel,
       body: composerText,
       online,
-      handoffTeam,
+      handoffTeam: effectiveHandoffTeam,
       handoffReason,
       attachment: attachmentDraft ?? undefined,
     })
@@ -773,460 +3351,327 @@ function OmniApp() {
     )
   }
 
-  function renderMetricCards() {
-    const topPriorityConversation = prioritizedWork[0]?.conversation
-    const firstBreachedConversation =
-      prioritizedWork.find(({ conversation }) => conversation.slaState === 'breached')?.conversation ??
-      state.conversations.find((conversation) => conversation.slaState === 'breached')
-    const busiestChannel =
-      [...state.channels].sort((a, b) => b.queueDepth + b.slaRisk - (a.queueDepth + a.slaRisk))[0]
-
-    return (
-      <section className="metric-grid" aria-label="Omnichannel metrics">
-        {[
-          {
-            label: 'Needs attention',
-            value: metrics.open,
-            detail: `${metrics.atRisk} at risk`,
-            cta: 'Open case list',
-            href: routeHref({
-              screen: 'inbox',
-              channel: topPriorityConversation?.channelId,
-              conversation: topPriorityConversation?.id,
-              customer: topPriorityConversation?.customerId,
-            }),
-            action: () => openWorkQueueFocus({}, topPriorityConversation),
-            icon: Inbox,
-            tone: 'blue',
-          },
-          {
-            label: 'Overdue promises',
-            value: metrics.breached,
-            detail: 'Manager action needed',
-            cta: metrics.breached > 0 ? 'Open overdue case' : 'Open promise log',
-            href: routeHref({
-              screen: 'inbox',
-              channel: firstBreachedConversation?.channelId,
-              conversation: firstBreachedConversation?.id,
-              customer: firstBreachedConversation?.customerId,
-            }),
-            action: () => openWorkQueueFocus({ sla: 'breached' }, firstBreachedConversation),
-            icon: AlertTriangle,
-            tone: 'red',
-          },
-          {
-            label: 'Channels live',
-            value: metrics.activeChannels,
-            detail: `${metrics.avgHealth}% healthy`,
-            cta: 'Open channel logs',
-            href: routeHref({ screen: 'channels', channel: busiestChannel?.id }),
-            action: () => {
-              if (busiestChannel) setSelectedChannel(busiestChannel.id)
-              else selectScreen('channels')
-            },
-            icon: Activity,
-            tone: 'teal',
-          },
-          {
-            label: 'Team load',
-            value: `${metrics.avgOccupancy}%`,
-            detail: `${metrics.csat} customer rating`,
-            cta: 'Open staffing cases',
-            href: routeHref({ screen: 'workforce' }),
-            action: () => selectScreen('workforce'),
-            icon: Gauge,
-            tone: 'violet',
-          },
-          {
-            label: 'Pending sends',
-            value: metrics.outbox,
-            detail: online ? 'All channels ready' : 'Will send when online',
-            cta: 'Open send log',
-            href: `${routeHref({ screen: 'admin' }).split('#')[0]}#outbound-queue`,
-            action: () => selectScreen('admin'),
-            icon: online ? Wifi : WifiOff,
-            tone: 'amber',
-          },
-        ].map((metric) => {
-          const Icon = metric.icon
-          return (
-            <a
-              className={`metric-card tone-${metric.tone}`}
-              href={metric.href}
-              key={metric.label}
-              onClick={(event) => handleAppLink(event, metric.action)}
-              aria-label={`${metric.label}: ${metric.cta}`}
-            >
-              <div className="metric-icon">
-                <Icon size={20} />
-              </div>
-              <span>{metric.label}</span>
-              <strong>{metric.value}</strong>
-              <small>{metric.detail}</small>
-              <em className="card-link-label">
-                {metric.cta}
-                <ArrowRight size={14} />
-              </em>
-            </a>
-          )
-        })}
-      </section>
+  function renderFreshworksDashboardMirror() {
+    const csatFeedback = (backendSnapshot?.csatFeedback ??
+      backendSnapshot?.csat_feedback ??
+      []) as CsatFeedbackRecord[]
+    const groupOptions = state.supportGroups.map((group) => group.name)
+    const dashboard = computeDashboardMetrics(
+      state.conversations,
+      csatFeedback,
+      { range: dashboardRange, ticketGroup: dashboardTicketGroup, chatGroup: dashboardChatGroup },
+      Date.now(),
     )
-  }
+    const activeAgents = state.agents.filter((agent) => agent.availability !== 'offline').length
+    const agentsOnChat = state.agents.filter((agent) =>
+      agent.skills.some((skill) => /chat|whatsapp|sms/i.test(skill)),
+    ).length
 
-  function renderOperatingFlow() {
-    const topPriorityConversation = prioritizedWork[0]?.conversation
-    const firstRiskConversation =
-      prioritizedWork.find(({ conversation }) => conversation.slaState !== 'healthy')?.conversation ??
-      state.conversations.find((conversation) => conversation.slaState !== 'healthy')
-    const activeHandoff = state.handoffs.find((handoff) => handoff.status !== 'completed')
-
-    const steps = [
-      {
-        label: 'Spot risk',
-        detail: 'See overdue promises, high queues, and customer mood before they escalate.',
-        icon: Gauge,
-        href: routeHref({
-          screen: 'inbox',
-          channel: firstRiskConversation?.channelId,
-          conversation: firstRiskConversation?.id,
-          customer: firstRiskConversation?.customerId,
-        }),
-        action: () =>
-          openWorkQueueFocus(
-            firstRiskConversation ? { sla: firstRiskConversation.slaState } : { sla: 'risk' },
-            firstRiskConversation,
-          ),
-      },
-      {
-        label: 'Work one queue',
-        detail: 'Open the customer thread with owner, history, answer, and next action together.',
-        icon: Inbox,
-        href: routeHref({
-          screen: 'inbox',
-          channel: topPriorityConversation?.channelId,
-          conversation: topPriorityConversation?.id,
-          customer: topPriorityConversation?.customerId,
-        }),
-        action: () => openWorkQueueFocus({}, topPriorityConversation),
-      },
-      {
-        label: 'Use native chats',
-        detail: 'Handle WhatsApp, Instagram, and Facebook in dedicated chat windows.',
-        icon: MessageCircle,
-        href: routeHref({ screen: 'channels', channel: 'whatsapp' }),
-        action: () => openDirectChannel('whatsapp'),
-      },
-      {
-        label: 'Close the loop',
-        detail: 'Move cross-team work with owner, due time, checklist, and customer update.',
-        icon: Handshake,
-        href: activeHandoff
-          ? routeHref({
-              screen: 'handoffs',
-              conversation: activeHandoff.conversationId,
-              customer: activeHandoff.customerId,
-            })
-          : routeHref({ screen: 'handoffs' }),
-        action: () => selectScreen('handoffs'),
-      },
+    const ticketTrendRows = [
+      { label: 'Open', value: dashboard.ticketTrends.open, action: () => openWorkQueueFocus({}) },
+      { label: 'Unassigned', value: dashboard.ticketTrends.unassigned, action: () => applyInboxView('unassigned') },
+      { label: 'Overdue', value: dashboard.ticketTrends.overdue, action: () => openWorkQueueFocus({ sla: 'breached' }) },
+      { label: 'Due today', value: dashboard.ticketTrends.dueToday, action: () => openWorkQueueFocus({}) },
+    ]
+    const chatTrendRows: [string, number][] = [
+      ['Unassigned chats', dashboard.chatTrends.unassigned],
+      ['Assigned not replied', dashboard.chatTrends.assignedNotReplied],
+      ['Assigned chats', dashboard.chatTrends.assigned],
+    ]
+    const chatPerformanceRows: [string, string][] = [
+      ['Average first response time', dashboard.chatPerformance.firstResponse],
+      ['Average response time', dashboard.chatPerformance.response],
+      ['Average resolution time', dashboard.chatPerformance.resolution],
+      ['Average wait time', dashboard.chatPerformance.wait],
+    ]
+    const ticketCsatRows: [string, number, string][] = [
+      ['Negative', dashboard.ticketCsat.negativePct, 'bad'],
+      ['Neutral', dashboard.ticketCsat.neutralPct, 'neutral'],
+      ['Positive', dashboard.ticketCsat.positivePct, 'good'],
     ]
 
     return (
-      <section className="flow-strip" aria-label="Operating flow">
-        {steps.map((step, index) => {
-          const Icon = step.icon
-          return (
-            <a
-              className="flow-card"
-              href={step.href}
-              onClick={(event) => handleAppLink(event, step.action)}
-              key={step.label}
+      <section className="omni-desk-dashboard" aria-label="Omnichannel Dashboard">
+        <div className="desk-filter-strip">
+          <label className="desk-range-filter">
+            <Clock size={15} />
+            <span>Period:</span>
+            <select
+              value={dashboardRange}
+              onChange={(event) => setDashboardRange(event.target.value as DashboardRange)}
+              aria-label="Dashboard period"
             >
-              <span className="flow-index">{index + 1}</span>
-              <Icon size={18} />
-              <strong>{step.label}</strong>
-              <small>{step.detail}</small>
-            </a>
-          )
-        })}
-      </section>
-    )
-  }
+              {DASHBOARD_RANGES.map((range) => (
+                <option key={range.id} value={range.id}>
+                  {range.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <span className="desk-filter-divider" />
+          <label>
+            <span>Ticket groups:</span>
+            <select value={dashboardTicketGroup} onChange={(event) => setDashboardTicketGroup(event.target.value)}>
+              <option value="all">All ticket groups</option>
+              {groupOptions.map((group) => (
+                <option key={group} value={group}>
+                  {group}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Chat groups:</span>
+            <select value={dashboardChatGroup} onChange={(event) => setDashboardChatGroup(event.target.value)}>
+              <option value="all">All chat groups</option>
+              {groupOptions.map((group) => (
+                <option key={group} value={group}>
+                  {group}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
 
-  function renderPriorityWork() {
-    return (
-      <div className="panel priority-work-panel">
-        <div className="panel-head">
-          <div>
-            <span>Start here</span>
-            <h2>Priority work queue</h2>
-          </div>
-          <ClipboardList size={20} />
-        </div>
-        <div className="priority-work-list">
-          {prioritizedWork.map(({ conversation, customer, channel, owner, score }) => {
-            const ChannelIcon = channelIcons[conversation.channelId]
-            return (
-              <a
-                className={`priority-work-row sla-${conversation.slaState}`}
-                href={routeHref({
-                  screen: 'inbox',
-                  channel: conversation.channelId,
-                  conversation: conversation.id,
-                  customer: conversation.customerId,
-                })}
-                key={conversation.id}
-                onClick={(event) => handleAppLink(event, () => openConversationInInbox(conversation))}
+        <div className="desk-dashboard-grid">
+          <article className="desk-widget">
+            <header>
+              <span>Ticket trends</span>
+            </header>
+            <div className="desk-trend-list">
+              {ticketTrendRows.map((row) => (
+                <button type="button" key={row.label} onClick={row.action}>
+                  <span>{row.label}</span>
+                  <strong>{row.value}</strong>
+                </button>
+              ))}
+            </div>
+          </article>
+
+          <article className="desk-widget">
+            <header>
+              <span>Ticket performance</span>
+            </header>
+            <div className="desk-performance-two">
+              <div>
+                <span>Average First Response Time</span>
+                <strong>{dashboard.ticketPerformance.avgFirstResponse}</strong>
+              </div>
+              <div>
+                <span>Resolution within SLA</span>
+                <strong>{dashboard.ticketPerformance.resolutionWithinSla}</strong>
+              </div>
+            </div>
+          </article>
+
+          <article className="desk-widget">
+            <header>
+              <span>Ticket - CSAT scores</span>
+            </header>
+            <div className="desk-csat-grid">
+              <div>
+                <span>Responses received</span>
+                <strong>{dashboard.ticketCsat.responses}</strong>
+              </div>
+              {ticketCsatRows.map(([label, value, tone]) => (
+                <div className={`desk-csat-score ${tone}`} key={label}>
+                  <span>{label}</span>
+                  <strong>{value}%</strong>
+                  <b />
+                </div>
+              ))}
+            </div>
+          </article>
+
+          <article className="desk-widget">
+            <header>
+              <span>Chat trends</span>
+            </header>
+            <p className="desk-widget-note">Conversations unassigned or assigned and not replied for 15 mins</p>
+            <div className="desk-trend-list">
+              {chatTrendRows.map(([label, value]) => (
+                <button
+                  type="button"
+                  key={label}
+                  onClick={() => {
+                    setChannelConsoleView('inbox')
+                    openDirectChannel('whatsapp')
+                    selectScreen('channels')
+                  }}
+                >
+                  <span>{label}</span>
+                  <strong>{value}</strong>
+                </button>
+              ))}
+            </div>
+          </article>
+
+          <article className="desk-widget">
+            <header>
+              <span>Chat performance</span>
+            </header>
+            <div className="desk-kpi-list">
+              {chatPerformanceRows.map(([label, value]) => (
+                <div key={label}>
+                  <span>{label}</span>
+                  <strong>{value}</strong>
+                </div>
+              ))}
+            </div>
+          </article>
+
+          <article className="desk-widget">
+            <header>
+              <span>Chat - CSAT scores</span>
+            </header>
+            <div className="desk-chat-csat">
+              <div
+                className="desk-star-row"
+                aria-label={`Average chat rating ${dashboard.chatCsat.avgRating}`}
               >
-                <div className="priority-score">
-                  <strong>{score}</strong>
-                  <span>risk</span>
-                </div>
-                <div className="priority-work-main">
-                  <div className="row-topline">
-                    <span>{conversation.ticketNumber}</span>
-                    <span>
-                      <ChannelIcon size={13} />
-                      {channel?.label}
-                    </span>
-                    <span>{slaLabels[conversation.slaState]}</span>
-                  </div>
-                  <strong>{conversation.subject}</strong>
-                  <small>{customer?.name} · {promiseLabel(conversation)}</small>
-                </div>
-                <div className="priority-work-owner">
-                  <span>{owner?.name}</span>
-                  <small>{channelWorkMode(conversation.channelId)}</small>
-                </div>
-                <ArrowRight size={16} />
+                {Array.from({ length: 5 }, (_, index) => (
+                  <Star
+                    size={24}
+                    fill={index < dashboard.chatCsat.stars ? 'currentColor' : 'none'}
+                    key={index}
+                  />
+                ))}
+                <strong>{dashboard.chatCsat.avgRating}</strong>
+              </div>
+              <span>Average rating based on all satisfactory interactions</span>
+              <div className="desk-progress-row good">
+                <span>Yes</span>
+                <b><i style={{ width: `${dashboard.chatCsat.yesPct}%` }} /></b>
+                <strong>{dashboard.chatCsat.yesPct}% ({dashboard.chatCsat.yesCount})</strong>
+              </div>
+              <div className="desk-progress-row bad">
+                <span>No</span>
+                <b><i style={{ width: `${dashboard.chatCsat.noPct}%` }} /></b>
+                <strong>{dashboard.chatCsat.noPct}% ({dashboard.chatCsat.noCount})</strong>
+              </div>
+            </div>
+          </article>
+
+          <article className="desk-widget desk-small-widget">
+            <header>
+              <span>Available agents</span>
+              <a href={routeHref({ screen: 'workforce' })} onClick={(event) => handleAppLink(event, () => selectScreen('workforce'))}>
+                View details
               </a>
-            )
-          })}
+            </header>
+            <div className="desk-agent-counts">
+              <div><Users size={18} /><span>Agents on Tickets</span><strong>{activeAgents}</strong></div>
+              <div><MessageCircle size={18} /><span>Agents on Chat</span><strong>{agentsOnChat}</strong></div>
+            </div>
+          </article>
+
+          <article className="desk-widget desk-small-widget">
+            <header>
+              <span>To-do</span>
+            </header>
+            <form
+              className="desk-todo-box"
+              onSubmit={(event) => {
+                event.preventDefault()
+                addTodo()
+              }}
+            >
+              <button type="submit" aria-label="Add to-do">
+                <Plus size={14} />
+              </button>
+              <input
+                aria-label="Add a to-do"
+                placeholder="Add a to-do"
+                value={todoDraft}
+                onChange={(event) => setTodoDraft(event.target.value)}
+              />
+            </form>
+            {todos.length === 0 ? (
+              <span className="desk-todo-empty">You have no tasks to do!</span>
+            ) : (
+              <ul className="desk-todo-list">
+                {todos.map((todo) => (
+                  <li key={todo.id} className={todo.done ? 'done' : ''}>
+                    <label>
+                      <input type="checkbox" checked={todo.done} onChange={() => toggleTodo(todo.id)} />
+                      <span>{todo.label}</span>
+                    </label>
+                    <button type="button" aria-label="Remove to-do" onClick={() => removeTodo(todo.id)}>
+                      <X size={13} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </article>
+
+          <article className="desk-widget desk-activity-widget">
+            <header>
+              <span>Recent activity</span>
+              <RefreshCw size={14} />
+            </header>
+            {dashboard.recentActivity.length === 0 ? (
+              <span className="desk-todo-empty">No recent activity in this period.</span>
+            ) : (
+              <ul className="desk-activity-list">
+                {dashboard.recentActivity.map((item) => {
+                  const conversation = state.conversations.find((entry) => entry.id === item.conversationId)
+                  return (
+                    <li key={item.id}>
+                      <a
+                        href={routeHref({ screen: 'inbox' })}
+                        onClick={(event) =>
+                          handleAppLink(event, () => {
+                            if (conversation) openConversationInInbox(conversation)
+                          })
+                        }
+                      >
+                        <div className="desk-activity-head">
+                          <strong>{item.ticketNumber}</strong>
+                          <span>{TIMELINE_LABELS[item.type]} · {item.actor}</span>
+                        </div>
+                        <em>{item.body}</em>
+                      </a>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </article>
         </div>
-      </div>
+      </section>
     )
   }
 
   function renderCommand() {
     return (
-      <div className="screen-stack">
-        {renderOperatingFlow()}
-        {renderMetricCards()}
-
-        <section className="command-grid">
-          <div className="command-column command-primary">
-            {renderPriorityWork()}
-            <div className="panel command-queue">
-              <div className="panel-head">
-                <div>
-                  <span>Today&apos;s demand</span>
-                  <h2>Channel health and queue load</h2>
-                </div>
-                <button
-                  className="icon-button"
-                  type="button"
-                  aria-label="Refresh channel board"
-                  onClick={() => announcePrototype('Channel board refreshed with the latest workspace data.')}
-                >
-                  <RefreshCw size={17} />
-                </button>
-              </div>
-              <div className="channel-grid">
-                {channelTotals.map(({ channel, conversations }) => {
-                  const Icon = channelIcons[channel.id]
-                  return (
-                    <a
-                      className={`channel-card ${channel.status}`}
-                      key={channel.id}
-                      href={routeHref({ screen: 'channels', channel: channel.id })}
-                      onClick={(event) => handleAppLink(event, () => setSelectedChannel(channel.id))}
-                      aria-label={`Open ${channel.label} channel workspace`}
-                    >
-                      <div className="channel-top">
-                        <span className="channel-icon">
-                          <Icon size={18} />
-                        </span>
-                        <span className={`status-dot ${channel.status}`}>{titleCase(channel.status)}</span>
-                      </div>
-                      <strong>{channel.label}</strong>
-                      <small>{channel.description}</small>
-                      <div className="channel-metrics">
-                        <span>
-                          <b>{channel.queueDepth}</b>
-                          waiting
-                        </span>
-                        <span>
-                          <b>{channel.activeSessions}</b>
-                          in work
-                        </span>
-                        <span>
-                          <b>{channel.slaRisk}</b>
-                          at risk
-                        </span>
-                      </div>
-                      <div className="health-track">
-                        <span style={{ width: `${channel.health}%` }} />
-                      </div>
-                      <em>{conversations.length} open {queueNoun(conversations.length)} in this channel</em>
-                      <span className="card-link-label">
-                        Open {channel.shortLabel} log
-                        <ArrowRight size={14} />
-                      </span>
-                    </a>
-                  )
-                })}
-              </div>
-            </div>
-
-            <div className="panel command-actions">
-              <div className="panel-head">
-                <div>
-                  <span>Manager actions</span>
-                  <h2>Decide next</h2>
-                </div>
-                <Timer size={20} />
-              </div>
-              <div className="action-list">
-                {[
-                  {
-                    label: 'Move 4 chat conversations from Noah to Amara before Noah reaches capacity.',
-                    href: routeHref({ screen: 'workforce' }),
-                    action: () => selectScreen('workforce'),
-                  },
-                  {
-                    label: 'Restart fulfillment handoffs once the receiving team confirms capacity.',
-                    href: routeHref({ screen: 'handoffs' }),
-                    action: () => selectScreen('handoffs'),
-                  },
-                  {
-                    label: 'Escalate OMNI-1004 because the public social response is overdue.',
-                    href: routeHref({
-                      screen: 'inbox',
-                      conversation: state.conversations.find((item) => item.ticketNumber === 'OMNI-1004')?.id,
-                    }),
-                    action: () => {
-                      const conversation = state.conversations.find((item) => item.ticketNumber === 'OMNI-1004')
-                      if (conversation) openConversationInInbox(conversation)
-                    },
-                  },
-                  {
-                    label: 'Approve the social complaint answer so agents can respond consistently.',
-                    href: routeHref({ screen: 'knowledge' }),
-                    action: () => selectScreen('knowledge'),
-                  },
-                ].map((action) => (
-                  <a
-                    className="action-row"
-                    href={action.href}
-                    key={action.label}
-                    onClick={(event) => handleAppLink(event, action.action)}
-                  >
-                    <CheckCircle2 size={17} />
-                    <span>{action.label}</span>
-                  </a>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="command-column command-secondary">
-            <div className="panel command-alerts">
-              <div className="panel-head">
-                <div>
-                  <span>Service alerts</span>
-                  <h2>What needs attention</h2>
-                </div>
-                <Bot size={20} />
-              </div>
-              <div className="ai-alerts">
-                {state.conversations
-                  .filter((conversation) => conversation.slaState !== 'healthy')
-                  .map((conversation) => (
-                    <a
-                      className="ai-alert"
-                      key={conversation.id}
-                      href={routeHref({
-                        screen: 'inbox',
-                        conversation: conversation.id,
-                        customer: conversation.customerId,
-                      })}
-                      onClick={(event) => handleAppLink(event, () => openConversationInInbox(conversation))}
-                      aria-label={`Open ${conversation.ticketNumber} in unified inbox`}
-                    >
-                      <Sparkles size={17} />
-                      <span>
-                        <strong>{conversation.ticketNumber}</strong>
-                        <small>{conversation.copilot.slaReason}</small>
-                      </span>
-                      <ArrowRight size={16} />
-                    </a>
-                  ))}
-                <a
-                  className="ai-alert soft"
-                  href={routeHref({ screen: 'knowledge' })}
-                  onClick={(event) => handleAppLink(event, () => selectScreen('knowledge'))}
-                  aria-label="Open Knowledge to review article gap"
-                >
-                  <BookOpen size={17} />
-                  <span>
-                    <strong>Missing answer</strong>
-                    <small>Social complaint guidance is still in review while public volume is rising.</small>
-                  </span>
-                </a>
-              </div>
-            </div>
-
-            <div className="panel command-workforce">
-              <div className="panel-head">
-                <div>
-                  <span>Staffing</span>
-                  <h2>Availability and load</h2>
-                </div>
-                <Users size={20} />
-              </div>
-              <div className="agent-grid">
-                {state.agents.map((agent) => (
-                  <a
-                    className="agent-card"
-                    href={routeHref({ screen: 'inbox' })}
-                    key={agent.id}
-                    onClick={(event) =>
-                      handleAppLink(event, () => openWorkQueueFocus({ assignee: agent.id }))
-                    }
-                    aria-label={`Open active cases assigned to ${agent.name}`}
-                  >
-                    <div className="avatar">{agent.avatar}</div>
-                    <div>
-                      <strong>{agent.name}</strong>
-                      <span>{agent.role}</span>
-                      <div className="skill-row">
-                        {agent.skills.slice(0, 3).map((skill) => (
-                          <small key={skill}>{skill}</small>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="agent-load">
-                      <b>{agent.occupancy}%</b>
-                      <span className={`availability ${agent.availability}`}>
-                        {titleCase(agent.availability)}
-                      </span>
-                    </div>
-                    <span className="card-link-label">
-                      Open assigned cases
-                      <ArrowRight size={14} />
-                    </span>
-                  </a>
-                ))}
-              </div>
-            </div>
-          </div>
-        </section>
+      <div className="screen-stack command-freshdesk-only">
+        {renderFreshworksDashboardMirror()}
       </div>
     )
   }
 
   function renderFilters() {
+    const inboxViewGroups = [
+      {
+        title: 'Default views',
+        views: [
+          { id: 'all-open', label: 'All open tickets', count: state.conversations.filter((item) => item.status !== 'resolved').length },
+          { id: 'my-open', label: 'My open tickets', count: state.conversations.filter((item) => item.assigneeId === selectedAgent?.id && item.status !== 'resolved').length },
+          { id: 'unassigned', label: 'Unassigned', count: state.conversations.filter((item) => item.status === 'new').length },
+          { id: 'overdue', label: 'Overdue', count: state.conversations.filter((item) => item.slaState === 'breached').length },
+        ],
+      },
+      {
+        title: 'Shared views',
+        views: [
+          { id: 'whatsapp', label: 'WhatsApp queues', count: state.conversations.filter((item) => item.channelId === 'whatsapp').length },
+          { id: 'ai-escalations', label: 'AI escalations', count: state.conversations.filter((item) => item.sentiment === 'at-risk').length },
+          { id: 'resolved', label: 'Resolved today', count: state.conversations.filter((item) => item.status === 'resolved').length },
+        ],
+      },
+    ]
+
     return (
       <aside className="filter-panel">
         <div className="panel-head compact">
@@ -1235,6 +3680,33 @@ function OmniApp() {
             <h2>Work Queue</h2>
           </div>
           <Filter size={18} />
+        </div>
+
+        <div className="freshdesk-view-rail" aria-label="Ticket views">
+          <div className="view-rail-head">
+            <strong>Ticket views</strong>
+            <button type="button" onClick={() => announcePrototype('Custom ticket view builder opened.')}>
+              <Plus size={14} />
+              New
+            </button>
+          </div>
+          {inboxViewGroups.map((group) => (
+            <div className="view-group" key={group.title}>
+              <span>{group.title}</span>
+              {group.views.map((view) => (
+                <button
+                  type="button"
+                  key={view.id}
+                  className={inboxView === view.id ? 'active' : ''}
+                  aria-pressed={inboxView === view.id}
+                  onClick={() => applyInboxView(view.id)}
+                >
+                  <small>{view.label}</small>
+                  <strong>{view.count}</strong>
+                </button>
+              ))}
+            </div>
+          ))}
         </div>
 
         <div className="quick-queues">
@@ -1472,6 +3944,44 @@ function OmniApp() {
     const attachmentEvents = selectedConversation.timeline.filter(
       (event) => event.type === 'automation' && event.body.toLowerCase().includes('attachment'),
     )
+    const selectedTicketFields = ticketFieldsForChannel(selectedConversation.channelId)
+    const duplicateSuggestions = selectedConversation.copilot.duplicateSuggestions ?? []
+
+    // ── Context-tab data (B-111): real content, no placeholder text ──────────
+    const threadEvents = selectedConversation.timeline.filter((event) => event.authorRole !== 'system')
+    const linkedItems: { key: string; ticketNumber: string; label: string; onOpen: () => void }[] = [
+      ...selectedHandoffs.map((handoff) => {
+        const linked = handoff.linkedConversationId
+          ? state.conversations.find((conversation) => conversation.id === handoff.linkedConversationId)
+          : undefined
+        return {
+          key: `handoff-${handoff.id}`,
+          ticketNumber: linked?.ticketNumber ?? handoff.ticketNumber,
+          label: `Handoff → ${handoff.receivingTeam}`,
+          onOpen: () => (linked ? openConversationInInbox(linked) : selectScreen('handoffs')),
+        }
+      }),
+      ...duplicateSuggestions.map((dup) => ({
+        key: `dup-${dup.ticketId}`,
+        ticketNumber: dup.ticketNumber,
+        label: 'Possible duplicate',
+        onOpen: () => {
+          const conversation = state.conversations.find((entry) => entry.id === dup.ticketId)
+          if (conversation) openConversationInInbox(conversation)
+        },
+      })),
+    ]
+    const resolvedDurations = state.conversations
+      .map((conversation) => resolutionSeconds(conversation))
+      .filter((value): value is number => value != null)
+    const ahtLabel = formatDuration(
+      resolvedDurations.length
+        ? resolvedDurations.reduce((total, value) => total + value, 0) / resolvedDurations.length
+        : null,
+    )
+    const ticketTimeLogs = timeLogs[selectedConversation.id] ?? []
+    const totalLoggedMinutes = ticketTimeLogs.reduce((total, log) => total + log.minutes, 0)
+
     const planSteps = [
       {
         label: 'Acknowledge customer',
@@ -1528,6 +4038,30 @@ function OmniApp() {
           </div>
         </div>
 
+        <div className="ticket-action-bar" aria-label="Ticket actions">
+          {freshdeskTicketActionItems.map(({ id, label, shortcut, icon: ActionIcon }) => {
+            const watching = id === 'watch' && watchedTicketIds.includes(selectedConversation.id)
+            return (
+              <button
+                type="button"
+                key={id}
+                className={watching ? 'active' : ''}
+                aria-pressed={id === 'watch' ? watching : undefined}
+                onClick={() => handleTicketAction(id)}
+              >
+                <ActionIcon size={15} />
+                <span>{id === 'watch' && watching ? 'Watching' : label}</span>
+                {shortcut ? <kbd>{shortcut}</kbd> : null}
+              </button>
+            )
+          })}
+          <button type="button" onClick={() => setGlobalSearchOpen(true)}>
+            <Search size={15} />
+            <span>Jump</span>
+            <kbd>j/k</kbd>
+          </button>
+        </div>
+
         <div className="ticket-command-strip" aria-label="Ticket operating signals">
           <div>
             <span>Promise</span>
@@ -1564,6 +4098,138 @@ function OmniApp() {
           </a>
         </div>
 
+        <div className="ticket-context-shell">
+          <div className="ticket-context-tabs" role="tablist" aria-label="Ticket context">
+            {[
+              { id: 'activities' as TicketDetailTab, label: 'Activities', count: selectedConversation.timeline.length },
+              { id: 'threads' as TicketDetailTab, label: 'Threads', count: selectedConversation.timeline.filter((event) => event.authorRole !== 'system').length },
+              { id: 'linked' as TicketDetailTab, label: 'Linked tickets', count: linkedItems.length },
+              { id: 'time' as TicketDetailTab, label: 'Time logs', count: ticketTimeLogs.length },
+            ].map((tab) => (
+              <button
+                type="button"
+                key={tab.id}
+                role="tab"
+                aria-selected={ticketDetailTab === tab.id}
+                className={ticketDetailTab === tab.id ? 'active' : ''}
+                onClick={() => setTicketDetailTab(tab.id)}
+              >
+                {tab.label}
+                <span>{tab.count}</span>
+              </button>
+            ))}
+          </div>
+          <div className="ticket-context-panel">
+            {ticketDetailTab === 'activities' ? (
+              <ul className="ticket-context-list">
+                {selectedConversation.timeline.length === 0 ? (
+                  <li className="muted">No activity yet.</li>
+                ) : (
+                  [...selectedConversation.timeline]
+                    .reverse()
+                    .slice(0, 6)
+                    .map((event) => (
+                      <li key={event.id}>
+                        <strong>{event.author}</strong>
+                        <span>{titleCase(event.type)}</span>
+                        <small>{formatTime(event.timestamp)}</small>
+                      </li>
+                    ))
+                )}
+              </ul>
+            ) : null}
+            {ticketDetailTab === 'threads' ? (
+              <ul className="ticket-context-list">
+                {threadEvents.length === 0 ? (
+                  <li className="muted">No replies or notes yet.</li>
+                ) : (
+                  threadEvents.map((event) => (
+                    <li key={event.id}>
+                      <strong>{event.author}</strong>
+                      <span>
+                        {event.authorRole === 'customer'
+                          ? 'Customer'
+                          : event.type === 'internal-note'
+                            ? 'Note'
+                            : 'Reply'}
+                      </span>
+                      <em>{event.body.slice(0, 90)}</em>
+                    </li>
+                  ))
+                )}
+              </ul>
+            ) : null}
+            {ticketDetailTab === 'linked' ? (
+              <ul className="ticket-context-list">
+                {linkedItems.length === 0 ? (
+                  <li className="muted">No linked tickets.</li>
+                ) : (
+                  linkedItems.map((item) => (
+                    <li key={item.key}>
+                      <button type="button" className="ticket-context-link" onClick={item.onOpen}>
+                        <strong>{item.ticketNumber}</strong>
+                        <span>{item.label}</span>
+                      </button>
+                    </li>
+                  ))
+                )}
+              </ul>
+            ) : null}
+            {ticketDetailTab === 'time' ? (
+              <div className="ticket-time-logs">
+                <div className="ticket-time-summary">
+                  <div>
+                    <span>Avg handling time</span>
+                    <strong>{ahtLabel}</strong>
+                  </div>
+                  <div>
+                    <span>Logged on this ticket</span>
+                    <strong>{totalLoggedMinutes}m</strong>
+                  </div>
+                </div>
+                <form
+                  className="ticket-time-form"
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    addTimeLog(selectedConversation.id)
+                  }}
+                >
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder="Minutes"
+                    value={timeLogDraft}
+                    onChange={(event) => setTimeLogDraft(event.target.value)}
+                    aria-label="Minutes spent on this ticket"
+                  />
+                  <button type="submit">Log time</button>
+                </form>
+                <ul className="ticket-context-list">
+                  {ticketTimeLogs.length === 0 ? (
+                    <li className="muted">No time logged yet.</li>
+                  ) : (
+                    ticketTimeLogs.map((log) => (
+                      <li key={log.id}>
+                        <strong>{log.minutes}m</strong>
+                        <span>{log.agent}</span>
+                        <small>{formatTime(log.at)}</small>
+                        <button
+                          type="button"
+                          aria-label="Remove time log"
+                          className="ticket-time-remove"
+                          onClick={() => removeTimeLog(selectedConversation.id, log.id)}
+                        >
+                          <X size={12} />
+                        </button>
+                      </li>
+                    ))
+                  )}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        </div>
+
         <div className="detail-layout">
           <div className="timeline-column">
             <article className="copilot-card">
@@ -1583,6 +4249,9 @@ function OmniApp() {
                 <div>
                   <span>Best answer</span>
                   <strong>{selectedConversation.copilot.suggestedArticle}</strong>
+                  {selectedConversation.copilot.knowledgeReasons?.length ? (
+                    <small>{selectedConversation.copilot.knowledgeReasons.slice(0, 2).join(' · ')}</small>
+                  ) : null}
                 </div>
                 <div>
                   <span>Next decision</span>
@@ -1669,15 +4338,15 @@ function OmniApp() {
                 <select
                   value=""
                   onChange={(event) => {
-                    setComposerText(event.target.value)
+                    insertResponseMacro(event.target.value)
                     event.currentTarget.value = ''
                   }}
                   aria-label="Macro"
                 >
                   <option value="">Insert macro</option>
-                  {macros.map((macro) => (
-                    <option value={macro} key={macro}>
-                      {macro.slice(0, 58)}
+                  {composerMacroOptions.map(({ macro, score }) => (
+                    <option value={macro.id} key={macro.id}>
+                      {score ? `${macro.name} · ${score}%` : macro.shortcut ? `${macro.name} · ${macro.shortcut}` : macro.name}
                     </option>
                   ))}
                 </select>
@@ -1785,10 +4454,10 @@ function OmniApp() {
                   <label>
                     Receiving team
                     <select
-                      value={handoffTeam}
+                      value={effectiveHandoffTeam}
                       onChange={(event) => setHandoffTeam(event.target.value)}
                     >
-                      {handoffTeams.map((team) => (
+                      {handoffTeamOptions.map((team) => (
                         <option value={team} key={team}>
                           {team}
                         </option>
@@ -1827,6 +4496,20 @@ function OmniApp() {
                 </button>
                 <span>{selectedConversation.copilot.recommendedAction}</span>
               </div>
+              {selectedConversation.copilot.responseMacros?.length ? (
+                <div className="macro-suggestions" aria-label="Suggested macros">
+                  {selectedConversation.copilot.responseMacros.slice(0, 2).map(({ macro, score, reasons }) => (
+                    <button
+                      type="button"
+                      key={macro.id}
+                      onClick={() => insertResponseMacro(macro.id)}
+                    >
+                      <strong>{macro.name}</strong>
+                      <span>{score}% · {reasons.slice(0, 2).join(' · ')}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
               <div className="composer-footer">
                 <span>{online ? 'Ready to send' : 'Offline: will send when connection returns'}</span>
                 <button
@@ -1843,6 +4526,40 @@ function OmniApp() {
           </div>
 
           <aside className="properties-panel">
+            {duplicateSuggestions.length ? (
+              <div className="property-card duplicate-guard-card">
+                <span>
+                  <GitBranch size={14} />
+                  Potential duplicates
+                </span>
+                <div className="duplicate-suggestion-list">
+                  {duplicateSuggestions.slice(0, 3).map((suggestion) => (
+                    <div className="duplicate-suggestion" key={suggestion.ticketId}>
+                      <div>
+                        <strong>{suggestion.ticketNumber}</strong>
+                        <small>{suggestion.score}% match · {titleCase(suggestion.status)}</small>
+                      </div>
+                      <p>{suggestion.subject}</p>
+                      <div className="duplicate-reasons">
+                        {suggestion.reasons.slice(0, 3).map((reason) => (
+                          <span key={reason}>{reason}</span>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        className="secondary-action"
+                        onClick={() => mergeDuplicateTicket(suggestion)}
+                        disabled={mergeTicketBusy === suggestion.ticketId}
+                        aria-label={`Merge ${suggestion.ticketNumber} into ${selectedConversation.ticketNumber}`}
+                      >
+                        <ArrowRight size={15} />
+                        {mergeTicketBusy === suggestion.ticketId ? 'Merging' : 'Merge'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <label>
               Status
               <select
@@ -1910,6 +4627,26 @@ function OmniApp() {
                 ))}
               </div>
             </div>
+            {selectedTicketFields.length ? (
+              <div className="property-card custom-field-card">
+                <span>Ticket fields</span>
+                <div className="ticket-field-stack">
+                  {selectedTicketFields.map((field) => (
+                    <label key={field.id}>
+                      <span>
+                        {field.label}
+                        {field.required ? ' *' : ''}
+                      </span>
+                      {renderTicketFieldInput(
+                        field,
+                        selectedConversation.customFields[field.key],
+                        (value) => updateConversationCustomField(field, value),
+                      )}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <div className="property-card">
               <span>Attachments</span>
               {attachmentEvents.length > 0 ? (
@@ -1942,6 +4679,42 @@ function OmniApp() {
               <strong>{selectedAgent?.name}</strong>
               <small>{selectedAgent?.role}</small>
             </div>
+            <div className="property-card freshdesk-app-card">
+              <span>Linked tickets</span>
+              <strong>{selectedHandoffs.length + duplicateSuggestions.length}</strong>
+              <small>Parent, child, duplicate, and team-service-task relationships.</small>
+              <button
+                className="secondary-action"
+                type="button"
+                onClick={() => setTicketDetailTab('linked')}
+              >
+                View links
+              </button>
+            </div>
+            <div className="property-card freshdesk-app-card">
+              <span>Time logs and AHT</span>
+              <strong>{selectedAgent ? `${Math.max(6, selectedAgent.load * 2)}m` : 'No owner'}</strong>
+              <small>Average handling time with task progress and owner load.</small>
+              <button
+                className="secondary-action"
+                type="button"
+                onClick={() => setTicketDetailTab('time')}
+              >
+                Open logs
+              </button>
+            </div>
+            <div className="property-card freshdesk-app-card">
+              <span>Wakanow CRM</span>
+              <strong>{selectedCustomer.company}</strong>
+              <small>{selectedCustomer.openValue} open value · {selectedCustomer.totalConversations} historical case(s).</small>
+              <a
+                className="secondary-action"
+                href={routeHref({ screen: 'customers', customer: selectedCustomer.id })}
+                onClick={(event) => handleAppLink(event, () => selectScreen('customers'))}
+              >
+                Open profile
+              </a>
+            </div>
           </aside>
         </div>
       </section>
@@ -1949,44 +4722,364 @@ function OmniApp() {
   }
 
   function renderInbox() {
+    const now = Date.now()
+    const DAY = 24 * 60 * 60 * 1000
+    const PAGE_SIZE = 30
+    const priorityRank: Record<Priority, number> = { urgent: 0, high: 1, medium: 2, low: 3 }
+
+    const createdOk = (createdAt: string) => {
+      if (inboxCreated === 'all') return true
+      const ms = new Date(createdAt).getTime()
+      if (!Number.isFinite(ms)) return false
+      if (inboxCreated === 'today') return now - ms < DAY
+      if (inboxCreated === 'week') return now - ms < 7 * DAY
+      return now - ms < 30 * DAY
+    }
+    const dueOk = (conversation: OmniConversation) => {
+      if (inboxDue === 'any') return true
+      if (conversation.status === 'resolved') return false
+      const due = new Date(conversation.resolutionDue).getTime()
+      if (!Number.isFinite(due)) return false
+      if (inboxDue === 'overdue') return due < now
+      return due - now < DAY
+    }
+
+    const baseRows = filteredConversations.filter(
+      (conversation) =>
+        (inboxGroup === 'all' || conversation.group === inboxGroup) &&
+        createdOk(conversation.createdAt) &&
+        dueOk(conversation),
+    )
+    const sortedRows = [...baseRows].sort((a, b) => {
+      if (inboxSort === 'priority') {
+        return (
+          priorityRank[a.priority] - priorityRank[b.priority] ||
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        )
+      }
+      if (inboxSort === 'updated') {
+        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      }
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    })
+
+    const totalRows = sortedRows.length
+    const maxPage = Math.max(0, Math.ceil(totalRows / PAGE_SIZE) - 1)
+    const page = Math.min(inboxPage, maxPage)
+    const startIndex = page * PAGE_SIZE
+    const pageRows = sortedRows.slice(startIndex, startIndex + PAGE_SIZE)
+    const pageIds = pageRows.map((conversation) => conversation.id)
+    const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selectedTicketIds.includes(id))
+    const groupNames = Array.from(new Set(state.conversations.map((conversation) => conversation.group)))
+    const activeFilterCount =
+      (state.filters.search ? 1 : 0) +
+      (state.filters.assignee !== 'all' ? 1 : 0) +
+      (state.filters.status !== 'all' ? 1 : 0) +
+      (state.filters.priority !== 'all' ? 1 : 0) +
+      (state.filters.channel !== 'all' ? 1 : 0) +
+      (state.filters.sentiment !== 'all' ? 1 : 0) +
+      (state.filters.sla !== 'all' ? 1 : 0) +
+      (inboxGroup !== 'all' ? 1 : 0) +
+      (inboxCreated !== 'all' ? 1 : 0) +
+      (inboxDue !== 'any' ? 1 : 0)
+
     return (
-      <div className="inbox-layout">
-        {renderFilters()}
-        <section className="conversation-list-panel">
-          <div className="search-row">
-            <Search size={16} />
-            <input
-              value={state.filters.search}
-              onChange={(event) => setFilters({ search: event.target.value })}
-              placeholder="Search customer, ticket, topic, or label"
-              aria-label="Search conversations"
-            />
-            <button
-              className="icon-button"
-              type="button"
-              aria-label="New ticket"
-              onClick={() => openQuickCreate(state.filters.channel === 'all' ? 'email' : state.filters.channel)}
-            >
-              <Plus size={17} />
+      <div className="desk-ticket-page">
+        <section className="desk-ticket-toolbar" aria-label="Ticket list controls">
+          <label className="desk-check-label" aria-label="Select all tickets on this page">
+            <input type="checkbox" checked={allPageSelected} onChange={() => toggleSelectAllTickets(pageIds)} />
+          </label>
+          <label>
+            <span>Sort by:</span>
+            <select value={inboxSort} onChange={(event) => setInboxSort(event.target.value as typeof inboxSort)}>
+              <option value="created">Date created</option>
+              <option value="updated">Last updated</option>
+              <option value="priority">Priority</option>
+            </select>
+          </label>
+          <span className="desk-toolbar-spacer" />
+          <label>
+            <span>Layout:</span>
+            <select value={inboxLayout} onChange={(event) => setInboxLayout(event.target.value as typeof inboxLayout)}>
+              <option value="card">Card</option>
+              <option value="table">Table</option>
+            </select>
+          </label>
+          <button type="button" onClick={() => exportTicketsCsv(sortedRows)} disabled={totalRows === 0}>
+            <Download size={14} />
+            Export
+          </button>
+          <span className="desk-ticket-range">
+            {totalRows
+              ? `${startIndex + 1} - ${Math.min(startIndex + PAGE_SIZE, totalRows)} of ${totalRows}`
+              : '0 tickets'}
+          </span>
+          <button
+            type="button"
+            aria-label="Previous page"
+            disabled={page <= 0}
+            onClick={() => setInboxPage(Math.max(0, page - 1))}
+          >
+            <ArrowRight className="flip-x" size={14} />
+          </button>
+          <button
+            type="button"
+            aria-label="Next page"
+            disabled={page >= maxPage}
+            onClick={() => setInboxPage(Math.min(maxPage, page + 1))}
+          >
+            <ArrowRight size={14} />
+          </button>
+          <button
+            type="button"
+            className="desk-filter-toggle"
+            aria-expanded={inboxFiltersOpen}
+            onClick={() => setInboxFiltersOpen((open) => !open)}
+          >
+            <Filter size={14} />
+            Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
+          </button>
+        </section>
+
+        {selectedTicketIds.length > 0 && (
+          <section className="desk-bulk-bar" aria-label="Bulk ticket actions">
+            <strong>{selectedTicketIds.length} selected</strong>
+            <label>
+              <span>Assign to</span>
+              <select
+                value=""
+                onChange={(event) => {
+                  if (event.target.value) applyBulkTicketUpdate({ assigneeId: event.target.value })
+                }}
+              >
+                <option value="">Choose agent…</option>
+                {state.agents.map((agent) => (
+                  <option value={agent.id} key={agent.id}>{agent.name}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Set status</span>
+              <select
+                value=""
+                onChange={(event) => {
+                  if (event.target.value) applyBulkTicketUpdate({ status: event.target.value as ConversationStatus })
+                }}
+              >
+                <option value="">Choose status…</option>
+                {statusOptions.filter((option): option is ConversationStatus => option !== 'all').map((status) => (
+                  <option value={status} key={status}>{titleCase(status)}</option>
+                ))}
+              </select>
+            </label>
+            <button type="button" onClick={() => setSelectedTicketIds([])}>
+              Clear selection
             </button>
-          </div>
-          <div className="conversation-list">
-            {filteredConversations.length > 0 ? (
-              filteredConversations.map((conversation) => renderConversationRow(conversation))
+          </section>
+        )}
+
+        <div className={`desk-ticket-layout ${inboxFiltersOpen ? '' : 'filters-collapsed'}`}>
+          <section
+            className={`desk-ticket-list ${inboxLayout === 'table' ? 'table-layout' : ''}`}
+            aria-label="All tickets"
+          >
+            {totalRows > 0 && (
+              <button className="desk-update-chip" type="button" onClick={() => refreshBackend()}>
+                <RefreshCw size={15} />
+                Refresh
+              </button>
+            )}
+            {pageRows.length > 0 ? (
+              pageRows.map((conversation) => {
+                const customer = state.customers.find((item) => item.id === conversation.customerId)
+                const channel = state.channels.find((item) => item.id === conversation.channelId)
+                const selected = selectedConversation.id === conversation.id
+                const checked = selectedTicketIds.includes(conversation.id)
+                const resolved = conversation.status === 'resolved'
+                const promiseText = resolved ? 'Resolved on time' : promiseLabel(conversation)
+                return (
+                  <article
+                    className={`desk-ticket-row ${selected ? 'active' : ''} ${checked ? 'checked' : ''} status-${conversation.status}`}
+                    key={conversation.id}
+                  >
+                    <label className="desk-check-label" aria-label={`Select ${conversation.ticketNumber}`}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleTicketSelection(conversation.id)}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="desk-ticket-avatar"
+                      onClick={() => openConversationInInbox(conversation)}
+                      aria-label={`Open ${conversation.ticketNumber}`}
+                    >
+                      {initials(customer?.name ?? conversation.subject)}
+                    </button>
+                    <div className="desk-ticket-main">
+                      <div className="desk-ticket-subject">
+                        {conversation.status === 'new' && <span className="desk-new-badge">New</span>}
+                        {conversation.tags.slice(0, 1).map((tag) => (
+                          <span className="desk-soft-badge" key={tag}>{tag}</span>
+                        ))}
+                        <button type="button" onClick={() => openConversationInInbox(conversation)}>
+                          {conversation.subject} <b>#{conversation.ticketNumber.replace(/\D/g, '') || conversation.ticketNumber}</b>
+                        </button>
+                      </div>
+                      <div className="desk-ticket-meta">
+                        <span>{channel?.shortLabel ?? titleCase(conversation.channelId)}</span>
+                        <span>{customer?.name ?? 'Unknown contact'}</span>
+                        <span>{resolved ? 'Closed' : 'Created'} {relativeWorkTime(conversation.createdAt)}</span>
+                        <span className={`desk-due-label sla-${conversation.slaState}`}>{promiseText}</span>
+                      </div>
+                    </div>
+                    <div className="desk-ticket-side">
+                      <div className={`desk-inline-select priority-${conversation.priority}`}>
+                        <span className="desk-inline-dot" />
+                        <select
+                          value={conversation.priority}
+                          onChange={(event) =>
+                            updateConversation(conversation.id, { priority: event.target.value as Priority })
+                          }
+                          aria-label={`Priority for ${conversation.ticketNumber}`}
+                        >
+                          {priorityOptions.filter((option): option is Priority => option !== 'all').map((priority) => (
+                            <option value={priority} key={priority}>{titleCase(priority)}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="desk-inline-select desk-owner-select">
+                        <Users size={13} />
+                        <select
+                          value={conversation.assigneeId}
+                          onChange={(event) =>
+                            updateConversation(conversation.id, { assigneeId: event.target.value })
+                          }
+                          aria-label={`Owner for ${conversation.ticketNumber}`}
+                        >
+                          <option value="">Unassigned</option>
+                          {state.agents.map((agent) => (
+                            <option value={agent.id} key={agent.id}>{agent.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className={`desk-inline-select status-${conversation.status}`}>
+                        <select
+                          value={conversation.status}
+                          onChange={(event) =>
+                            updateConversation(conversation.id, { status: event.target.value as ConversationStatus })
+                          }
+                          aria-label={`Status for ${conversation.ticketNumber}`}
+                        >
+                          {statusOptions.filter((option): option is ConversationStatus => option !== 'all').map((status) => (
+                            <option value={status} key={status}>{titleCase(status)}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </article>
+                )
+              })
             ) : (
               <div className="empty-state compact">
-                <strong>No work matches these filters</strong>
+                <strong>No tickets match these filters</strong>
                 <span>Clear filters or search another customer, topic, or label.</span>
-                <button className="secondary-action" type="button" onClick={resetFilters}>
+                <button className="secondary-action" type="button" onClick={resetAllInboxFilters}>
                   Clear filters
                 </button>
               </div>
             )}
-          </div>
-        </section>
-        <div className="inbox-detail-stack">
-          {renderConversationDetail()}
-          {renderCustomer360()}
+          </section>
+
+          {inboxFiltersOpen && (
+            <aside className="desk-filter-sidebar" aria-label="Ticket filters">
+              <div className="desk-filter-head">
+                <strong>Filters</strong>
+                <button type="button" onClick={resetAllInboxFilters}>Reset</button>
+              </div>
+              <label className="desk-filter-search">
+                <Search size={16} />
+                <input
+                  value={state.filters.search}
+                  onChange={(event) => setFilters({ search: event.target.value })}
+                  placeholder="Search fields"
+                  aria-label="Search fields"
+                />
+              </label>
+              <label>
+                <span>Agents</span>
+                <select value={state.filters.assignee} onChange={(event) => setFilters({ assignee: event.target.value })}>
+                  <option value="all">Any agent</option>
+                  {state.agents.map((agent) => (
+                    <option value={agent.id} key={agent.id}>{agent.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Groups</span>
+                <select value={inboxGroup} onChange={(event) => setInboxGroup(event.target.value)}>
+                  <option value="all">Any group</option>
+                  {groupNames.map((group) => (
+                    <option value={group} key={group}>{group}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Created</span>
+                <select value={inboxCreated} onChange={(event) => setInboxCreated(event.target.value as typeof inboxCreated)}>
+                  <option value="all">Any time</option>
+                  <option value="today">Today</option>
+                  <option value="week">This week</option>
+                  <option value="last-30">Last 30 days</option>
+                </select>
+              </label>
+              <label>
+                <span>Resolution due</span>
+                <select value={inboxDue} onChange={(event) => setInboxDue(event.target.value as typeof inboxDue)}>
+                  <option value="any">Any time</option>
+                  <option value="today">Due today</option>
+                  <option value="overdue">Overdue</option>
+                </select>
+              </label>
+              <label>
+                <span>Status Include</span>
+                <select value={state.filters.status} onChange={(event) => setFilters({ status: event.target.value as ConversationStatus | 'all' })}>
+                  <option value="all">Any status</option>
+                  {statusOptions.filter((option): option is ConversationStatus => option !== 'all').map((status) => (
+                    <option value={status} key={status}>{titleCase(status)}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Priorities Include</span>
+                <select value={state.filters.priority} onChange={(event) => setFilters({ priority: event.target.value as Priority | 'all' })}>
+                  <option value="all">Any</option>
+                  {priorityOptions.filter((option): option is Priority => option !== 'all').map((priority) => (
+                    <option value={priority} key={priority}>{titleCase(priority)}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Sources Include</span>
+                <select value={state.filters.channel} onChange={(event) => setFilters({ channel: event.target.value as ChannelId | 'all' })}>
+                  <option value="all">Any</option>
+                  {state.channels.map((channel) => (
+                    <option value={channel.id} key={channel.id}>{channel.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Tags</span>
+                <select value={state.filters.sentiment} onChange={(event) => setFilters({ sentiment: event.target.value as Sentiment | 'all' })}>
+                  <option value="all">Any</option>
+                  {sentimentOptions.filter((option): option is Sentiment => option !== 'all').map((sentiment) => (
+                    <option value={sentiment} key={sentiment}>{sentimentLabels[sentiment]}</option>
+                  ))}
+                </select>
+              </label>
+            </aside>
+          )}
         </div>
       </div>
     )
@@ -1994,6 +5087,7 @@ function OmniApp() {
 
   function renderQuickCreatePanel() {
     if (!quickCreateOpen) return null
+    const quickTicketFields = ticketFieldsForChannel(quickTicket.channelId)
 
     return (
       <div className="modal-backdrop" role="presentation" onMouseDown={() => setQuickCreateOpen(false)}>
@@ -2090,6 +5184,24 @@ function OmniApp() {
                 placeholder="What the customer needs help with"
               />
             </label>
+            {quickTicketFields.length ? (
+              <div className="quick-custom-fields span-all" aria-label="Ticket fields">
+                {quickTicketFields.map((field) => (
+                  <label key={field.id}>
+                    <span>
+                      {field.label}
+                      {field.required ? ' *' : ''}
+                    </span>
+                    {renderTicketFieldInput(
+                      field,
+                      quickTicket.customFields?.[field.key],
+                      (value) => updateQuickCustomField(field, value),
+                    )}
+                    {field.helpText ? <small>{field.helpText}</small> : null}
+                  </label>
+                ))}
+              </div>
+            ) : null}
             <div className="quick-create-footer">
               <span>Creates a ticket, opens it in Work Queue, and updates the selected channel count.</span>
               <button className="primary-action" type="submit" disabled={!quickTicket.subject.trim() || !quickTicket.body.trim()}>
@@ -2140,6 +5252,131 @@ function OmniApp() {
                 <ArrowRight size={14} />
               </span>
             </a>
+          ))}
+        </div>
+      </section>
+    )
+  }
+
+  function handleGlobalSearchResult(result: BackendGlobalSearchResult) {
+    setGlobalSearchOpen(false)
+    const ticketId = typeof result.metadata.ticket_id === 'string' ? result.metadata.ticket_id : result.entity_id
+    if (result.type === 'ticket') {
+      selectScreen('inbox')
+      selectConversation(result.entity_id)
+      return
+    }
+    if (result.type === 'customer') {
+      selectScreen('customers')
+      selectCustomer(result.entity_id)
+      return
+    }
+    if (result.type === 'support_group') {
+      selectScreen('admin')
+      setSetupSection('people')
+      setPeopleView('groups')
+      return
+    }
+    if (result.type === 'handoff') {
+      selectScreen('handoffs')
+      if (ticketId) selectConversation(ticketId)
+      return
+    }
+    if (result.type === 'knowledge') {
+      selectScreen('knowledge')
+      return
+    }
+    if (result.type === 'agent') {
+      selectScreen('workforce')
+      return
+    }
+    selectScreen('customers')
+  }
+
+  function globalSearchHref(result: BackendGlobalSearchResult) {
+    if (result.type === 'ticket') return routeHref({ screen: 'inbox', conversation: result.entity_id })
+    if (result.type === 'customer') return routeHref({ screen: 'customers', customer: result.entity_id })
+    if (result.type === 'support_group') return routeHref({ screen: 'admin' })
+    if (result.type === 'handoff') return routeHref({ screen: 'handoffs' })
+    if (result.type === 'knowledge') return routeHref({ screen: 'knowledge' })
+    if (result.type === 'agent') return routeHref({ screen: 'workforce' })
+    return routeHref({ screen: 'command' })
+  }
+
+  function renderGlobalSearchResults() {
+    const query = state.filters.search.trim()
+    if (!globalSearchOpen || query.length < 2) return null
+
+    return (
+      <section className="global-search-popover" aria-label="Global search results">
+        <div className="global-search-status">
+          <span>
+            {globalSearchLoading
+              ? 'Searching...'
+              : `${globalSearchResults.length} result${globalSearchResults.length === 1 ? '' : 's'}`}
+          </span>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="Close search"
+            onClick={() => setGlobalSearchOpen(false)}
+          >
+            <X size={14} />
+          </button>
+        </div>
+        {globalSearchError ? <div className="global-search-empty">{globalSearchError}</div> : null}
+        {!globalSearchError && !globalSearchLoading && !globalSearchResults.length ? (
+          <div className="global-search-empty">No matching records.</div>
+        ) : null}
+        {!globalSearchError && globalSearchResults.length ? (
+          <div className="global-search-list">
+            {globalSearchResults.map((result) => (
+              <a
+                key={result.id}
+                href={globalSearchHref(result)}
+                onClick={(event) => handleAppLink(event, () => handleGlobalSearchResult(result))}
+              >
+                <span className="search-result-type">{titleCase(result.type.replace('_', ' '))}</span>
+                <strong>{result.title}</strong>
+                <small>{result.subtitle}</small>
+              </a>
+            ))}
+          </div>
+        ) : null}
+      </section>
+    )
+  }
+
+  function renderFreshchatModulePanel() {
+    if (channelConsoleView === 'inbox') return null
+    const activeModule = freshchatConsoleViews.find((view) => view.id === channelConsoleView)
+    const ActiveIcon = activeModule?.icon ?? MessageCircle
+    const moduleRows: Record<Exclude<ChannelConsoleView, 'inbox'>, string[]> = {
+      dashboard: ['Conversation volume', 'Speed of response', 'SLA metrics', 'Resolved conversations', 'Agent availability'],
+      campaigns: ['Proactive WhatsApp campaigns', 'TravelFest rules', 'Audience filters', 'Draft/live state', 'Campaign performance'],
+      people: ['Contact timeline', 'Segments', 'Conversation history', 'Import/export', 'Channel identity merge'],
+      reports: ['Chat analytics', 'AI Agent analytics', 'Team performance', 'Customer satisfaction', 'Hourly reports'],
+      marketplace: ['Omni bridge', 'CRM cards', 'Travel systems', 'Telephony', 'Analytics SDK'],
+      settings: ['Account settings', 'Channels', 'Agents', 'Groups', 'Assignment rules', 'SLA policies', 'API tokens'],
+      'ai-studio': ['AI agents', 'Bot handoff reasons', 'Answer sources', 'Session consumption', 'Guardrails'],
+    }
+
+    return (
+      <section className="panel freshchat-module-panel">
+        <div className="panel-head">
+          <div>
+            <span>Omnichat module</span>
+            <h2>{activeModule?.label ?? 'Module'}</h2>
+          </div>
+          <ActiveIcon size={20} />
+        </div>
+        <div className="freshchat-module-grid">
+          {moduleRows[channelConsoleView].map((row) => (
+            <article key={row}>
+              <CheckCircle2 size={16} />
+              <strong>{row}</strong>
+              <span>{channelConsoleView === 'settings' ? 'Managed in Setup with production credentials.' : 'Mirrored as an Omni operational surface.'}</span>
+            </article>
           ))}
         </div>
       </section>
@@ -2294,6 +5531,46 @@ function OmniApp() {
 
         <div className="direct-chat-layout">
           <div className="direct-thread-list" aria-label={`${activeChannel.label} conversations`}>
+            <div className="freshchat-view-stack" aria-label="Omnichat views">
+              <div className="view-rail-head">
+                <strong>All views</strong>
+                <button type="button" onClick={() => announcePrototype('Omnichat custom view builder opened.')}>
+                  <Plus size={14} />
+                  New
+                </button>
+              </div>
+              {[
+                ['Default Views', 'All open/unassigned', 'My open conversations', 'All resolved'],
+                ['Shared Views', 'Assigned not replied', 'AI agent conversations', 'Channel queues'],
+                ['Custom Views', 'Market queues', 'VIP travellers', 'Campaign replies'],
+              ].map(([title, ...views]) => (
+                <div className="view-group" key={title}>
+                  <span>{title}</span>
+                  {views.map((view) => (
+                    <button
+                      type="button"
+                      key={view}
+                      onClick={() => announcePrototype(`${view} view applied to ${activeChannel.label}.`)}
+                    >
+                      <small>{view}</small>
+                      <strong>
+                        {view.includes('resolved')
+                          ? channelConversations.filter((conversation) => conversation.status === 'resolved').length
+                          : channelConversations.filter((conversation) => conversation.status !== 'resolved').length}
+                      </strong>
+                    </button>
+                  ))}
+                </div>
+              ))}
+              <div className="freshchat-inbox-actions">
+                <button type="button" onClick={() => announcePrototype('All visible conversations selected.')}>
+                  Select all
+                </button>
+                <button type="button" onClick={() => announcePrototype('More conversations requested from the backend cursor.')}>
+                  Load more
+                </button>
+              </div>
+            </div>
             {channelConversations.map((conversation) => {
               const customer = state.customers.find((item) => item.id === conversation.customerId)
               return (
@@ -2398,6 +5675,29 @@ function OmniApp() {
   function renderChannels() {
     return (
       <div className="screen-stack">
+        <section className="freshchat-console-shell" aria-label="Omnichat console modules">
+          <div className="freshchat-console-tabs" role="tablist" aria-label="Omnichat modules">
+            {freshchatConsoleViews.map(({ id, label, icon: ModuleIcon }) => (
+              <button
+                type="button"
+                key={id}
+                role="tab"
+                aria-selected={channelConsoleView === id}
+                className={channelConsoleView === id ? 'active' : ''}
+                onClick={() => setChannelConsoleView(id)}
+              >
+                <ModuleIcon size={16} />
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="freshchat-global-search">
+            <Search size={15} />
+            <span>Search conversations and people</span>
+            <kbd>Cmd+/</kbd>
+          </div>
+        </section>
+        {renderFreshchatModulePanel()}
         <section className="channel-flow-grid" aria-label="Channel operating flow">
           {[
             {
@@ -2538,52 +5838,62 @@ function OmniApp() {
 
   function renderKnowledge() {
     return (
-      <div className="management-grid">
-        <section className="panel span-2">
-          <div className="panel-head">
-            <div>
-              <span>Answers</span>
-              <h2>Approved responses and help content</h2>
-            </div>
-            <BookOpen size={20} />
-          </div>
-          <div className="data-table">
-            {state.articles.map((article) => (
-              <article className="data-row" key={article.id}>
-                <div>
-                  <strong>{article.title}</strong>
-                  <span>{article.category} · {article.language}</span>
-                </div>
-                <span className={`chip status-${article.status}`}>{titleCase(article.status)}</span>
-                <span>{article.helpfulness}% useful</span>
-                <span>{article.deflection}% resolved without agent</span>
-                <button
-                  className="secondary-action"
-                  type="button"
-                  onClick={() => publishArticle(article.id)}
-                  disabled={article.status === 'published'}
-                  aria-label={`${article.status === 'published' ? 'Published' : 'Publish'} ${article.title}`}
-                >
-                  {article.status === 'published' ? 'Published' : 'Publish'}
-                </button>
-              </article>
-            ))}
-          </div>
+      <div className="desk-solutions-page">
+        <section className="desk-solutions-toolbar" aria-label="Knowledge base controls">
+          <label className="desk-solution-search">
+            <Search size={16} />
+            <input
+              value={state.filters.search}
+              onChange={(event) => setFilters({ search: event.target.value })}
+              placeholder="Search articles"
+              aria-label="Search articles"
+            />
+          </label>
+          <span className="desk-toolbar-spacer" />
+          <button type="button" onClick={() => announcePrototype('Knowledge base management opened.')}>
+            <Settings size={14} />
+            Manage
+          </button>
+          <button type="button" className="desk-blue-action" onClick={() => announcePrototype('New article editor opened.')}>
+            <Plus size={14} />
+            New article
+            <ChevronDown size={14} />
+          </button>
+          <button type="button" onClick={() => announcePrototype('Language selector opened.')}>
+            EN
+            <ChevronDown size={14} />
+          </button>
+          <button type="button" aria-label="Open portal preview" onClick={() => announcePrototype('Portal preview opened.')}>
+            <ArrowRight size={14} />
+          </button>
         </section>
-        <section className="panel">
-          <div className="panel-head">
-            <div>
-              <span>Best answer now</span>
-              <h2>{selectedConversation.copilot.suggestedArticle}</h2>
-            </div>
-            <Sparkles size={20} />
-          </div>
-          <p className="panel-copy">{selectedConversation.copilot.summary}</p>
-          <div className="tag-list">
-            {selectedConversation.copilot.autoTags.map((tag) => (
-              <span key={tag}>{tag}</span>
-            ))}
-          </div>
+
+        <section className="desk-category-grid" aria-label="Knowledge base categories">
+          {solutionCategoryCatalog.map((category) => (
+            <article className="desk-category-card" key={category.title}>
+              <header>
+                <BookOpen size={18} />
+                <h2>{category.title}</h2>
+              </header>
+              <div className="desk-folder-list">
+                {category.folders.map(([folder, count]) => (
+                  <button
+                    type="button"
+                    key={`${category.title}-${folder}`}
+                    onClick={() => announcePrototype(`${folder} folder opened.`)}
+                  >
+                    <span>{folder}</span>
+                    <strong>{count}</strong>
+                  </button>
+                ))}
+              </div>
+              {category.more && (
+                <button className="desk-folder-more" type="button" onClick={() => announcePrototype(`${category.title} folders opened.`)}>
+                  {category.more}
+                </button>
+              )}
+            </article>
+          ))}
         </section>
       </div>
     )
@@ -2698,6 +6008,9 @@ function OmniApp() {
                     const conversation = state.conversations.find(
                       (item) => item.id === handoff.conversationId,
                     )
+                    const linkedConversation = handoff.linkedConversationId
+                      ? state.conversations.find((item) => item.id === handoff.linkedConversationId)
+                      : undefined
                     const completedSteps = handoff.checklist.filter((task) => task.done).length
                     const progress = percent(completedSteps, handoff.checklist.length)
 
@@ -2771,6 +6084,22 @@ function OmniApp() {
                               View ticket
                             </a>
                           )}
+                          {linkedConversation && linkedConversation.id !== conversation?.id && (
+                            <a
+                              className="secondary-action"
+                              href={routeHref({
+                                screen: 'inbox',
+                                conversation: linkedConversation.id,
+                                customer: linkedConversation.customerId,
+                              })}
+                              onClick={(event) =>
+                                handleAppLink(event, () => openConversationInInbox(linkedConversation))
+                              }
+                              aria-label={`Open ${linkedConversation.ticketNumber} team ticket`}
+                            >
+                              Team ticket
+                            </a>
+                          )}
                         </div>
                       </article>
                     )
@@ -2786,8 +6115,74 @@ function OmniApp() {
 
   function renderAnalytics() {
     const maxQueue = Math.max(...state.channels.map((channel) => channel.queueDepth), 1)
+    const analyticsRollups =
+      backendSnapshot?.analyticsRollups ?? backendSnapshot?.analytics_rollups ?? []
+    const latestRollup = analyticsRollups[0]
+    const rollupChannelVolume = latestRollup?.channel_volume ?? {}
+    const maxRollupVolume = Math.max(...Object.values(rollupChannelVolume), 1)
+    const csatFeedback = backendSnapshot?.csatFeedback ?? backendSnapshot?.csat_feedback ?? []
+    const backendCsat = backendSnapshot?.analytics.avg_csat ?? latestRollup?.avg_csat
+    const displayCsat = backendCsat == null ? metrics.csat : backendCsat.toFixed(1)
     return (
       <div className="management-grid">
+        <section className="panel span-2 analytics-library-panel">
+          <div className="panel-head">
+            <div>
+              <span>Report library</span>
+              <h2>Analytics catalog, saved reports, and scheduled exports</h2>
+            </div>
+            <BarChart3 size={20} />
+          </div>
+          <div className="report-library-tabs" role="tablist" aria-label="Analytics report groups">
+            {[
+              { id: 'catalog' as AnalyticsReportGroup, label: 'Catalog' },
+              { id: 'saved' as AnalyticsReportGroup, label: 'Saved reports' },
+              { id: 'scheduled' as AnalyticsReportGroup, label: 'Scheduled exports' },
+            ].map((tab) => (
+              <button
+                type="button"
+                key={tab.id}
+                role="tab"
+                aria-selected={analyticsReportGroup === tab.id}
+                className={analyticsReportGroup === tab.id ? 'active' : ''}
+                onClick={() => setAnalyticsReportGroup(tab.id)}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          <div className="report-card-grid">
+            {analyticsReportCatalog[analyticsReportGroup].map((report) => (
+              <article key={report.title}>
+                <div>
+                  <strong>{report.title}</strong>
+                  <span>{report.detail}</span>
+                </div>
+                <em className="chip status-done">{report.badge}</em>
+                <div className="report-card-actions">
+                  <button
+                    type="button"
+                    onClick={() => announcePrototype(`${report.title} opened in the Insights workspace.`)}
+                  >
+                    View details
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => announcePrototype(`${report.title} export queued.`)}
+                  >
+                    Export
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => announcePrototype(`${report.title} schedule setup opened.`)}
+                  >
+                    Schedule
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
         <section className="panel span-2">
           <div className="panel-head">
             <div>
@@ -2808,6 +6203,55 @@ function OmniApp() {
             ))}
           </div>
         </section>
+        <section className="panel span-2 analytics-rollup-panel">
+          <div className="panel-head">
+            <div>
+              <span>Backend rollups</span>
+              <h2>Durable hourly service snapshot</h2>
+            </div>
+            <DatabaseZap size={20} />
+          </div>
+          {latestRollup ? (
+            <>
+              <div className="signal-grid">
+                <div><strong>{latestRollup.open_tickets}</strong><span>Open tickets</span></div>
+                <div><strong>{latestRollup.at_risk_tickets}</strong><span>At risk</span></div>
+                <div><strong>{latestRollup.breached_tickets}</strong><span>Breached</span></div>
+                <div><strong>{latestRollup.avg_occupancy}%</strong><span>Occupancy</span></div>
+                <div><strong>{latestRollup.avg_csat == null ? 'No data' : latestRollup.avg_csat.toFixed(1)}</strong><span>CSAT</span></div>
+              </div>
+              <div className="bar-list compact-bars" aria-label="Latest backend channel volume">
+                {Object.entries(rollupChannelVolume).map(([channel, value]) => (
+                  <div className="bar-row" key={channel}>
+                    <span>{titleCase(channel)}</span>
+                    <div className="bar-track">
+                      <span style={{ width: `${percent(value, maxRollupVolume)}%` }} />
+                    </div>
+                    <strong>{value}</strong>
+                  </div>
+                ))}
+              </div>
+              <div className="analytics-rollup-list" aria-label="Recent backend analytics rollups">
+                {analyticsRollups.slice(0, 5).map((rollup) => (
+                  <article key={rollup.id}>
+                    <div>
+                      <strong>{formatTime(rollup.period_start)}</strong>
+                      <span>
+                        {rollup.open_tickets} open · {rollup.at_risk_tickets} at risk · {rollup.breached_tickets} breached
+                      </span>
+                    </div>
+                    <em className="chip status-done">{rollup.active_agents} active</em>
+                  </article>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="empty-state compact">
+              <strong>No backend rollups yet</strong>
+              <span>The worker will publish hourly dashboard snapshots after the next analytics cycle.</span>
+            </div>
+          )}
+        </section>
         <section className="panel">
           <div className="panel-head">
             <div>
@@ -2817,10 +6261,37 @@ function OmniApp() {
             <Gauge size={20} />
           </div>
           <div className="signal-grid">
-            <div><strong>{metrics.csat}</strong><span>Average CSAT</span></div>
+            <div><strong>{displayCsat}</strong><span>Average CSAT</span></div>
             <div><strong>{metrics.avgHealth}%</strong><span>Channel health</span></div>
             <div><strong>{metrics.atRisk}</strong><span>At-risk work</span></div>
             <div><strong>{metrics.avgOccupancy}%</strong><span>Occupancy</span></div>
+          </div>
+          <div className="csat-feedback-list" aria-label="Recent CSAT feedback">
+            {csatFeedback.slice(0, 5).map((feedback) => {
+              const ticket = state.conversations.find((conversation) => conversation.id === feedback.ticket_id)
+              const customer = state.customers.find((item) => item.id === feedback.customer_id)
+              return (
+                <article key={feedback.id}>
+                  <Star size={16} />
+                  <div>
+                    <strong>{feedback.rating.toFixed(1)} CSAT</strong>
+                    <span>
+                      {customer?.name ?? feedback.submitted_by ?? 'Customer'} · {ticket?.subject ?? feedback.ticket_id}
+                    </span>
+                    {feedback.comment ? <p>{feedback.comment}</p> : null}
+                  </div>
+                </article>
+              )
+            })}
+            {csatFeedback.length === 0 ? (
+              <article className="outbound-empty">
+                <CheckCircle2 size={16} />
+                <div>
+                  <strong>No CSAT feedback yet</strong>
+                  <span>Customer ratings will appear here after the first submitted survey.</span>
+                </div>
+              </article>
+            ) : null}
           </div>
         </section>
       </div>
@@ -2828,29 +6299,185 @@ function OmniApp() {
   }
 
   function renderWorkforce() {
+    const fallbackTasks = [
+      {
+        requester: 'Airport Services',
+        title: 'Meet and assist service follow-up',
+        ticketNumber: 'OMNI-2081',
+        location: 'Murtala Muhammed Terminal 2',
+        window: 'Today, 11:00 AM - 12:00 PM',
+      },
+      {
+        requester: 'Hotel Desk',
+        title: 'Hotel voucher verification visit',
+        ticketNumber: 'OMNI-2082',
+        location: 'Victoria Island service desk',
+        window: 'Today, 12:00 PM - 1:00 PM',
+      },
+      {
+        requester: 'Visa Team',
+        title: 'Document collection appointment',
+        ticketNumber: 'OMNI-2083',
+        location: 'Lekki Phase 1 office',
+        window: 'Today, 2:30 PM - 3:30 PM',
+      },
+      {
+        requester: 'Corporate Travel',
+        title: 'Executive itinerary handoff',
+        ticketNumber: 'OMNI-2084',
+        location: 'Ikoyi account office',
+        window: 'Today, 4:00 PM - 5:00 PM',
+      },
+    ]
+    const serviceTasks = [
+      ...state.conversations.slice(0, 4).map((conversation) => {
+        const customer = state.customers.find((item) => item.id === conversation.customerId)
+        return {
+          requester: customer?.name ?? 'Omni customer',
+          title: conversation.subject,
+          ticketNumber: conversation.ticketNumber,
+          location: customer?.location ?? 'Customer location pending',
+          window: `${formatTime(conversation.firstResponseDue)} - ${formatTime(conversation.resolutionDue)}`,
+        }
+      }),
+      ...fallbackTasks,
+    ].slice(0, 5)
+    const technicians = state.agents.slice(0, 6)
+    const hourLabels = ['02:00 PM', '03:00 PM', '04:00 PM', '05:00 PM', '06:00 PM', '07:00 PM', '08:00 PM']
+    const scheduleBlocks = [
+      { row: 0, start: 1, span: 1, tone: 'peach', label: 'Airport assist', ticket: serviceTasks[0]?.ticketNumber },
+      { row: 0, start: 4, span: 1, tone: 'peach', label: 'Voucher check', ticket: serviceTasks[1]?.ticketNumber },
+      { row: 1, start: 2, span: 1, tone: 'cyan', label: 'Quick response', ticket: serviceTasks[2]?.ticketNumber },
+      { row: 1, start: 5, span: 2, tone: 'cyan', label: 'Service desk callback', ticket: serviceTasks[3]?.ticketNumber },
+      { row: 2, start: 2, span: 2, tone: 'violet', label: 'Document review', ticket: serviceTasks[4]?.ticketNumber },
+      { row: 2, start: 4, span: 2, tone: 'violet', label: 'Group booking repair', ticket: serviceTasks[0]?.ticketNumber },
+      { row: 3, start: 1, span: 3, tone: 'rose', label: 'Maintenance issue', ticket: serviceTasks[1]?.ticketNumber },
+      { row: 3, start: 5, span: 2, tone: 'rose', label: 'Engine repair', ticket: serviceTasks[2]?.ticketNumber },
+      { row: 4, start: 1, span: 2, tone: 'blue', label: 'Laptop repair', ticket: serviceTasks[3]?.ticketNumber },
+      { row: 4, start: 4, span: 3, tone: 'blue', label: 'Standard first response', ticket: serviceTasks[4]?.ticketNumber },
+      { row: 5, start: 2, span: 1, tone: 'pink', label: 'Service visit', ticket: serviceTasks[0]?.ticketNumber },
+      { row: 5, start: 6, span: 1, tone: 'pink', label: 'Follow-up', ticket: serviceTasks[1]?.ticketNumber },
+    ].filter((block) => technicians[block.row])
+
     return (
-      <div className="management-grid">
-        <section className="panel span-2">
-          <div className="panel-head">
-            <div>
-              <span>Staffing</span>
-              <h2>Agent capacity and coverage</h2>
-            </div>
-            <UserCheck size={20} />
-          </div>
-          <div className="workforce-list">
-            {state.agents.map((agent) => (
-              <article className="workforce-row" key={agent.id}>
-                <div className="avatar">{agent.avatar}</div>
+      <div className="desk-schedule-page">
+        <section className="desk-service-panel" aria-label="Service tasks">
+          <header>
+            <h2>Service tasks</h2>
+            <label>
+              <select defaultValue="unresolved">
+                <option value="unresolved">Unresolved service tasks</option>
+                <option value="scheduled">Scheduled service tasks</option>
+                <option value="all">All service tasks</option>
+              </select>
+            </label>
+            <button type="button" aria-label="Search service tasks" onClick={() => announcePrototype('Service task search opened.')}>
+              <Search size={16} />
+            </button>
+          </header>
+          <div className="desk-service-task-list">
+            {serviceTasks.map((task, index) => (
+              <article className="desk-service-task" key={`${task.ticketNumber}-${task.title}`}>
+                <div className={`desk-service-avatar tone-${index % 5}`}>{initials(task.requester || task.title).slice(0, 1)}</div>
                 <div>
-                  <strong>{agent.name}</strong>
-                  <span>{agent.role} · {agent.shift}</span>
+                  <span>{task.requester}</span>
+                  <strong>{task.title} <b>#{task.ticketNumber.replace(/\D/g, '') || task.ticketNumber}</b></strong>
+                  <small>{task.location}</small>
+                  <em>{task.window}</em>
                 </div>
-                <span>{agent.load}/{agent.capacity} active</span>
-                <span>{agent.occupancy}% occupied</span>
-                <span className={`availability ${agent.availability}`}>{titleCase(agent.availability)}</span>
               </article>
             ))}
+          </div>
+        </section>
+
+        <section className="desk-scheduler" aria-label="Scheduling board">
+          <header className="desk-scheduler-head">
+            <div className="desk-calendar-controls">
+              <button type="button" aria-label="Toggle task sidebar" onClick={() => announcePrototype('Task sidebar toggled.')}>
+                <UserCheck size={15} />
+              </button>
+              <button type="button" onClick={() => announcePrototype('Today selected.')}>Today</button>
+              <button type="button" aria-label="Previous day" onClick={() => announcePrototype('Previous day loaded.')}>
+                <ArrowRight className="flip-x" size={15} />
+              </button>
+              <button type="button" aria-label="Next day" onClick={() => announcePrototype('Next day loaded.')}>
+                <ArrowRight size={15} />
+              </button>
+            </div>
+            <button className="desk-calendar-date" type="button" onClick={() => announcePrototype('Calendar picker opened.')}>
+              <Clock size={15} />
+              Tuesday 15, November 2019
+              <ChevronDown size={14} />
+            </button>
+            <label className="desk-duration-select">
+              <span>Default Duration</span>
+              <select defaultValue="60">
+                <option value="30">30 Minutes</option>
+                <option value="60">60 Minutes</option>
+                <option value="120">120 Minutes</option>
+              </select>
+            </label>
+          </header>
+
+          <div className="desk-schedule-toast" role="status">
+            <CheckCircle2 size={17} />
+            <strong>Service task updated</strong>
+            <button type="button" aria-label="Dismiss service task update">
+              <X size={13} />
+            </button>
+          </div>
+
+          <div className="desk-schedule-scroll">
+            <div className="desk-schedule-grid">
+              <div className="desk-tech-head">
+                <strong>Field Technicians</strong>
+                <select defaultValue="quick">
+                  <option value="quick">Quick Response</option>
+                  <option value="all">All groups</option>
+                </select>
+              </div>
+              {hourLabels.map((hour) => (
+                <div className="desk-hour-head" key={hour}>{hour}</div>
+              ))}
+              {technicians.map((agent, rowIndex) => (
+                <div
+                  className="desk-tech-cell"
+                  key={agent.id}
+                  style={{ gridRow: `${rowIndex + 2}` }}
+                >
+                  <div className="avatar">{agent.avatar}</div>
+                  <div>
+                    <strong>{agent.name}</strong>
+                    <span>{agent.role}</span>
+                  </div>
+                </div>
+              ))}
+              {technicians.map((agent, rowIndex) => (
+                <div
+                  className={`desk-slot-row row-${rowIndex % 2}`}
+                  key={`${agent.id}-slots`}
+                  style={{ gridColumn: '2 / -1', gridRow: `${rowIndex + 2}` }}
+                >
+                  {hourLabels.map((hour) => (
+                    <span aria-hidden="true" key={`${agent.id}-${hour}`} />
+                  ))}
+                  {scheduleBlocks
+                    .filter((block) => block.row === rowIndex)
+                    .map((block) => (
+                      <button
+                        type="button"
+                        className={`desk-schedule-block tone-${block.tone}`}
+                        key={`${agent.id}-${block.label}-${block.start}`}
+                        style={{ gridColumn: `${block.start} / span ${block.span}` }}
+                        onClick={() => announcePrototype(`${block.label} updated.`)}
+                      >
+                        <span>{agent.name} · Duration: {block.span > 1 ? '2hr 30mins' : '30mins'}</span>
+                        <strong>#{block.ticket?.replace(/\D/g, '') || '2081'} {block.label}</strong>
+                      </button>
+                    ))}
+                </div>
+              ))}
+            </div>
           </div>
         </section>
       </div>
@@ -2858,229 +6485,610 @@ function OmniApp() {
   }
 
   function renderAdmin() {
+    const session = backendSession
+    if (!session) return null
     const connectorAccounts = backendSnapshot?.connectorAccounts ?? []
     const outboundMessages = backendSnapshot?.outboundMessages ?? []
+    const inboundProviderConfig =
+      backendSnapshot?.inboundProviderConfig ?? backendSnapshot?.inbound_provider_config ?? []
+    const emailInboundConfig = inboundProviderConfig.find((config) => config.provider === 'email')
+    const emailOutboundConfig = outboundProviderConfig.find((config) => config.provider === 'email')
     const failedOutboundMessages = outboundMessages.filter((message) =>
       ['failed', 'retrying', 'dead_lettered'].includes(message.status),
     )
     const platformUsers = backendSnapshot?.users ?? []
+    const normalizedUserSearch = userSearch.trim().toLowerCase()
+    const visiblePlatformUsers = normalizedUserSearch
+      ? platformUsers.filter((user) =>
+          [user.name, user.email, user.role, user.permission_profile]
+            .join(' ')
+            .toLowerCase()
+            .includes(normalizedUserSearch),
+        )
+      : platformUsers
+    const activePlatformUsers = platformUsers.filter((user) => user.active)
+    const adminPlatformUsers = platformUsers.filter((user) => user.role === 'admin')
+    const mfaPlatformUsers = platformUsers.filter((user) => user.mfa_enabled)
     const marketNameById = new Map(availableMarkets.map((market) => [market.id, `${market.code} · ${market.name}`]))
-    const canManageUsers = backendSession?.user.role === 'admin'
+    const canManageUsers = session.user.role === 'admin'
+    const canManageEmailSettings = session.user.role === 'admin'
+    const canManageIntegrationCredentials = session.user.role === 'admin'
+    const canReadAudit = userHasPermission(session.user, 'audit.read')
+    const canManageAuditRetention = userHasPermission(session.user, 'setup.manage')
+    const canManageAlerts = session.user.role === 'admin' || session.user.role === 'supervisor'
+    const criticalAlerts = activeOperationalAlerts.filter((alert) => alert.severity === 'critical')
+    const acknowledgedAlerts = activeOperationalAlerts.filter((alert) => alert.status === 'acknowledged')
+    const activeAlertDeliveries = alertDeliveries.filter((delivery) => delivery.status !== 'sent')
+    const sentAlertDeliveries = alertDeliveries.filter((delivery) => delivery.status === 'sent')
+    const backendWriteReady = backendSync.status === 'connected'
+    const backendWriteStatus = backendSync.status === 'syncing'
+      ? 'Syncing backend writes'
+      : backendWriteReady
+        ? `Connected to ${backendSync.baseUrl}`
+        : backendSync.error || `Waiting to reach ${backendSync.baseUrl}`
+    const activeTicketFields = state.ticketFields.filter((field) => field.active)
+    const requiredTicketFields = activeTicketFields.filter((field) => field.required)
+    const activeSlaPolicies = state.slaPolicies.filter((policy) => policy.active)
+    const canManageSlaPolicies = session.user.role === 'admin'
+    const setupStats = [
+      ['Users', platformUsers.length || 'No sync', `${canManageUsers ? 'Admin access' : 'View only'}`],
+      ['Fields', activeTicketFields.length, `${requiredTicketFields.length} required`],
+      ['Alerts', activeOperationalAlerts.length, criticalAlerts.length ? `${criticalAlerts.length} critical` : 'No critical'],
+      ['Connectors', connectorAccounts.length, `${failedOutboundMessages.length} send issue(s)`],
+    ]
+    const savedChannelSecretCount = [
+      integrationCredentialSettings?.sms_http_auth_token_configured,
+      integrationCredentialSettings?.voice_http_auth_token_configured,
+      integrationCredentialSettings?.whatsapp_access_token_configured,
+      integrationCredentialSettings?.facebook_page_access_token_configured,
+      integrationCredentialSettings?.instagram_access_token_configured,
+    ].filter(Boolean).length
+    const aiAlertReadyCount = [
+      integrationCredentialSettings?.anthropic_api_key_configured,
+      Boolean(integrationCredentialSettings?.alert_webhook_url),
+    ].filter(Boolean).length
+    const smsVoiceReadyCount = [
+      integrationCredentialSettings?.sms_http_auth_token_configured,
+      integrationCredentialSettings?.voice_http_auth_token_configured,
+    ].filter(Boolean).length
+    const metaReadyCount = [
+      integrationCredentialSettings?.whatsapp_access_token_configured,
+      integrationCredentialSettings?.facebook_page_access_token_configured,
+      integrationCredentialSettings?.instagram_access_token_configured,
+    ].filter(Boolean).length
+    const peopleStats = [
+      ['Active users', activePlatformUsers.length, `${platformUsers.length - activePlatformUsers.length} inactive`],
+      ['Admins', adminPlatformUsers.length, 'Can manage setup'],
+      ['MFA enabled', mfaPlatformUsers.length, `${platformUsers.length - mfaPlatformUsers.length} pending`],
+      ['Groups', state.supportGroups.length, `${state.supportGroups.filter((group) => group.active).length} active`],
+    ]
     return (
       <div className="management-grid">
-        <section className="panel span-2">
+        <section className="panel span-2 setup-panel">
           <div className="panel-head">
             <div>
               <span>Setup</span>
-              <h2>Controls and readiness</h2>
+              <h2>Workspace controls</h2>
             </div>
             <ShieldCheck size={20} />
           </div>
-          <div className="admin-grid">
-            {[
-              ['People and roles', 'Agent, supervisor, admin, and auditor access with team boundaries.'],
-              ['Ticket fields', 'Status, priority, source, customer mood, topic, and custom fields.'],
-              ['Channel connections', 'Email, chat, phone, WhatsApp, SMS, social, portal, and partner systems.'],
-              ['Security controls', 'Audit trail, permissions, tenant separation, attachments, and data retention.'],
-              ['Working status', `${online ? 'Online' : 'Offline'} · ${state.outbox.length} pending send(s).`],
-              [
-                'Backend sync',
-                backendSync.status === 'connected'
-                  ? `Connected to ${backendSync.baseUrl}.`
-                  : backendSync.status === 'syncing'
-                    ? `Syncing ${backendSync.baseUrl}.`
-                    : backendSync.error || `Waiting to reach ${backendSync.baseUrl}.`,
-              ],
-              ['Review refresh', 'Restore the approved walkthrough data.'],
-            ].map(([title, body]) => (
-              <article key={title}>
-                <Lock size={18} />
-                <strong>{title}</strong>
-                <span>{body}</span>
-              </article>
-            ))}
+          <div className="setup-dashboard">
+            <div className={`setup-status-strip ${backendWriteReady ? 'ready' : backendSync.status === 'syncing' ? 'syncing' : 'error'}`}>
+              {backendWriteReady ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+              <span>
+                <strong>{backendWriteReady ? 'Backend connected' : 'Backend attention needed'}</strong>
+                <small>{backendWriteStatus}</small>
+              </span>
+              <button className="secondary-action" type="button" onClick={() => refreshBackend()}>
+                <RefreshCw size={16} />
+                Refresh
+              </button>
+            </div>
+            <div className="setup-summary-grid" aria-label="Setup summary">
+              {setupStats.map(([label, value, detail]) => (
+                <article key={label}>
+                  <span>{label}</span>
+                  <strong>{value}</strong>
+                  <small>{detail}</small>
+                </article>
+              ))}
+            </div>
+            <div className="setup-section-tabs" role="tablist" aria-label="Setup sections">
+              {setupSectionOptions.map((section) => (
+                <button
+                  key={section.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={setupSection === section.id}
+                  className={setupSection === section.id ? 'active' : ''}
+                  onClick={() => setSetupSection(section.id)}
+                >
+                  {section.label}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="automation-settings-panel user-management-panel">
+          <div className="freshworks-admin-catalog" aria-label="Omni admin module catalog">
+            {setupModuleCatalog[setupSection]
+              .map((category) => ({
+                ...category,
+                modules: category.modules.filter((module) => setupBuiltModules.has(module)),
+              }))
+              .filter((category) => category.modules.length > 0)
+              .map((category) => (
+                <article key={category.title}>
+                  <span>{category.title}</span>
+                  <div>
+                    {category.modules.map((module) => (
+                      <button type="button" key={module} onClick={() => openSetupModule(module)}>
+                        <CheckCircle2 size={14} />
+                        {module}
+                      </button>
+                    ))}
+                  </div>
+                </article>
+              ))}
+          </div>
+          <div id="setup-section-panels" className="setup-section-anchor" />
+          {setupModuleHint ? (
+            <p className="setup-module-hint" role="status">
+              {setupModuleHint}
+            </p>
+          ) : null}
+          {setupSection === 'forms' ? (
+          <div className="automation-settings-panel ticket-fields-panel">
             <div className="panel-head compact">
+              <div>
+                <span>Ticket forms</span>
+                <h2>Fields agents capture</h2>
+              </div>
+              <ClipboardList size={18} />
+            </div>
+            <form className="ticket-field-form" onSubmit={handleCreateTicketField}>
+              <label>
+                <span>Label</span>
+                <input
+                  required
+                  value={ticketFieldDraft.label}
+                  onChange={(event) =>
+                    setTicketFieldDraft((current) => ({
+                      ...current,
+                      label: event.target.value,
+                      key: current.key || normalizeTicketFieldKey(event.target.value),
+                    }))
+                  }
+                  placeholder="Booking reference"
+                />
+              </label>
+              <label>
+                <span>Key</span>
+                <input
+                  required
+                  value={ticketFieldDraft.key}
+                  onChange={(event) =>
+                    setTicketFieldDraft((current) => ({
+                      ...current,
+                      key: normalizeTicketFieldKey(event.target.value),
+                    }))
+                  }
+                  placeholder="booking_reference"
+                />
+              </label>
+              <label>
+                <span>Type</span>
+                <select
+                  value={ticketFieldDraft.fieldType}
+                  onChange={(event) =>
+                    setTicketFieldDraft((current) => ({
+                      ...current,
+                      fieldType: event.target.value as TicketFieldType,
+                    }))
+                  }
+                >
+                  {ticketFieldTypeOptions.map((type) => (
+                    <option key={type} value={type}>
+                      {titleCase(type)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Position</span>
+                <input
+                  type="number"
+                  min="1"
+                  value={ticketFieldDraft.position}
+                  onChange={(event) =>
+                    setTicketFieldDraft((current) => ({
+                      ...current,
+                      position: Number(event.target.value || 100),
+                    }))
+                  }
+                />
+              </label>
+              <label className="span-all">
+                <span>Options</span>
+                <input
+                  value={ticketFieldDraft.options}
+                  onChange={(event) =>
+                    setTicketFieldDraft((current) => ({ ...current, options: event.target.value }))
+                  }
+                  placeholder="Booking, Payment, Refund"
+                  disabled={!['select', 'multiselect'].includes(ticketFieldDraft.fieldType)}
+                />
+              </label>
+              <div className="ticket-field-channel-picker span-all">
+                <span>Channels</span>
+                <div>
+                  {state.channels
+                    .filter((channel) => channel.id !== 'internal')
+                    .map((channel) => (
+                      <label key={channel.id}>
+                        <input
+                          type="checkbox"
+                          checked={ticketFieldDraft.channels.includes(channel.id)}
+                          onChange={() => toggleTicketFieldDraftChannel(channel.id)}
+                        />
+                        {channel.shortLabel}
+                      </label>
+                    ))}
+                </div>
+                <small>Leave all unchecked to show this field on every channel.</small>
+              </div>
+              <label className="toggle-row">
+                <input
+                  type="checkbox"
+                  checked={ticketFieldDraft.required}
+                  onChange={(event) =>
+                    setTicketFieldDraft((current) => ({ ...current, required: event.target.checked }))
+                  }
+                />
+                <span>Required</span>
+              </label>
+              <label className="toggle-row">
+                <input
+                  type="checkbox"
+                  checked={ticketFieldDraft.active}
+                  onChange={(event) =>
+                    setTicketFieldDraft((current) => ({ ...current, active: event.target.checked }))
+                  }
+                />
+                <span>Active</span>
+              </label>
+              <button className="primary-action" type="submit">
+                <Plus size={16} />
+                Add field
+              </button>
+            </form>
+            <div className="ticket-field-list" aria-label="Configured ticket fields">
+              {state.ticketFields.map((field) => (
+                <article key={field.id}>
+                  <div>
+                    <strong>{field.label}</strong>
+                    <span>
+                      {field.key} · {titleCase(field.fieldType)} · {field.channels.length ? field.channels.join(', ') : 'All channels'}
+                    </span>
+                  </div>
+                  <em className={`chip status-${field.active ? 'healthy' : 'paused'}`}>
+                    {field.active ? 'Active' : 'Paused'}
+                  </em>
+                  {field.required ? <em className="chip status-risk">Required</em> : null}
+                  <button
+                    className="secondary-action"
+                    type="button"
+                    onClick={() => updateTicketField(field.id, { active: !field.active })}
+                  >
+                    {field.active ? 'Pause' : 'Activate'}
+                  </button>
+                  <button
+                    className="secondary-action"
+                    type="button"
+                    onClick={() => updateTicketField(field.id, { required: !field.required })}
+                  >
+                    {field.required ? 'Optional' : 'Required'}
+                  </button>
+                </article>
+              ))}
+            </div>
+          </div>
+          ) : null}
+          {setupSection === 'governance' ? (
+          <>
+          <div className="automation-settings-panel audit-governance-panel" id="audit-controls">
+            <div className="panel-head compact">
+              <div>
+                <span>Audit governance</span>
+                <h2>Export and retention</h2>
+              </div>
+              <ShieldCheck size={18} />
+            </div>
+            <div className="operational-alert-summary-grid" aria-label="Audit retention summary">
+              {[
+                ['Visible events', auditRetention?.retained_events ?? 0],
+                ['Prunable', auditRetention?.prunable_events ?? 0],
+                ['Retention days', auditRetention?.retention_days ?? 0],
+                ['Export cap', auditRetention?.export_max_rows ?? 0],
+              ].map(([label, value]) => (
+                <article key={label}>
+                  <strong>{value}</strong>
+                  <span>{label}</span>
+                </article>
+              ))}
+            </div>
+            <div className="alert-delivery-config" aria-label="Audit export and retention policy">
+              <article>
+                <DatabaseZap size={16} />
+                <span>
+                  <strong>Retention cutoff</strong>
+                  <small>
+                    {auditRetention
+                      ? `Events older than ${formatTime(auditRetention.cutoff_at)} are eligible for pruning.`
+                      : canReadAudit
+                        ? 'Loading the active audit retention policy.'
+                        : 'Audit visibility requires the audit.read permission.'}
+                  </small>
+                </span>
+              </article>
+              <article>
+                <Download size={16} />
+                <span>
+                  <strong>Export scope</strong>
+                  <small>Exports include global events and the active market only.</small>
+                </span>
+              </article>
+            </div>
+            <div className="operational-alert-actions audit-actions">
+              <button
+                className="secondary-action"
+                type="button"
+                onClick={() => void handleAuditExport('csv')}
+                disabled={!canReadAudit || auditActionBusy}
+              >
+                <Download size={15} />
+                Export CSV
+              </button>
+              <button
+                className="secondary-action"
+                type="button"
+                onClick={() => void handleAuditExport('json')}
+                disabled={!canReadAudit || auditActionBusy}
+              >
+                <Code2 size={15} />
+                Export JSON
+              </button>
+              <button
+                className="primary-action"
+                type="button"
+                onClick={() => void handleAuditPrune()}
+                disabled={!canManageAuditRetention || auditActionBusy || (auditRetention?.prunable_events ?? 0) === 0}
+              >
+                <DatabaseZap size={15} />
+                Run retention
+              </button>
+            </div>
+          </div>
+          <div className="automation-settings-panel attachment-governance-panel" id="attachment-controls">
+            <div className="panel-head compact">
+              <div>
+                <span>Attachment governance</span>
+                <h2>Storage lifecycle</h2>
+              </div>
+              <Paperclip size={18} />
+            </div>
+            <div className="operational-alert-summary-grid" aria-label="Attachment retention summary">
+              {[
+                ['Active', attachmentRetention?.active_attachments ?? 0],
+                ['Deleted', attachmentRetention?.deleted_attachments ?? 0],
+                ['Purged', attachmentRetention?.purged_attachments ?? 0],
+                ['Purgeable', attachmentRetention?.purgeable_attachments ?? 0],
+              ].map(([label, value]) => (
+                <article key={label}>
+                  <strong>{value}</strong>
+                  <span>{label}</span>
+                </article>
+              ))}
+            </div>
+            <div className="alert-delivery-config" aria-label="Attachment storage lifecycle policy">
+              <article>
+                <DatabaseZap size={16} />
+                <span>
+                  <strong>Active retention</strong>
+                  <small>
+                    {attachmentRetention
+                      ? `${attachmentRetention.active_retention_days} days · cutoff ${formatTime(attachmentRetention.active_cutoff_at)}.`
+                      : 'Loading the active attachment retention policy.'}
+                  </small>
+                </span>
+              </article>
+              <article>
+                <Paperclip size={16} />
+                <span>
+                  <strong>Deleted retention</strong>
+                  <small>
+                    {attachmentRetention
+                      ? `${attachmentRetention.deleted_retention_days} days before stored bytes are purged.`
+                      : 'Purged metadata remains available for audit history.'}
+                  </small>
+                </span>
+              </article>
+            </div>
+            <div className="outbound-provider-grid attachment-provider-grid" aria-label="Attachment provider readiness">
+              <article>
+                <div className="outbound-provider-head">
+                  <span className={`channel-health-dot ${attachmentProviderConfig?.storage_live ? 'healthy' : 'degraded'}`} />
+                  <div>
+                    <strong>Attachment storage</strong>
+                    <small>
+                      {attachmentProviderConfig
+                        ? attachmentProviderConfig.notes
+                        : 'Storage provider readiness is available to supervisors and admins.'}
+                    </small>
+                  </div>
+                  <em className={`chip status-${attachmentProviderConfig?.storage_live ? 'done' : 'pending'}`}>
+                    {attachmentProviderConfig?.storage_live ? 'Live' : 'Pending'}
+                  </em>
+                </div>
+                <div className="outbound-provider-meta">
+                  <span>
+                    <b>Backend</b>
+                    {titleCase(attachmentProviderConfig?.storage_backend ?? 'local')}
+                  </span>
+                  <span>
+                    <b>Scanner</b>
+                    {titleCase(attachmentProviderConfig?.scanner_adapter ?? 'local')}
+                  </span>
+                  <span>
+                    <b>Missing</b>
+                    {attachmentProviderConfig?.missing_settings.length ?? 0}
+                  </span>
+                </div>
+                {attachmentProviderConfig?.missing_settings.length ? (
+                  <div className="connector-needed">
+                    <AlertTriangle size={15} />
+                    <span>{attachmentProviderConfig.missing_settings.slice(0, 2).join(' · ')}</span>
+                  </div>
+                ) : null}
+              </article>
+            </div>
+            <div className="operational-alert-actions audit-actions">
+              <button
+                className="primary-action"
+                type="button"
+                onClick={() => void handleAttachmentPrune()}
+                disabled={
+                  !canManageAuditRetention ||
+                  attachmentActionBusy ||
+                  (attachmentRetention?.purgeable_attachments ?? 0) === 0
+                }
+              >
+                <DatabaseZap size={15} />
+                Run attachment retention
+              </button>
+            </div>
+          </div>
+          </>
+          ) : null}
+          {setupSection === 'people' ? (
+          <div className="automation-settings-panel user-management-panel people-workspace">
+            <div className="panel-head compact people-workspace-head">
               <div>
                 <span>People management</span>
                 <h2>Users, roles, and markets</h2>
               </div>
-              <Users size={18} />
-            </div>
-            <form className="user-create-form" onSubmit={handleCreateUser}>
-              <label>
-                <span>Name</span>
-                <input
-                  required
-                  value={newUser.name}
-                  onChange={(event) => setNewUser((current) => ({ ...current, name: event.target.value }))}
-                  placeholder="Agent name"
-                  disabled={!canManageUsers}
-                />
-              </label>
-              <label>
-                <span>Email</span>
-                <input
-                  required
-                  type="email"
-                  value={newUser.email}
-                  onChange={(event) => setNewUser((current) => ({ ...current, email: event.target.value }))}
-                  placeholder="agent@company.com"
-                  disabled={!canManageUsers}
-                />
-              </label>
-              <label>
-                <span>Role</span>
-                <select
-                  value={newUser.role}
-                  onChange={(event) =>
-                    setNewUser((current) => ({
-                      ...current,
-                      role: event.target.value as (typeof userRoleOptions)[number],
-                    }))
-                  }
+              <div className="people-head-actions">
+                <button className="secondary-action" type="button" onClick={() => refreshBackend()}>
+                  <RefreshCw size={16} />
+                  Refresh
+                </button>
+                <button
+                  className="primary-action"
+                  type="button"
+                  onClick={() => {
+                    setPeopleView('users')
+                    setAddUserOpen(true)
+                  }}
                   disabled={!canManageUsers}
                 >
-                  {userRoleOptions.map((role) => (
-                    <option key={role} value={role}>
-                      {titleCase(role)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                <span>Temporary password</span>
-                <input
-                  required
-                  minLength={8}
-                  type="password"
-                  value={newUser.temporaryPassword}
-                  onChange={(event) =>
-                    setNewUser((current) => ({
-                      ...current,
-                      temporaryPassword: event.target.value,
-                    }))
-                  }
-                  placeholder="Minimum 8 characters"
-                  disabled={!canManageUsers}
-                />
-              </label>
-              <label>
-                <span>Default market</span>
-                <select
-                  value={newUser.defaultMarketId}
-                  onChange={(event) =>
-                    setNewUser((current) => ({
-                      ...current,
-                      defaultMarketId: event.target.value,
-                      marketIds: current.marketIds.includes(event.target.value)
-                        ? current.marketIds
-                        : [...current.marketIds, event.target.value],
-                    }))
-                  }
-                  disabled={!canManageUsers}
-                >
-                  {availableMarkets.map((market) => (
-                    <option key={market.id} value={market.id}>
-                      {market.code} · {market.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="user-market-picker" aria-label="Assigned markets">
-                <span>Assigned markets</span>
-                <div>
-                  {availableMarkets.map((market) => (
-                    <label key={market.id}>
-                      <input
-                        type="checkbox"
-                        checked={newUser.marketIds.includes(market.id)}
-                        onChange={() => toggleNewUserMarket(market.id)}
-                        disabled={!canManageUsers}
-                      />
-                      {market.code}
-                    </label>
-                  ))}
-                </div>
+                  <Plus size={16} />
+                  Add user
+                </button>
               </div>
-              <button className="primary-action" type="submit" disabled={!canManageUsers}>
-                <Plus size={16} />
-                Add user
-              </button>
-            </form>
-            <form className="user-create-form password-change-form" onSubmit={handleChangePassword}>
-              <label>
-                <span>My current password</span>
-                <input
-                  required
-                  type="password"
-                  value={passwordChange.currentPassword}
-                  onChange={(event) =>
-                    setPasswordChange((current) => ({
-                      ...current,
-                      currentPassword: event.target.value,
-                    }))
-                  }
-                  placeholder="Current password"
-                />
-              </label>
-              <label>
-                <span>My new password</span>
-                <input
-                  required
-                  minLength={8}
-                  type="password"
-                  value={passwordChange.newPassword}
-                  onChange={(event) =>
-                    setPasswordChange((current) => ({
-                      ...current,
-                      newPassword: event.target.value,
-                    }))
-                  }
-                  placeholder="Minimum 8 characters"
-                />
-              </label>
-              <button
-                className="secondary-action"
-                type="submit"
-                disabled={passwordChange.currentPassword.length < 1 || passwordChange.newPassword.length < 8}
-              >
-                Update my password
-              </button>
-            </form>
-            <div className="user-list" aria-label="Backend users">
-              {platformUsers.map((user) => (
-                <article className={`user-card ${user.active ? 'active' : 'inactive'}`} key={user.id}>
-                  <div className="user-card-head">
-                    <div className="avatar">{initials(user.name)}</div>
-                    <div>
-                      <strong>{user.name}</strong>
-                      <span>{user.email}</span>
-                    </div>
-                    <em className={`chip status-${user.active ? 'healthy' : 'paused'}`}>
-                      {user.active ? 'Active' : 'Inactive'}
-                    </em>
-                    {user.password_reset_required ? (
-                      <em className="chip status-risk">Password reset required</em>
-                    ) : null}
-                  </div>
-                  <div className="user-security-row">
-                    <span>
-                      Last login {user.last_login_at ? formatTime(user.last_login_at) : 'not recorded'}
-                    </span>
-                  </div>
-                  <div className="user-card-controls">
+            </div>
+            <div className={`setup-status-strip ${backendWriteReady ? 'ready' : backendSync.status === 'syncing' ? 'syncing' : 'error'}`}>
+              {backendWriteReady ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+              <span>
+                <strong>Backend writes</strong>
+                <small>{backendWriteStatus}</small>
+              </span>
+            </div>
+            <div className="people-summary-grid" aria-label="People summary">
+              {peopleStats.map(([label, value, detail]) => (
+                <article key={label}>
+                  <span>{label}</span>
+                  <strong>{value}</strong>
+                  <small>{detail}</small>
+                </article>
+              ))}
+            </div>
+            <div className="people-subtabs" role="tablist" aria-label="People sections">
+              {[
+                { id: 'users' as const, label: 'Users', icon: Users },
+                { id: 'groups' as const, label: 'Groups', icon: Building2 },
+                { id: 'security' as const, label: 'Security', icon: ShieldCheck },
+              ].map(({ id, label, icon: SectionIcon }) => {
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    role="tab"
+                    aria-selected={peopleView === id}
+                    className={peopleView === id ? 'active' : ''}
+                    onClick={() => setPeopleView(id)}
+                  >
+                    <SectionIcon size={15} />
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
+
+            {peopleView === 'users' ? (
+              <section className="people-section" aria-label="Users">
+                <div className="people-toolbar">
+                  <label className="global-search people-search">
+                    <Search size={16} />
+                    <input
+                      value={userSearch}
+                      onChange={(event) => setUserSearch(event.target.value)}
+                      placeholder="Search users"
+                      aria-label="Search users"
+                    />
+                  </label>
+                  <button
+                    className={addUserOpen ? 'secondary-action' : 'primary-action'}
+                    type="button"
+                    onClick={() => setAddUserOpen((value) => !value)}
+                    disabled={!canManageUsers}
+                    aria-expanded={addUserOpen}
+                  >
+                    {addUserOpen ? <X size={16} /> : <Plus size={16} />}
+                    {addUserOpen ? 'Close form' : 'Add user'}
+                  </button>
+                </div>
+                {addUserOpen ? (
+                  <form className="user-create-form people-add-form" onSubmit={handleCreateUser}>
+                    <label>
+                      <span>Name</span>
+                      <input
+                        required
+                        value={newUser.name}
+                        onChange={(event) => setNewUser((current) => ({ ...current, name: event.target.value }))}
+                        placeholder="Agent name"
+                        disabled={!canManageUsers || userActionBusy}
+                      />
+                    </label>
+                    <label>
+                      <span>Email</span>
+                      <input
+                        required
+                        type="email"
+                        value={newUser.email}
+                        onChange={(event) => setNewUser((current) => ({ ...current, email: event.target.value }))}
+                        placeholder="agent@company.com"
+                        disabled={!canManageUsers || userActionBusy}
+                      />
+                    </label>
                     <label>
                       <span>Role</span>
                       <select
-                        value={user.role}
+                        value={newUser.role}
                         onChange={(event) =>
-                          updateUser(user.id, {
+                          setNewUser((current) => ({
+                            ...current,
                             role: event.target.value as (typeof userRoleOptions)[number],
-                          })
+                          }))
                         }
-                        disabled={!canManageUsers}
+                        disabled={!canManageUsers || userActionBusy}
                       >
                         {userRoleOptions.map((role) => (
                           <option key={role} value={role}>
@@ -3090,148 +7098,2113 @@ function OmniApp() {
                       </select>
                     </label>
                     <label>
-                      <span>Default market</span>
+                      <span>Permission profile</span>
                       <select
-                        value={user.default_market_id}
-                        onChange={(event) => {
-                          const defaultMarketId = event.target.value
-                          updateUser(user.id, {
-                            default_market_id: defaultMarketId,
-                            market_ids: user.market_ids.includes(defaultMarketId)
-                              ? user.market_ids
-                              : [...user.market_ids, defaultMarketId],
-                          })
-                        }}
-                        disabled={!canManageUsers}
+                        value={newUser.permissionProfile}
+                        onChange={(event) =>
+                          setNewUser((current) => ({
+                            ...current,
+                            permissionProfile: event.target.value as BackendPermissionProfile,
+                          }))
+                        }
+                        disabled={!canManageUsers || userActionBusy}
                       >
-                        {availableMarkets.map((market) => (
-                          <option key={market.id} value={market.id}>
-                            {market.code}
+                        {permissionProfileOptions.map((profile) => (
+                          <option key={profile} value={profile}>
+                            {titleCase(profile)}
                           </option>
                         ))}
                       </select>
                     </label>
-                    <button
-                      className="secondary-action"
-                      type="button"
-                      onClick={() => updateUser(user.id, { active: !user.active })}
-                      disabled={!canManageUsers || user.id === backendSession?.user.id}
-                    >
-                      {user.active ? 'Deactivate' : 'Reactivate'}
-                    </button>
-                  </div>
-                  <div className="user-card-controls password-reset-controls">
                     <label>
-                      <span>Reset password</span>
+                      <span>Temporary password</span>
                       <input
+                        required
                         minLength={8}
                         type="password"
-                        value={passwordResetDrafts[user.id] ?? ''}
+                        value={newUser.temporaryPassword}
                         onChange={(event) =>
-                          setPasswordResetDrafts((current) => ({
+                          setNewUser((current) => ({
                             ...current,
-                            [user.id]: event.target.value,
+                            temporaryPassword: event.target.value,
                           }))
                         }
-                        placeholder="New temporary password"
-                        disabled={!canManageUsers}
+                        placeholder="Minimum 8 characters"
+                        disabled={!canManageUsers || userActionBusy}
                       />
                     </label>
+                    <label>
+                      <span>Default market</span>
+                      <select
+                        value={newUser.defaultMarketId}
+                        onChange={(event) =>
+                          setNewUser((current) => ({
+                            ...current,
+                            defaultMarketId: event.target.value,
+                            marketIds: current.marketIds.includes(event.target.value)
+                              ? current.marketIds
+                              : [...current.marketIds, event.target.value],
+                          }))
+                        }
+                        disabled={!canManageUsers || userActionBusy}
+                      >
+                        {availableMarkets.map((market) => (
+                          <option key={market.id} value={market.id}>
+                            {market.code} · {market.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="user-market-picker" aria-label="Assigned markets">
+                      <span>Assigned markets</span>
+                      <div>
+                        {availableMarkets.map((market) => (
+                          <label key={market.id}>
+                            <input
+                              type="checkbox"
+                              checked={newUser.marketIds.includes(market.id)}
+                              onChange={() => toggleNewUserMarket(market.id)}
+                              disabled={!canManageUsers || userActionBusy}
+                            />
+                            {market.code}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="form-actions">
+                      <button className="secondary-action" type="button" onClick={() => setAddUserOpen(false)}>
+                        Cancel
+                      </button>
+                      <button className="primary-action" type="submit" disabled={!canManageUsers || userActionBusy}>
+                        <Plus size={16} />
+                        {userActionBusy ? 'Saving...' : 'Add user'}
+                      </button>
+                    </div>
+                  </form>
+                ) : null}
+                <div className="user-list" aria-label="Backend users">
+                  {visiblePlatformUsers.map((user) => (
+                    <article className={`user-card ${user.active ? 'active' : 'inactive'}`} key={user.id}>
+                      <div className="user-card-head">
+                        <div className="avatar">{initials(user.name)}</div>
+                        <div>
+                          <strong>{user.name}</strong>
+                          <span>{user.email}</span>
+                        </div>
+                        <em className={`chip status-${user.active ? 'healthy' : 'paused'}`}>
+                          {user.active ? 'Active' : 'Inactive'}
+                        </em>
+                        {user.password_reset_required ? (
+                          <em className="chip status-risk">Password reset required</em>
+                        ) : null}
+                        {user.mfa_enabled ? <em className="chip status-healthy">MFA</em> : null}
+                      </div>
+                      <div className="user-security-row">
+                        <span>
+                          Last login {user.last_login_at ? formatTime(user.last_login_at) : 'not recorded'}
+                        </span>
+                        <span>
+                          MFA {user.mfa_enabled ? 'enabled' : 'off'}
+                        </span>
+                        <span>
+                          Permissions {userPermissionCount(user)}
+                        </span>
+                      </div>
+                      <details className="user-card-details">
+                        <summary>
+                          <span>Manage access</span>
+                          <ChevronDown size={15} />
+                        </summary>
+                        <div className="user-card-details-body">
+                          <div className="user-card-controls">
+                            <label>
+                              <span>Role</span>
+                              <select
+                                value={user.role}
+                                onChange={(event) =>
+                                  updateUser(user.id, {
+                                    role: event.target.value as (typeof userRoleOptions)[number],
+                                  })
+                                }
+                                disabled={!canManageUsers || userActionBusy}
+                              >
+                                {userRoleOptions.map((role) => (
+                                  <option key={role} value={role}>
+                                    {titleCase(role)}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label>
+                              <span>Permission profile</span>
+                              <select
+                                value={user.permission_profile}
+                                onChange={(event) =>
+                                  updateUser(user.id, {
+                                    permission_profile: event.target.value as BackendPermissionProfile,
+                                  })
+                                }
+                                disabled={!canManageUsers || userActionBusy}
+                              >
+                                {permissionProfileOptions.map((profile) => (
+                                  <option key={profile} value={profile}>
+                                    {titleCase(profile)}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label>
+                              <span>Default market</span>
+                              <select
+                                value={user.default_market_id}
+                                onChange={(event) => {
+                                  const defaultMarketId = event.target.value
+                                  updateUser(user.id, {
+                                    default_market_id: defaultMarketId,
+                                    market_ids: user.market_ids.includes(defaultMarketId)
+                                      ? user.market_ids
+                                      : [...user.market_ids, defaultMarketId],
+                                  })
+                                }}
+                                disabled={!canManageUsers || userActionBusy}
+                              >
+                                {availableMarkets.map((market) => (
+                                  <option key={market.id} value={market.id}>
+                                    {market.code}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <div className="permission-summary" aria-label={`${user.name} effective permissions`}>
+                              {permissionOptions.map((permission) => (
+                                <em
+                                  className={`chip status-${userHasPermission(user, permission.value) ? 'healthy' : 'paused'}`}
+                                  key={permission.value}
+                                >
+                                  {permission.label}
+                                </em>
+                              ))}
+                            </div>
+                            <div className="permission-override-grid" aria-label={`${user.name} permission overrides`}>
+                              {permissionOptions.map((permission) => {
+                                const mode = user.permission_overrides.allow.includes(permission.value)
+                                  ? 'allow'
+                                  : user.permission_overrides.deny.includes(permission.value)
+                                    ? 'deny'
+                                    : 'default'
+                                return (
+                                  <label key={permission.value}>
+                                    <span>{permission.label}</span>
+                                    <select
+                                      value={mode}
+                                      onChange={(event) =>
+                                        updateUserPermissionOverride(
+                                          user,
+                                          permission.value,
+                                          event.target.value as 'default' | 'allow' | 'deny',
+                                        )
+                                      }
+                                      disabled={!canManageUsers || userActionBusy}
+                                    >
+                                      <option value="default">Default</option>
+                                      <option value="allow">Allow</option>
+                                      <option value="deny">Deny</option>
+                                    </select>
+                                  </label>
+                                )
+                              })}
+                            </div>
+                            <button
+                              className="secondary-action"
+                              type="button"
+                              onClick={() => updateUser(user.id, { active: !user.active })}
+                              disabled={!canManageUsers || userActionBusy || user.id === backendSession?.user.id}
+                            >
+                              {user.active ? 'Deactivate' : 'Reactivate'}
+                            </button>
+                          </div>
+                          <div className="user-card-controls password-reset-controls">
+                            <label>
+                              <span>Reset password</span>
+                              <input
+                                minLength={8}
+                                type="password"
+                                value={passwordResetDrafts[user.id] ?? ''}
+                                onChange={(event) =>
+                                  setPasswordResetDrafts((current) => ({
+                                    ...current,
+                                    [user.id]: event.target.value,
+                                  }))
+                                }
+                                placeholder="New temporary password"
+                                disabled={!canManageUsers || userActionBusy}
+                              />
+                            </label>
+                            <button
+                              className="secondary-action"
+                              type="button"
+                              onClick={async () => {
+                                const temporaryPassword = (passwordResetDrafts[user.id] ?? '').trim()
+                                if (temporaryPassword.length < 8) return
+                                setUserActionBusy(true)
+                                try {
+                                  const saved = await updateUser(user.id, { temporary_password: temporaryPassword })
+                                  if (saved) {
+                                    setPasswordResetDrafts((current) => ({ ...current, [user.id]: '' }))
+                                    setPrototypeNotice(`Temporary password reset for ${user.name}.`)
+                                  }
+                                } finally {
+                                  setUserActionBusy(false)
+                                }
+                              }}
+                              disabled={!canManageUsers || userActionBusy || (passwordResetDrafts[user.id] ?? '').trim().length < 8}
+                            >
+                              Reset
+                            </button>
+                          </div>
+                          <div className="user-market-list" aria-label={`${user.name} market access`}>
+                            {availableMarkets.map((market) => {
+                              const checked = user.market_ids.includes(market.id)
+                              return (
+                                <label key={market.id}>
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => {
+                                      const nextMarketIds = checked
+                                        ? user.market_ids.filter((item) => item !== market.id)
+                                        : [...user.market_ids, market.id]
+                                      if (nextMarketIds.length === 0) return
+                                      updateUser(user.id, {
+                                        market_ids: nextMarketIds,
+                                        default_market_id: nextMarketIds.includes(user.default_market_id)
+                                          ? user.default_market_id
+                                          : nextMarketIds[0],
+                                      })
+                                    }}
+                                    disabled={!canManageUsers || userActionBusy}
+                                  />
+                                  {marketNameById.get(market.id) ?? market.id}
+                                </label>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      </details>
+                    </article>
+                  ))}
+                  {platformUsers.length === 0 ? (
+                    <article className="user-card empty">
+                      <strong>No backend users loaded</strong>
+                      <span>Refresh backend sync after the API starts.</span>
+                    </article>
+                  ) : null}
+                  {platformUsers.length > 0 && visiblePlatformUsers.length === 0 ? (
+                    <article className="user-card empty">
+                      <strong>No matching users</strong>
+                      <span>Clear the search field to see everyone.</span>
+                    </article>
+                  ) : null}
+                </div>
+              </section>
+            ) : null}
+
+            {peopleView === 'groups' ? (
+              <section className="people-section support-group-panel" aria-label="Support groups">
+                <div className="support-group-head">
+                  <div>
+                    <span>Support groups</span>
+                    <h3>Team ownership and routing</h3>
+                  </div>
+                  <button
+                    className={addGroupOpen ? 'secondary-action' : 'primary-action'}
+                    type="button"
+                    onClick={() => setAddGroupOpen((value) => !value)}
+                    disabled={!canManageUsers}
+                    aria-expanded={addGroupOpen}
+                  >
+                    {addGroupOpen ? <X size={16} /> : <Plus size={16} />}
+                    {addGroupOpen ? 'Close form' : 'Add group'}
+                  </button>
+                </div>
+                {addGroupOpen ? (
+                  <form className="user-create-form support-group-form" onSubmit={handleCreateSupportGroup}>
+                    <label>
+                      <span>Group name</span>
+                      <input
+                        required
+                        value={supportGroupDraft.name}
+                        onChange={(event) =>
+                          setSupportGroupDraft((current) => ({ ...current, name: event.target.value }))
+                        }
+                        placeholder="Refund Desk"
+                        disabled={!canManageUsers || groupActionBusy}
+                      />
+                    </label>
+                    <label>
+                      <span>Description</span>
+                      <input
+                        value={supportGroupDraft.description}
+                        onChange={(event) =>
+                          setSupportGroupDraft((current) => ({ ...current, description: event.target.value }))
+                        }
+                        placeholder="What this team owns"
+                        disabled={!canManageUsers || groupActionBusy}
+                      />
+                    </label>
+                    <label>
+                      <span>Team inbox</span>
+                      <input
+                        type="email"
+                        value={supportGroupDraft.teamEmail}
+                        onChange={(event) =>
+                          setSupportGroupDraft((current) => ({ ...current, teamEmail: event.target.value }))
+                        }
+                        placeholder="refunds@wakanow.com"
+                        disabled={!canManageUsers || groupActionBusy}
+                      />
+                    </label>
+                    <label>
+                      <span>Skills</span>
+                      <input
+                        value={supportGroupDraft.skills}
+                        onChange={(event) =>
+                          setSupportGroupDraft((current) => ({ ...current, skills: event.target.value }))
+                        }
+                        placeholder="refunds, payments"
+                        disabled={!canManageUsers || groupActionBusy}
+                      />
+                    </label>
+                    <div className="user-market-picker" aria-label="Support group channels">
+                      <span>Channels</span>
+                      <div>
+                        {state.channels.slice(0, 8).map((channel) => (
+                          <label key={channel.id}>
+                            <input
+                              type="checkbox"
+                              checked={supportGroupDraft.channels.includes(channel.id)}
+                              onChange={() => toggleSupportGroupDraftChannel(channel.id)}
+                              disabled={!canManageUsers || groupActionBusy}
+                            />
+                            {channel.shortLabel}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="form-actions">
+                      <button className="secondary-action" type="button" onClick={() => setAddGroupOpen(false)}>
+                        Cancel
+                      </button>
+                      <button className="primary-action" type="submit" disabled={!canManageUsers || groupActionBusy}>
+                        <Plus size={16} />
+                        {groupActionBusy ? 'Saving...' : 'Add group'}
+                      </button>
+                    </div>
+                  </form>
+                ) : null}
+                <div className="support-group-grid">
+                  {state.supportGroups.map((group) => (
+                    <article className={group.active ? 'support-group-card' : 'support-group-card paused'} key={group.id}>
+                      <div>
+                        <strong>{group.name}</strong>
+                        <span>{group.description || 'No description yet.'}</span>
+                        <span>{group.teamEmail || 'No team inbox set'}</span>
+                      </div>
+                      <div className="support-group-metrics">
+                        <span><b>{group.memberCount}</b> members</span>
+                        <span><b>{group.openTicketCount}</b> open</span>
+                        <span><b>{group.slaRiskCount}</b> risk</span>
+                      </div>
+                      <div className="tag-list compact-tags">
+                        {group.channels.slice(0, 4).map((channel) => (
+                          <span key={channel}>{titleCase(channel)}</span>
+                        ))}
+                      </div>
+                      <button
+                        className="secondary-action"
+                        type="button"
+                        onClick={() => void handleToggleSupportGroup(group.id, !group.active)}
+                        disabled={!canManageUsers || groupActionBusy}
+                      >
+                        {group.active ? 'Pause' : 'Reactivate'}
+                      </button>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            {peopleView === 'security' ? (
+              <section className="people-section people-security-grid" aria-label="Security and identity">
+                <form className="user-create-form password-change-form security-card" onSubmit={handleChangePassword}>
+                  <div className="security-card-heading">
+                    <div>
+                      <h3>Password</h3>
+                      <span>Current account</span>
+                    </div>
+                    <Lock size={17} />
+                  </div>
+                  <label>
+                    <span>My current password</span>
+                    <input
+                      required
+                      type="password"
+                      value={passwordChange.currentPassword}
+                      onChange={(event) =>
+                        setPasswordChange((current) => ({
+                          ...current,
+                          currentPassword: event.target.value,
+                        }))
+                      }
+                      placeholder="Current password"
+                    />
+                  </label>
+                  <label>
+                    <span>My new password</span>
+                    <input
+                      required
+                      minLength={8}
+                      type="password"
+                      value={passwordChange.newPassword}
+                      onChange={(event) =>
+                        setPasswordChange((current) => ({
+                          ...current,
+                          newPassword: event.target.value,
+                        }))
+                      }
+                      placeholder="Minimum 8 characters"
+                    />
+                  </label>
+                  <button
+                    className="secondary-action"
+                    type="submit"
+                    disabled={userActionBusy || passwordChange.currentPassword.length < 1 || passwordChange.newPassword.length < 8}
+                  >
+                    Update my password
+                  </button>
+                </form>
+                <section className="user-create-form mfa-settings security-card">
+                  <div className="security-card-heading">
+                    <div>
+                      <h3>Multi-factor authentication</h3>
+                      <span>
+                        {session.user.mfa_enabled
+                          ? `Verified ${session.user.mfa_last_verified_at ? formatTime(session.user.mfa_last_verified_at) : 'recently'}`
+                          : 'Not enabled'}
+                      </span>
+                    </div>
+                    <em className={`chip status-${session.user.mfa_enabled ? 'healthy' : 'paused'}`}>
+                      {session.user.mfa_enabled ? 'Enabled' : 'Optional'}
+                    </em>
+                  </div>
+                  <button className="secondary-action" type="button" onClick={handleStartMfaEnrollment}>
+                    <ShieldCheck size={16} />
+                    {session.user.mfa_enabled ? 'Rotate MFA setup' : 'Start MFA setup'}
+                  </button>
+                  {mfaEnrollment ? (
+                    <form className="mfa-enrollment" onSubmit={handleConfirmMfa}>
+                      <label>
+                        <span>Setup secret</span>
+                        <input readOnly value={mfaEnrollment.secret} />
+                      </label>
+                      <label>
+                        <span>Setup URI</span>
+                        <input readOnly value={mfaEnrollment.otpauth_uri} />
+                      </label>
+                      <label>
+                        <span>Confirmation code</span>
+                        <input
+                          required
+                          inputMode="numeric"
+                          minLength={6}
+                          value={mfaConfirmCode}
+                          onChange={(event) => setMfaConfirmCode(event.target.value)}
+                          placeholder="6-digit code"
+                        />
+                      </label>
+                      <button className="primary-action" type="submit" disabled={mfaConfirmCode.trim().length < 6}>
+                        <Check size={16} />
+                        Confirm MFA
+                      </button>
+                    </form>
+                  ) : null}
+                  {session.user.mfa_enabled ? (
+                    <form className="mfa-enrollment" onSubmit={handleDisableMfa}>
+                      <label>
+                        <span>Current password</span>
+                        <input
+                          required
+                          type="password"
+                          value={mfaDisable.currentPassword}
+                          onChange={(event) =>
+                            setMfaDisable((current) => ({
+                              ...current,
+                              currentPassword: event.target.value,
+                            }))
+                          }
+                          placeholder="Current password"
+                        />
+                      </label>
+                      <label>
+                        <span>MFA code</span>
+                        <input
+                          required
+                          inputMode="numeric"
+                          minLength={6}
+                          value={mfaDisable.code}
+                          onChange={(event) =>
+                            setMfaDisable((current) => ({
+                              ...current,
+                              code: event.target.value,
+                            }))
+                          }
+                          placeholder="6-digit code"
+                        />
+                      </label>
+                      <button className="secondary-action" type="submit" disabled={mfaDisable.currentPassword.length < 1 || mfaDisable.code.trim().length < 6}>
+                        Disable MFA
+                      </button>
+                    </form>
+                  ) : null}
+                </section>
+                <section className="security-card">
+                  <div className="security-card-heading">
+                    <div>
+                      <h3>Independent API status</h3>
+                      <span>{backendSync.lastSyncAt ? `Last sync: ${formatTime(backendSync.lastSyncAt)}` : 'Not synced yet'}</span>
+                    </div>
+                    <RefreshCw size={17} />
+                  </div>
+                  <div className="automation-scope" aria-label="Backend integration status">
+                    <article>
+                      <CheckCircle2 size={16} />
+                      <strong>API health</strong>
+                      <span>{backendSnapshot?.health.status ?? 'Unavailable'}</span>
+                    </article>
+                    <article>
+                      <CheckCircle2 size={16} />
+                      <strong>Tracker status</strong>
+                      <span>{backendSnapshot?.tracker.current_status ?? 'Backend tracker not loaded yet.'}</span>
+                    </article>
+                    <article>
+                      <CheckCircle2 size={16} />
+                      <strong>Queue snapshot</strong>
+                      <span>
+                        {backendSnapshot
+                          ? `${backendSnapshot.analytics.open_tickets} open, ${backendSnapshot.analytics.at_risk_tickets} at risk, ${backendSnapshot.analytics.breached_tickets} breached.`
+                          : 'No backend analytics snapshot yet.'}
+                      </span>
+                    </article>
+                    <article>
+                      <CheckCircle2 size={16} />
+                      <strong>Connector readiness</strong>
+                      <span>
+                        {backendSnapshot
+                          ? `${connectorAccounts.length} market connector account(s) loaded from the backend.`
+                          : 'Connector provider metadata unavailable.'}
+                      </span>
+                    </article>
+                  </div>
+                  <button className="secondary-action" type="button" onClick={() => refreshBackend()}>
+                    <RefreshCw size={16} />
+                    Refresh backend sync
+                  </button>
+                </section>
+                <section className="security-card">
+                  <div className="security-card-heading">
+                    <div>
+                      <h3>Enterprise SSO</h3>
+                      <span>{oidcProviderConfig?.login_available ? 'Available' : 'Pending provider setup'}</span>
+                    </div>
+                    <ShieldCheck size={17} />
+                  </div>
+                  <div className="automation-scope" aria-label="Enterprise SSO readiness">
+                    <article>
+                      <CheckCircle2 size={16} />
+                      <strong>Provider</strong>
+                      <span>{oidcProviderConfig?.provider_name ?? 'Enterprise SSO'}</span>
+                    </article>
+                    <article>
+                      <CheckCircle2 size={16} />
+                      <strong>Login</strong>
+                      <span>{oidcProviderConfig?.login_available ? 'Available' : 'Pending provider setup'}</span>
+                    </article>
+                    <article>
+                      <CheckCircle2 size={16} />
+                      <strong>Domains</strong>
+                      <span>
+                        {oidcProviderConfig?.allowed_email_domains.length
+                          ? oidcProviderConfig.allowed_email_domains.join(', ')
+                          : 'Not restricted yet'}
+                      </span>
+                    </article>
+                    <article>
+                      <CheckCircle2 size={16} />
+                      <strong>Provisioning</strong>
+                      <span>{oidcProviderConfig?.auto_provision_enabled ? 'Automatic' : 'Admin-approved users'}</span>
+                    </article>
+                    <article>
+                      <CheckCircle2 size={16} />
+                      <strong>Missing</strong>
+                      <span>{oidcProviderConfig?.missing_settings.length ?? 0}</span>
+                    </article>
+                  </div>
+                  {oidcProviderConfig?.missing_settings.length ? (
+                    <div className="readiness-note-list">
+                      {oidcProviderConfig.missing_settings.slice(0, 6).map((setting) => (
+                        <span key={setting}>{setting}</span>
+                      ))}
+                    </div>
+                  ) : null}
+                </section>
+              </section>
+            ) : null}
+          </div>
+          ) : null}
+          {setupSection === 'governance' ? (
+          <div className="automation-settings-panel operational-alert-panel" id="operational-alerts">
+            <div className="panel-head compact">
+              <div>
+                <span>Operational alerts</span>
+                <h2>API, worker, SLA, and connector incidents</h2>
+              </div>
+              <AlertTriangle size={18} />
+            </div>
+            <div className="operational-alert-summary-grid" aria-label="Operational alert summary">
+              {[
+                ['Critical', criticalAlerts.length],
+                ['Open', activeOperationalAlerts.filter((alert) => alert.status === 'open').length],
+                ['Acknowledged', acknowledgedAlerts.length],
+                ['Total active', activeOperationalAlerts.length],
+              ].map(([label, value]) => (
+                <article key={label}>
+                  <strong>{value}</strong>
+                  <span>{label}</span>
+                </article>
+              ))}
+            </div>
+            <div className="alert-delivery-config" aria-label="External alert delivery configuration">
+              <article>
+                <Bell size={16} />
+                <span>
+                  <strong>External delivery</strong>
+                  <small>
+                    {alertDeliveryConfig?.webhook_configured
+                      ? `Webhook enabled for ${titleCase(alertDeliveryConfig.min_severity)} and above.`
+                      : 'Pending alert webhook in Production credentials.'}
+                  </small>
+                </span>
+              </article>
+              <article>
+                <Send size={16} />
+                <span>
+                  <strong>Delivery attempts</strong>
+                  <small>
+                    {sentAlertDeliveries.length} sent · {activeAlertDeliveries.length} waiting or failed.
+                  </small>
+                </span>
+              </article>
+            </div>
+            <div className="operational-alert-list" aria-label="Operational alerts needing operator action">
+              {activeOperationalAlerts.slice(0, 8).map((alert) => (
+                <article className={`operational-alert-card severity-${alert.severity}`} key={alert.id}>
+                  <div className="operational-alert-head">
+                    <span className={`alert-severity-dot severity-${alert.severity}`} aria-hidden="true" />
+                    <div>
+                      <strong>{alert.title}</strong>
+                      <span>{alert.message}</span>
+                    </div>
+                    <em className={`chip status-${operationalAlertStatusTone(alert.status)}`}>
+                      {titleCase(alert.status)}
+                    </em>
+                  </div>
+                  <div className="operational-alert-meta">
+                    <span>{titleCase(alert.source)}</span>
+                    <span>{operationalAlertEntityLabel(alert)}</span>
+                    <span>{alert.occurrence_count} occurrence(s)</span>
+                    <span>Last seen {formatTime(alert.last_seen_at)}</span>
+                  </div>
+                  {alert.acknowledged_by ? (
+                    <small className="operational-alert-owner">
+                      Acknowledged by {alert.acknowledged_by}
+                    </small>
+                  ) : null}
+                  <div className="operational-alert-actions">
                     <button
                       className="secondary-action"
                       type="button"
-                      onClick={() => {
-                        const temporaryPassword = (passwordResetDrafts[user.id] ?? '').trim()
-                        if (temporaryPassword.length < 8) return
-                        updateUser(user.id, { temporary_password: temporaryPassword })
-                        setPasswordResetDrafts((current) => ({ ...current, [user.id]: '' }))
-                        setPrototypeNotice(`Temporary password reset for ${user.name}.`)
-                      }}
-                      disabled={!canManageUsers || (passwordResetDrafts[user.id] ?? '').trim().length < 8}
+                      onClick={() => void handleOperationalAlertUpdate(alert, 'acknowledged')}
+                      disabled={!canManageAlerts || alert.status === 'acknowledged'}
                     >
-                      Reset
+                      <Check size={15} />
+                      Acknowledge
                     </button>
-                  </div>
-                  <div className="user-market-list" aria-label={`${user.name} market access`}>
-                    {availableMarkets.map((market) => {
-                      const checked = user.market_ids.includes(market.id)
-                      return (
-                        <label key={market.id}>
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => {
-                              const nextMarketIds = checked
-                                ? user.market_ids.filter((item) => item !== market.id)
-                                : [...user.market_ids, market.id]
-                              if (nextMarketIds.length === 0) return
-                              updateUser(user.id, {
-                                market_ids: nextMarketIds,
-                                default_market_id: nextMarketIds.includes(user.default_market_id)
-                                  ? user.default_market_id
-                                  : nextMarketIds[0],
-                              })
-                            }}
-                            disabled={!canManageUsers}
-                          />
-                          {marketNameById.get(market.id) ?? market.id}
-                        </label>
-                      )
-                    })}
+                    <button
+                      className="primary-action"
+                      type="button"
+                      onClick={() => void handleOperationalAlertUpdate(alert, 'resolved')}
+                      disabled={!canManageAlerts}
+                    >
+                      <CheckCircle2 size={15} />
+                      Resolve
+                    </button>
                   </div>
                 </article>
               ))}
-              {platformUsers.length === 0 ? (
-                <article className="user-card empty">
-                  <strong>No backend users loaded</strong>
-                  <span>Refresh backend sync after the API starts.</span>
+              {activeOperationalAlerts.length === 0 ? (
+                <article className="operational-alert-empty">
+                  <CheckCircle2 size={16} />
+                  <span>No active operational alerts.</span>
+                </article>
+              ) : null}
+            </div>
+            <div className="alert-delivery-list" aria-label="External alert delivery attempts">
+              {alertDeliveries.slice(0, 5).map((delivery) => (
+                <article key={delivery.id}>
+                  <div>
+                    <strong>{titleCase(delivery.destination_type)} delivery</strong>
+                    <span>
+                      {delivery.status === 'sent'
+                        ? `Sent ${delivery.sent_at ? formatTime(delivery.sent_at) : 'successfully'}`
+                        : delivery.last_error ?? 'Waiting for worker dispatch.'}
+                    </span>
+                    <small>
+                      {delivery.attempts}/{delivery.max_attempts} attempt(s) · {delivery.destination_name}
+                    </small>
+                  </div>
+                  <em className={`chip status-${delivery.status === 'sent' ? 'done' : delivery.status === 'failed' ? 'failing' : 'pending'}`}>
+                    {titleCase(delivery.status)}
+                  </em>
+                </article>
+              ))}
+              {alertDeliveries.length === 0 ? (
+                <article className="operational-alert-empty">
+                  <Bell size={16} />
+                  <span>No external alert deliveries recorded yet.</span>
                 </article>
               ) : null}
             </div>
           </div>
-          <div className="automation-settings-panel">
+          ) : null}
+          {setupSection === 'connectors' ? (
+          <>
+          <form className="automation-settings-panel credential-settings-panel" onSubmit={handleIntegrationCredentialSave}>
             <div className="panel-head compact">
               <div>
-                <span>Backend bridge</span>
-                <h2>Independent API status</h2>
+                <span>Production credentials</span>
+                <h2>AI, alerts, SMS, voice, and social channels</h2>
               </div>
-              <RefreshCw size={18} />
+              <Lock size={18} />
             </div>
-            <div className="automation-scope" aria-label="Backend integration status">
+            <div className="email-settings-status" aria-label="Production credential readiness">
               <article>
-                <CheckCircle2 size={16} />
-                <strong>API health</strong>
-                <span>{backendSnapshot?.health.status ?? 'Unavailable'}</span>
+                <span className={`channel-health-dot ${integrationCredentialSettings?.anthropic_api_key_configured ? 'healthy' : 'degraded'}`} />
+                <strong>AI</strong>
+                <small>{integrationCredentialSettings?.anthropic_api_key_configured ? 'Anthropic key saved' : 'Anthropic key pending'}</small>
               </article>
               <article>
-                <CheckCircle2 size={16} />
-                <strong>Tracker status</strong>
-                <span>{backendSnapshot?.tracker.current_status ?? 'Backend tracker not loaded yet.'}</span>
+                <span className={`channel-health-dot ${integrationCredentialSettings?.alert_webhook_url ? 'healthy' : 'degraded'}`} />
+                <strong>Alerts</strong>
+                <small>{integrationCredentialSettings?.alert_webhook_url ? titleCase(integrationCredentialSettings.alert_delivery_min_severity) : 'Webhook pending'}</small>
               </article>
               <article>
-                <CheckCircle2 size={16} />
-                <strong>Queue snapshot</strong>
-                <span>
-                  {backendSnapshot
-                    ? `${backendSnapshot.analytics.open_tickets} open, ${backendSnapshot.analytics.at_risk_tickets} at risk, ${backendSnapshot.analytics.breached_tickets} breached.`
-                    : 'No backend analytics snapshot yet.'}
-                </span>
-              </article>
-              <article>
-                <CheckCircle2 size={16} />
-                <strong>Connector readiness</strong>
-                <span>
-                  {backendSnapshot
-                    ? `${connectorAccounts.length} market connector account(s) loaded from the backend.`
-                    : 'Connector provider metadata unavailable.'}
-                </span>
+                <Lock size={15} />
+                <strong>Channel secrets</strong>
+                <small>{savedChannelSecretCount} saved</small>
               </article>
             </div>
-            <button className="secondary-action" type="button" onClick={() => refreshBackend()}>
-              <RefreshCw size={16} />
-              Refresh backend sync
-            </button>
-            {backendSync.lastSyncAt ? <small>Last sync: {formatTime(backendSync.lastSyncAt)}</small> : null}
+            <div className="credential-settings-grid">
+              <details className="credential-settings-section" open>
+                <summary>
+                  <span className="credential-section-title">
+                    <Bot size={16} />
+                    <span>
+                      <strong>AI and alerts</strong>
+                      <small>{aiAlertReadyCount}/2 ready</small>
+                    </span>
+                  </span>
+                  <em className={`chip status-${aiAlertReadyCount === 2 ? 'done' : 'pending'}`}>
+                    {aiAlertReadyCount === 2 ? 'Ready' : 'Needs setup'}
+                  </em>
+                  <ChevronDown size={16} />
+                </summary>
+                <div className="credential-section-body">
+                <label>
+                  <span>AI provider</span>
+                  <select
+                    value={integrationCredentialDraft.aiProvider}
+                    onChange={(event) =>
+                      setIntegrationCredentialDraft((current) => ({ ...current, aiProvider: event.target.value }))
+                    }
+                    disabled={!canManageIntegrationCredentials}
+                  >
+                    <option value="auto">Auto</option>
+                    <option value="anthropic">Anthropic</option>
+                    <option value="rules">Rules only</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Anthropic base URL</span>
+                  <input
+                    value={integrationCredentialDraft.anthropicApiBaseUrl}
+                    onChange={(event) =>
+                      setIntegrationCredentialDraft((current) => ({ ...current, anthropicApiBaseUrl: event.target.value }))
+                    }
+                    placeholder="https://api.anthropic.com"
+                    disabled={!canManageIntegrationCredentials}
+                  />
+                </label>
+                <label>
+                  <span>Anthropic model</span>
+                  <input
+                    value={integrationCredentialDraft.anthropicModel}
+                    onChange={(event) =>
+                      setIntegrationCredentialDraft((current) => ({ ...current, anthropicModel: event.target.value }))
+                    }
+                    placeholder="claude-sonnet-4-6"
+                    disabled={!canManageIntegrationCredentials}
+                  />
+                </label>
+                <label>
+                  <span>Anthropic API key</span>
+                  <input
+                    type="password"
+                    value={integrationCredentialDraft.anthropicApiKey}
+                    onChange={(event) =>
+                      setIntegrationCredentialDraft((current) => ({ ...current, anthropicApiKey: event.target.value }))
+                    }
+                    placeholder={integrationCredentialSettings?.anthropic_api_key_configured ? 'Saved key' : 'Anthropic API key'}
+                    disabled={!canManageIntegrationCredentials || integrationCredentialDraft.clearAnthropicApiKey}
+                    autoComplete="new-password"
+                  />
+                </label>
+                <label>
+                  <span>Alert webhook URL</span>
+                  <input
+                    value={integrationCredentialDraft.alertWebhookUrl}
+                    onChange={(event) =>
+                      setIntegrationCredentialDraft((current) => ({ ...current, alertWebhookUrl: event.target.value }))
+                    }
+                    placeholder="https://alerts.example.com/omni"
+                    disabled={!canManageIntegrationCredentials}
+                  />
+                </label>
+                <label>
+                  <span>Alert secret</span>
+                  <input
+                    type="password"
+                    value={integrationCredentialDraft.alertWebhookSecret}
+                    onChange={(event) =>
+                      setIntegrationCredentialDraft((current) => ({ ...current, alertWebhookSecret: event.target.value }))
+                    }
+                    placeholder={integrationCredentialSettings?.alert_webhook_secret_configured ? 'Saved secret' : 'Webhook secret'}
+                    disabled={!canManageIntegrationCredentials || integrationCredentialDraft.clearAlertWebhookSecret}
+                    autoComplete="new-password"
+                  />
+                </label>
+                <label>
+                  <span>Alert severity</span>
+                  <select
+                    value={integrationCredentialDraft.alertDeliveryMinSeverity}
+                    onChange={(event) =>
+                      setIntegrationCredentialDraft((current) => ({
+                        ...current,
+                        alertDeliveryMinSeverity: event.target.value as IntegrationCredentialDraft['alertDeliveryMinSeverity'],
+                      }))
+                    }
+                    disabled={!canManageIntegrationCredentials}
+                  >
+                    <option value="info">Info</option>
+                    <option value="warning">Warning</option>
+                    <option value="critical">Critical</option>
+                  </select>
+                </label>
+                <div className="email-settings-options">
+                  <label className="toggle-row compact-toggle">
+                    <input
+                      type="checkbox"
+                      checked={integrationCredentialDraft.clearAnthropicApiKey}
+                      onChange={(event) =>
+                        setIntegrationCredentialDraft((current) => ({
+                          ...current,
+                          clearAnthropicApiKey: event.target.checked,
+                          anthropicApiKey: event.target.checked ? '' : current.anthropicApiKey,
+                        }))
+                      }
+                      disabled={!canManageIntegrationCredentials || !integrationCredentialSettings?.anthropic_api_key_configured}
+                    />
+                    <span>Clear AI key</span>
+                  </label>
+                  <label className="toggle-row compact-toggle">
+                    <input
+                      type="checkbox"
+                      checked={integrationCredentialDraft.clearAlertWebhookSecret}
+                      onChange={(event) =>
+                        setIntegrationCredentialDraft((current) => ({
+                          ...current,
+                          clearAlertWebhookSecret: event.target.checked,
+                          alertWebhookSecret: event.target.checked ? '' : current.alertWebhookSecret,
+                        }))
+                      }
+                      disabled={!canManageIntegrationCredentials || !integrationCredentialSettings?.alert_webhook_secret_configured}
+                    />
+                    <span>Clear alert secret</span>
+                  </label>
+                </div>
+                </div>
+              </details>
+              <details className="credential-settings-section">
+                <summary>
+                  <span className="credential-section-title">
+                    <Phone size={16} />
+                    <span>
+                      <strong>SMS and voice</strong>
+                      <small>{smsVoiceReadyCount}/2 secrets saved</small>
+                    </span>
+                  </span>
+                  <em className={`chip status-${smsVoiceReadyCount === 2 ? 'done' : 'pending'}`}>
+                    {smsVoiceReadyCount === 2 ? 'Ready' : 'Needs setup'}
+                  </em>
+                  <ChevronDown size={16} />
+                </summary>
+                <div className="credential-section-body">
+                <label>
+                  <span>SMS endpoint</span>
+                  <input
+                    value={integrationCredentialDraft.smsHttpEndpoint}
+                    onChange={(event) =>
+                      setIntegrationCredentialDraft((current) => ({ ...current, smsHttpEndpoint: event.target.value }))
+                    }
+                    placeholder="https://sms.provider.com/messages"
+                    disabled={!canManageIntegrationCredentials}
+                  />
+                </label>
+                <label>
+                  <span>SMS sender</span>
+                  <input
+                    value={integrationCredentialDraft.smsHttpFrom}
+                    onChange={(event) =>
+                      setIntegrationCredentialDraft((current) => ({ ...current, smsHttpFrom: event.target.value }))
+                    }
+                    placeholder="Wakanow"
+                    disabled={!canManageIntegrationCredentials}
+                  />
+                </label>
+                <label>
+                  <span>SMS token</span>
+                  <input
+                    type="password"
+                    value={integrationCredentialDraft.smsHttpAuthToken}
+                    onChange={(event) =>
+                      setIntegrationCredentialDraft((current) => ({ ...current, smsHttpAuthToken: event.target.value }))
+                    }
+                    placeholder={integrationCredentialSettings?.sms_http_auth_token_configured ? 'Saved token' : 'SMS API token'}
+                    disabled={!canManageIntegrationCredentials || integrationCredentialDraft.clearSmsHttpAuthToken}
+                    autoComplete="new-password"
+                  />
+                </label>
+                <label>
+                  <span>SMS callback URL</span>
+                  <input
+                    value={integrationCredentialDraft.smsHttpDeliveryCallbackUrl}
+                    onChange={(event) =>
+                      setIntegrationCredentialDraft((current) => ({ ...current, smsHttpDeliveryCallbackUrl: event.target.value }))
+                    }
+                    placeholder="https://omni.wakanow.com/api/v1/webhooks/sms/ng"
+                    disabled={!canManageIntegrationCredentials}
+                  />
+                </label>
+                <div className="credential-inline-grid">
+                  <label>
+                    <span>SMS header</span>
+                    <input
+                      value={integrationCredentialDraft.smsHttpAuthHeader}
+                      onChange={(event) =>
+                        setIntegrationCredentialDraft((current) => ({ ...current, smsHttpAuthHeader: event.target.value }))
+                      }
+                      disabled={!canManageIntegrationCredentials}
+                    />
+                  </label>
+                  <label>
+                    <span>SMS scheme</span>
+                    <input
+                      value={integrationCredentialDraft.smsHttpAuthScheme}
+                      onChange={(event) =>
+                        setIntegrationCredentialDraft((current) => ({ ...current, smsHttpAuthScheme: event.target.value }))
+                      }
+                      disabled={!canManageIntegrationCredentials}
+                    />
+                  </label>
+                </div>
+                <label>
+                  <span>Voice endpoint</span>
+                  <input
+                    value={integrationCredentialDraft.voiceHttpEndpoint}
+                    onChange={(event) =>
+                      setIntegrationCredentialDraft((current) => ({ ...current, voiceHttpEndpoint: event.target.value }))
+                    }
+                    placeholder="https://voice.provider.com/calls"
+                    disabled={!canManageIntegrationCredentials}
+                  />
+                </label>
+                <label>
+                  <span>Voice caller ID</span>
+                  <input
+                    value={integrationCredentialDraft.voiceHttpFrom}
+                    onChange={(event) =>
+                      setIntegrationCredentialDraft((current) => ({ ...current, voiceHttpFrom: event.target.value }))
+                    }
+                    placeholder="+234..."
+                    disabled={!canManageIntegrationCredentials}
+                  />
+                </label>
+                <label>
+                  <span>Voice token</span>
+                  <input
+                    type="password"
+                    value={integrationCredentialDraft.voiceHttpAuthToken}
+                    onChange={(event) =>
+                      setIntegrationCredentialDraft((current) => ({ ...current, voiceHttpAuthToken: event.target.value }))
+                    }
+                    placeholder={integrationCredentialSettings?.voice_http_auth_token_configured ? 'Saved token' : 'Voice API token'}
+                    disabled={!canManageIntegrationCredentials || integrationCredentialDraft.clearVoiceHttpAuthToken}
+                    autoComplete="new-password"
+                  />
+                </label>
+                <label>
+                  <span>Voice callback URL</span>
+                  <input
+                    value={integrationCredentialDraft.voiceHttpStatusCallbackUrl}
+                    onChange={(event) =>
+                      setIntegrationCredentialDraft((current) => ({ ...current, voiceHttpStatusCallbackUrl: event.target.value }))
+                    }
+                    disabled={!canManageIntegrationCredentials}
+                  />
+                </label>
+                <div className="email-settings-options">
+                  <label className="toggle-row compact-toggle">
+                    <input
+                      type="checkbox"
+                      checked={integrationCredentialDraft.clearSmsHttpAuthToken}
+                      onChange={(event) =>
+                        setIntegrationCredentialDraft((current) => ({
+                          ...current,
+                          clearSmsHttpAuthToken: event.target.checked,
+                          smsHttpAuthToken: event.target.checked ? '' : current.smsHttpAuthToken,
+                        }))
+                      }
+                      disabled={!canManageIntegrationCredentials || !integrationCredentialSettings?.sms_http_auth_token_configured}
+                    />
+                    <span>Clear SMS token</span>
+                  </label>
+                  <label className="toggle-row compact-toggle">
+                    <input
+                      type="checkbox"
+                      checked={integrationCredentialDraft.clearVoiceHttpAuthToken}
+                      onChange={(event) =>
+                        setIntegrationCredentialDraft((current) => ({
+                          ...current,
+                          clearVoiceHttpAuthToken: event.target.checked,
+                          voiceHttpAuthToken: event.target.checked ? '' : current.voiceHttpAuthToken,
+                        }))
+                      }
+                      disabled={!canManageIntegrationCredentials || !integrationCredentialSettings?.voice_http_auth_token_configured}
+                    />
+                    <span>Clear voice token</span>
+                  </label>
+                </div>
+                </div>
+              </details>
+              <details className="credential-settings-section">
+                <summary>
+                  <span className="credential-section-title">
+                    <MessageCircle size={16} />
+                    <span>
+                      <strong>Meta channels</strong>
+                      <small>{metaReadyCount}/3 tokens saved</small>
+                    </span>
+                  </span>
+                  <em className={`chip status-${metaReadyCount === 3 ? 'done' : 'pending'}`}>
+                    {metaReadyCount === 3 ? 'Ready' : 'Needs setup'}
+                  </em>
+                  <ChevronDown size={16} />
+                </summary>
+                <div className="credential-section-body">
+                <label>
+                  <span>WhatsApp base URL</span>
+                  <input
+                    value={integrationCredentialDraft.whatsappCloudApiBaseUrl}
+                    onChange={(event) =>
+                      setIntegrationCredentialDraft((current) => ({ ...current, whatsappCloudApiBaseUrl: event.target.value }))
+                    }
+                    disabled={!canManageIntegrationCredentials}
+                  />
+                </label>
+                <label>
+                  <span>WhatsApp phone ID</span>
+                  <input
+                    value={integrationCredentialDraft.whatsappPhoneNumberId}
+                    onChange={(event) =>
+                      setIntegrationCredentialDraft((current) => ({ ...current, whatsappPhoneNumberId: event.target.value }))
+                    }
+                    disabled={!canManageIntegrationCredentials}
+                  />
+                </label>
+                <label>
+                  <span>WhatsApp token</span>
+                  <input
+                    type="password"
+                    value={integrationCredentialDraft.whatsappAccessToken}
+                    onChange={(event) =>
+                      setIntegrationCredentialDraft((current) => ({ ...current, whatsappAccessToken: event.target.value }))
+                    }
+                    placeholder={integrationCredentialSettings?.whatsapp_access_token_configured ? 'Saved token' : 'WhatsApp access token'}
+                    disabled={!canManageIntegrationCredentials || integrationCredentialDraft.clearWhatsappAccessToken}
+                    autoComplete="new-password"
+                  />
+                </label>
+                <label>
+                  <span>Facebook base URL</span>
+                  <input
+                    value={integrationCredentialDraft.facebookGraphApiBaseUrl}
+                    onChange={(event) =>
+                      setIntegrationCredentialDraft((current) => ({ ...current, facebookGraphApiBaseUrl: event.target.value }))
+                    }
+                    disabled={!canManageIntegrationCredentials}
+                  />
+                </label>
+                <label>
+                  <span>Facebook page ID</span>
+                  <input
+                    value={integrationCredentialDraft.facebookPageId}
+                    onChange={(event) =>
+                      setIntegrationCredentialDraft((current) => ({ ...current, facebookPageId: event.target.value }))
+                    }
+                    disabled={!canManageIntegrationCredentials}
+                  />
+                </label>
+                <label>
+                  <span>Facebook page token</span>
+                  <input
+                    type="password"
+                    value={integrationCredentialDraft.facebookPageAccessToken}
+                    onChange={(event) =>
+                      setIntegrationCredentialDraft((current) => ({ ...current, facebookPageAccessToken: event.target.value }))
+                    }
+                    placeholder={integrationCredentialSettings?.facebook_page_access_token_configured ? 'Saved token' : 'Facebook page token'}
+                    disabled={!canManageIntegrationCredentials || integrationCredentialDraft.clearFacebookPageAccessToken}
+                    autoComplete="new-password"
+                  />
+                </label>
+                <label>
+                  <span>Facebook message type</span>
+                  <select
+                    value={integrationCredentialDraft.facebookMessagingType}
+                    onChange={(event) =>
+                      setIntegrationCredentialDraft((current) => ({ ...current, facebookMessagingType: event.target.value }))
+                    }
+                    disabled={!canManageIntegrationCredentials}
+                  >
+                    <option value="RESPONSE">RESPONSE</option>
+                    <option value="UPDATE">UPDATE</option>
+                    <option value="MESSAGE_TAG">MESSAGE_TAG</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Instagram base URL</span>
+                  <input
+                    value={integrationCredentialDraft.instagramGraphApiBaseUrl}
+                    onChange={(event) =>
+                      setIntegrationCredentialDraft((current) => ({ ...current, instagramGraphApiBaseUrl: event.target.value }))
+                    }
+                    disabled={!canManageIntegrationCredentials}
+                  />
+                </label>
+                <label>
+                  <span>Instagram account ID</span>
+                  <input
+                    value={integrationCredentialDraft.instagramBusinessAccountId}
+                    onChange={(event) =>
+                      setIntegrationCredentialDraft((current) => ({ ...current, instagramBusinessAccountId: event.target.value }))
+                    }
+                    disabled={!canManageIntegrationCredentials}
+                  />
+                </label>
+                <label>
+                  <span>Instagram token</span>
+                  <input
+                    type="password"
+                    value={integrationCredentialDraft.instagramAccessToken}
+                    onChange={(event) =>
+                      setIntegrationCredentialDraft((current) => ({ ...current, instagramAccessToken: event.target.value }))
+                    }
+                    placeholder={integrationCredentialSettings?.instagram_access_token_configured ? 'Saved token' : 'Instagram access token'}
+                    disabled={!canManageIntegrationCredentials || integrationCredentialDraft.clearInstagramAccessToken}
+                    autoComplete="new-password"
+                  />
+                </label>
+                <div className="email-settings-options">
+                  <label className="toggle-row compact-toggle">
+                    <input
+                      type="checkbox"
+                      checked={integrationCredentialDraft.whatsappPreviewUrls}
+                      onChange={(event) =>
+                        setIntegrationCredentialDraft((current) => ({ ...current, whatsappPreviewUrls: event.target.checked }))
+                      }
+                      disabled={!canManageIntegrationCredentials}
+                    />
+                    <span>Preview URLs</span>
+                  </label>
+                  <label className="toggle-row compact-toggle">
+                    <input
+                      type="checkbox"
+                      checked={integrationCredentialDraft.clearWhatsappAccessToken}
+                      onChange={(event) =>
+                        setIntegrationCredentialDraft((current) => ({
+                          ...current,
+                          clearWhatsappAccessToken: event.target.checked,
+                          whatsappAccessToken: event.target.checked ? '' : current.whatsappAccessToken,
+                        }))
+                      }
+                      disabled={!canManageIntegrationCredentials || !integrationCredentialSettings?.whatsapp_access_token_configured}
+                    />
+                    <span>Clear WhatsApp</span>
+                  </label>
+                  <label className="toggle-row compact-toggle">
+                    <input
+                      type="checkbox"
+                      checked={integrationCredentialDraft.clearFacebookPageAccessToken}
+                      onChange={(event) =>
+                        setIntegrationCredentialDraft((current) => ({
+                          ...current,
+                          clearFacebookPageAccessToken: event.target.checked,
+                          facebookPageAccessToken: event.target.checked ? '' : current.facebookPageAccessToken,
+                        }))
+                      }
+                      disabled={!canManageIntegrationCredentials || !integrationCredentialSettings?.facebook_page_access_token_configured}
+                    />
+                    <span>Clear Facebook</span>
+                  </label>
+                  <label className="toggle-row compact-toggle">
+                    <input
+                      type="checkbox"
+                      checked={integrationCredentialDraft.clearInstagramAccessToken}
+                      onChange={(event) =>
+                        setIntegrationCredentialDraft((current) => ({
+                          ...current,
+                          clearInstagramAccessToken: event.target.checked,
+                          instagramAccessToken: event.target.checked ? '' : current.instagramAccessToken,
+                        }))
+                      }
+                      disabled={!canManageIntegrationCredentials || !integrationCredentialSettings?.instagram_access_token_configured}
+                    />
+                    <span>Clear Instagram</span>
+                  </label>
+                </div>
+                </div>
+              </details>
+            </div>
+            <div className="email-settings-actions">
+              <span>
+                {integrationCredentialSettings
+                  ? `Last saved ${formatTime(integrationCredentialSettings.updated_at)}`
+                  : 'Backend credentials will appear after sync.'}
+              </span>
+              <button
+                className="primary-action"
+                type="submit"
+                disabled={!canManageIntegrationCredentials || integrationCredentialBusy || !backendSession}
+              >
+                <Check size={15} />
+                Save credentials
+              </button>
+            </div>
+          </form>
+          <section className="automation-settings-panel production-readiness-panel">
+            <div className="panel-head compact">
+              <div>
+                <span>Launch gate</span>
+                <h2>Production readiness</h2>
+              </div>
+              <Gauge size={18} />
+            </div>
+            <div className="email-settings-status" aria-label="Production launch readiness">
+              <article>
+                <span className={`channel-health-dot ${productionReadinessChecklist?.overall_status === 'ready' ? 'healthy' : 'degraded'}`} />
+                <strong>{productionReadinessChecklist ? titleCase(productionReadinessChecklist.overall_status) : 'Loading'}</strong>
+                <small>{productionReadinessChecklist ? `Generated ${formatTime(productionReadinessChecklist.generated_at)}` : 'Waiting for sync'}</small>
+              </article>
+              <article>
+                <AlertTriangle size={15} />
+                <strong>{productionReadinessChecklist?.blocked_items ?? 0}</strong>
+                <small>Blocked</small>
+              </article>
+              <article>
+                <Clock size={15} />
+                <strong>{productionReadinessChecklist?.action_items ?? 0}</strong>
+                <small>Action required</small>
+              </article>
+              <article>
+                <CheckCircle2 size={15} />
+                <strong>{productionReadinessChecklist?.ready_items ?? 0}</strong>
+                <small>Ready</small>
+              </article>
+            </div>
+            <div className="production-readiness-list">
+              {(productionReadinessChecklist?.items ?? [])
+                .filter((item) => item.status !== 'ready')
+                .slice(0, 8)
+                .map((item) => (
+                  <article className="production-readiness-card" key={item.id}>
+                    <div>
+                      <strong>{item.label}</strong>
+                      <span>{item.category}</span>
+                    </div>
+                    <em className={`chip status-${productionRequestTone(item.status)}`}>
+                      {titleCase(item.status)}
+                    </em>
+                    <small>{item.summary}</small>
+                    <small>{item.next_action || item.evidence[0]}</small>
+                  </article>
+                ))}
+              {productionReadinessChecklist && productionReadinessChecklist.items.every((item) => item.status === 'ready') ? (
+                <article className="production-readiness-card is-ready">
+                  <CheckCircle2 size={16} />
+                  <span>All production readiness checks are clear.</span>
+                </article>
+              ) : null}
+              {!productionReadinessChecklist && !productionReadinessBusy ? (
+                <article className="production-readiness-card">
+                  <span>Production readiness checklist will appear after refresh.</span>
+                </article>
+              ) : null}
+            </div>
+            <div className="email-settings-actions">
+              <span>
+                {productionReadinessChecklist
+                  ? `${productionReadinessChecklist.total_items} check(s) · ${productionReadinessChecklist.blocked_items} blocker(s)`
+                  : 'Production launch gate is not loaded.'}
+              </span>
+              <button
+                className="secondary-action"
+                type="button"
+                onClick={() => void handleProductionReadinessRefresh()}
+                disabled={!backendSession || productionReadinessBusy}
+              >
+                <RefreshCw size={15} />
+                Refresh
+              </button>
+            </div>
+          </section>
+          <section className="automation-settings-panel account-request-panel">
+            <div className="panel-head compact">
+              <div>
+                <span>Account requests</span>
+                <h2>Provider activation pack</h2>
+              </div>
+              <ClipboardList size={18} />
+            </div>
+            <div className="email-settings-status" aria-label="Production account request readiness">
+              <article>
+                <span className={`channel-health-dot ${productionAccountPack?.missing_items ? 'degraded' : 'healthy'}`} />
+                <strong>{productionAccountPack?.missing_items ?? 0}</strong>
+                <small>Action item(s)</small>
+              </article>
+              <article>
+                <CheckCircle2 size={15} />
+                <strong>{productionAccountPack?.ready_items ?? 0}</strong>
+                <small>Ready</small>
+              </article>
+              <article>
+                <Mail size={15} />
+                <strong>{productionAccountPack?.recipient_email ?? 'gbolahans@wakanow.com'}</strong>
+                <small>{productionAccountPack ? `Generated ${formatTime(productionAccountPack.generated_at)}` : 'Waiting for sync'}</small>
+              </article>
+              <article>
+                <Send size={15} />
+                <strong>{productionAccountDelivery ? titleCase(productionAccountDelivery.outbound_message.status) : 'Not queued'}</strong>
+                <small>
+                  {productionAccountDelivery
+                    ? `${productionAccountDelivery.ticket_public_id} · ${formatTime(productionAccountDelivery.queued_at)}`
+                    : 'Admin action'}
+                </small>
+              </article>
+            </div>
+            <div className="account-request-list">
+              {productionAccountActionItems.slice(0, 6).map((item) => (
+                <article className="account-request-card" key={item.id}>
+                  <div>
+                    <strong>{item.area}</strong>
+                    <span>{item.provider}</span>
+                  </div>
+                  <em className={`chip status-${productionRequestTone(item.status)}`}>
+                    {titleCase(item.status)}
+                  </em>
+                  <small>{item.missing_settings.slice(0, 3).join(' · ') || item.notes}</small>
+                  {item.callback_urls[0] ? <small>{item.callback_urls[0]}</small> : null}
+                </article>
+              ))}
+              {productionAccountPack && productionAccountActionItems.length === 0 ? (
+                <article className="account-request-card is-ready">
+                  <CheckCircle2 size={16} />
+                  <span>All provider account requests are ready for this market.</span>
+                </article>
+              ) : null}
+              {!productionAccountPack && !productionAccountBusy ? (
+                <article className="account-request-card">
+                  <span>Backend account request pack will appear after refresh.</span>
+                </article>
+              ) : null}
+            </div>
+            <textarea
+              className="request-body-preview"
+              value={productionAccountPack?.body ?? ''}
+              readOnly
+              aria-label="Account request email body"
+            />
+            <div className="email-settings-actions">
+              <span>
+                {productionAccountPack
+                  ? `${productionAccountPack.total_items} provider item(s) · ${productionAccountPack.subject}`
+                  : 'Production account request pack is not loaded.'}
+              </span>
+              <button
+                className="secondary-action"
+                type="button"
+                onClick={() => void handleProductionAccountRefresh()}
+                disabled={!backendSession || productionAccountBusy}
+              >
+                <RefreshCw size={15} />
+                Refresh
+              </button>
+              <button
+                className="secondary-action"
+                type="button"
+                onClick={() => void handleProductionAccountCopy()}
+                disabled={!productionAccountPack}
+              >
+                <ClipboardList size={15} />
+                Copy
+              </button>
+              <button
+                className="primary-action"
+                type="button"
+                onClick={() => void handleProductionAccountSend()}
+                disabled={!backendSession || !canManageIntegrationCredentials || productionAccountSendBusy}
+              >
+                <Send size={15} />
+                Queue email
+              </button>
+              <a
+                className={`secondary-action ${productionAccountPack ? '' : 'disabled'}`}
+                href={productionAccountPack?.mailto_url ?? '#'}
+                onClick={(event) => {
+                  if (!productionAccountPack) event.preventDefault()
+                }}
+              >
+                <Mail size={15} />
+                Email draft
+              </a>
+            </div>
+          </section>
+          <section className="automation-settings-panel account-reference-panel">
+            <div className="panel-head compact">
+              <div>
+                <span>Account references</span>
+                <h2>Non-secret provider records</h2>
+              </div>
+              <DatabaseZap size={18} />
+            </div>
+            <div className="email-settings-status" aria-label="Production account reference summary">
+              <article>
+                <DatabaseZap size={15} />
+                <strong>{productionAccountReferences.length}</strong>
+                <small>Saved reference(s)</small>
+              </article>
+              <article>
+                <CheckCircle2 size={15} />
+                <strong>
+                  {productionAccountReferences.filter((reference) => reference.status === 'connected').length}
+                </strong>
+                <small>Connected</small>
+              </article>
+              <article>
+                <ClipboardList size={15} />
+                <strong>{productionAccountReferenceDocs ? 'Ready' : 'Pending'}</strong>
+                <small>API_DOCS snippet</small>
+              </article>
+            </div>
+            <div className="account-reference-list">
+              {productionAccountReferences.slice(0, 6).map((reference) => (
+                <article className="account-reference-card" key={reference.id}>
+                  <div>
+                    <strong>{reference.account_name}</strong>
+                    <span>{reference.provider} · {reference.area}</span>
+                  </div>
+                  <em className={`chip status-${productionRequestTone(reference.status === 'connected' ? 'ready' : reference.status === 'blocked' ? 'missing' : 'action_required')}`}>
+                    {titleCase(reference.status)}
+                  </em>
+                  <small>{reference.account_identifier || reference.credential_reference || 'Identifier pending'}</small>
+                  <small>{reference.docs_reference || 'API_DOCS reference pending'}</small>
+                  <div className="account-reference-actions">
+                    <button
+                      className="secondary-action"
+                      type="button"
+                      onClick={() => void handleProductionAccountReferenceStatus(reference, 'connected')}
+                      disabled={!canManageIntegrationCredentials || productionAccountReferenceBusy || reference.status === 'connected'}
+                    >
+                      <CheckCircle2 size={14} />
+                      Connected
+                    </button>
+                    <button
+                      className="secondary-action"
+                      type="button"
+                      onClick={() => void handleProductionAccountReferenceStatus(reference, 'blocked')}
+                      disabled={!canManageIntegrationCredentials || productionAccountReferenceBusy || reference.status === 'blocked'}
+                    >
+                      <AlertTriangle size={14} />
+                      Blocked
+                    </button>
+                  </div>
+                </article>
+              ))}
+              {productionAccountReferences.length === 0 ? (
+                <article className="account-reference-card">
+                  <span>No provider account references saved yet.</span>
+                </article>
+              ) : null}
+            </div>
+            <form className="account-reference-form" onSubmit={handleProductionAccountReferenceSave}>
+              <div className="account-reference-grid">
+                <label>
+                  <span>Provider</span>
+                  <input
+                    value={productionAccountReferenceDraft.provider}
+                    onChange={(event) =>
+                      setProductionAccountReferenceDraft((current) => ({ ...current, provider: event.target.value }))
+                    }
+                    disabled={!canManageIntegrationCredentials}
+                  />
+                </label>
+                <label>
+                  <span>Area</span>
+                  <input
+                    value={productionAccountReferenceDraft.area}
+                    onChange={(event) =>
+                      setProductionAccountReferenceDraft((current) => ({ ...current, area: event.target.value }))
+                    }
+                    disabled={!canManageIntegrationCredentials}
+                  />
+                </label>
+                <label>
+                  <span>Account name</span>
+                  <input
+                    value={productionAccountReferenceDraft.accountName}
+                    onChange={(event) =>
+                      setProductionAccountReferenceDraft((current) => ({ ...current, accountName: event.target.value }))
+                    }
+                    placeholder="Wakanow NG WhatsApp Business"
+                    disabled={!canManageIntegrationCredentials}
+                  />
+                </label>
+                <label>
+                  <span>Account identifier</span>
+                  <input
+                    value={productionAccountReferenceDraft.accountIdentifier}
+                    onChange={(event) =>
+                      setProductionAccountReferenceDraft((current) => ({ ...current, accountIdentifier: event.target.value }))
+                    }
+                    placeholder="Provider account ID or phone ID"
+                    disabled={!canManageIntegrationCredentials}
+                  />
+                </label>
+                <label>
+                  <span>Status</span>
+                  <select
+                    value={productionAccountReferenceDraft.status}
+                    onChange={(event) =>
+                      setProductionAccountReferenceDraft((current) => ({
+                        ...current,
+                        status: event.target.value as BackendProductionAccountReferenceStatus,
+                      }))
+                    }
+                    disabled={!canManageIntegrationCredentials}
+                  >
+                    {productionReferenceStatusOptions.map((statusOption) => (
+                      <option key={statusOption} value={statusOption}>{titleCase(statusOption)}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Owner email</span>
+                  <input
+                    type="email"
+                    value={productionAccountReferenceDraft.ownerEmail}
+                    onChange={(event) =>
+                      setProductionAccountReferenceDraft((current) => ({ ...current, ownerEmail: event.target.value }))
+                    }
+                    placeholder="owner@wakanow.com"
+                    disabled={!canManageIntegrationCredentials}
+                  />
+                </label>
+                <label>
+                  <span>Credential reference</span>
+                  <input
+                    value={productionAccountReferenceDraft.credentialReference}
+                    onChange={(event) =>
+                      setProductionAccountReferenceDraft((current) => ({ ...current, credentialReference: event.target.value }))
+                    }
+                    placeholder="vault://omni/ng/provider/token"
+                    disabled={!canManageIntegrationCredentials}
+                  />
+                </label>
+                <label>
+                  <span>API_DOCS reference</span>
+                  <input
+                    value={productionAccountReferenceDraft.docsReference}
+                    onChange={(event) =>
+                      setProductionAccountReferenceDraft((current) => ({ ...current, docsReference: event.target.value }))
+                    }
+                    disabled={!canManageIntegrationCredentials}
+                  />
+                </label>
+                <label>
+                  <span>Callback URLs</span>
+                  <textarea
+                    value={productionAccountReferenceDraft.callbackUrls}
+                    onChange={(event) =>
+                      setProductionAccountReferenceDraft((current) => ({ ...current, callbackUrls: event.target.value }))
+                    }
+                    placeholder="One URL per line"
+                    disabled={!canManageIntegrationCredentials}
+                  />
+                </label>
+                <label>
+                  <span>Notes</span>
+                  <textarea
+                    value={productionAccountReferenceDraft.notes}
+                    onChange={(event) =>
+                      setProductionAccountReferenceDraft((current) => ({ ...current, notes: event.target.value }))
+                    }
+                    placeholder="Non-secret operational notes"
+                    disabled={!canManageIntegrationCredentials}
+                  />
+                </label>
+              </div>
+              <textarea
+                className="request-body-preview docs-snippet-preview"
+                value={productionAccountReferenceDocs?.markdown ?? ''}
+                readOnly
+                aria-label="API_DOCS account reference snippet"
+              />
+              <div className="email-settings-actions">
+                <span>Save non-secret references only. Tokens, passwords, and private keys stay out of this table.</span>
+                <button
+                  className="secondary-action"
+                  type="button"
+                  onClick={() => void handleProductionAccountReferenceDocsCopy()}
+                  disabled={!productionAccountReferenceDocs}
+                >
+                  <ClipboardList size={15} />
+                  Copy snippet
+                </button>
+                <button
+                  className="primary-action"
+                  type="submit"
+                  disabled={!canManageIntegrationCredentials || productionAccountReferenceBusy || !backendSession}
+                >
+                  <Check size={15} />
+                  Save reference
+                </button>
+              </div>
+            </form>
+          </section>
+          <form className="automation-settings-panel email-settings-panel" onSubmit={handleEmailSettingsSave}>
+            <div className="panel-head compact">
+              <div>
+                <span>Email setup</span>
+                <h2>Mailbox intake and replies</h2>
+              </div>
+              <Mail size={18} />
+            </div>
+            <div className="email-settings-status" aria-label="Email setup readiness">
+              <article>
+                <span className={`channel-health-dot ${emailInboundConfig?.live_intake ? 'healthy' : 'degraded'}`} />
+                <strong>Inbound</strong>
+                <small>{emailInboundConfig?.live_intake ? 'IMAP live' : emailInboundConfig?.missing_settings.slice(0, 2).join(' · ') || 'Pending setup'}</small>
+              </article>
+              <article>
+                <span className={`channel-health-dot ${emailOutboundConfig?.live_delivery ? 'healthy' : 'degraded'}`} />
+                <strong>Outbound</strong>
+                <small>{emailOutboundConfig?.live_delivery ? 'SMTP live' : emailOutboundConfig?.missing_settings.slice(0, 2).join(' · ') || 'Pending setup'}</small>
+              </article>
+              <article>
+                <Lock size={15} />
+                <strong>Secrets</strong>
+                <small>
+                  {emailProviderSettings?.inbound_password_configured || emailProviderSettings?.outbound_password_configured
+                    ? 'Stored write-only'
+                    : 'Not saved yet'}
+                </small>
+              </article>
+            </div>
+            <div className="email-settings-grid">
+              <section>
+                <div className="email-settings-heading">
+                  <Inbox size={16} />
+                  <strong>IMAP intake</strong>
+                  <label className="toggle-row compact-toggle">
+                    <input
+                      type="checkbox"
+                      checked={emailSettingsDraft.inboundEnabled}
+                      onChange={(event) =>
+                        setEmailSettingsDraft((current) => ({ ...current, inboundEnabled: event.target.checked }))
+                      }
+                      disabled={!canManageEmailSettings}
+                    />
+                    <span>Enabled</span>
+                  </label>
+                </div>
+                <label>
+                  <span>Host</span>
+                  <input
+                    value={emailSettingsDraft.inboundHost}
+                    onChange={(event) =>
+                      setEmailSettingsDraft((current) => ({ ...current, inboundHost: event.target.value }))
+                    }
+                    placeholder="imap.provider.com"
+                    disabled={!canManageEmailSettings}
+                  />
+                </label>
+                <label>
+                  <span>Port</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="65535"
+                    value={emailSettingsDraft.inboundPort}
+                    onChange={(event) =>
+                      setEmailSettingsDraft((current) => ({ ...current, inboundPort: Number(event.target.value || 993) }))
+                    }
+                    disabled={!canManageEmailSettings}
+                  />
+                </label>
+                <label>
+                  <span>Username</span>
+                  <input
+                    value={emailSettingsDraft.inboundUsername}
+                    onChange={(event) =>
+                      setEmailSettingsDraft((current) => ({ ...current, inboundUsername: event.target.value }))
+                    }
+                    placeholder="jimb@wakanow.com"
+                    disabled={!canManageEmailSettings}
+                  />
+                </label>
+                <label>
+                  <span>Mailbox</span>
+                  <input
+                    value={emailSettingsDraft.inboundMailbox}
+                    onChange={(event) =>
+                      setEmailSettingsDraft((current) => ({ ...current, inboundMailbox: event.target.value }))
+                    }
+                    placeholder="INBOX"
+                    disabled={!canManageEmailSettings}
+                  />
+                </label>
+                <label>
+                  <span>Password</span>
+                  <input
+                    type="password"
+                    value={emailSettingsDraft.inboundPassword}
+                    onChange={(event) =>
+                      setEmailSettingsDraft((current) => ({ ...current, inboundPassword: event.target.value }))
+                    }
+                    placeholder={emailProviderSettings?.inbound_password_configured ? 'Saved password' : 'Mailbox password'}
+                    disabled={!canManageEmailSettings || emailSettingsDraft.clearInboundPassword}
+                    autoComplete="new-password"
+                  />
+                </label>
+                <div className="email-settings-options">
+                  <label className="toggle-row compact-toggle">
+                    <input
+                      type="checkbox"
+                      checked={emailSettingsDraft.inboundUseSsl}
+                      onChange={(event) =>
+                        setEmailSettingsDraft((current) => ({ ...current, inboundUseSsl: event.target.checked }))
+                      }
+                      disabled={!canManageEmailSettings}
+                    />
+                    <span>SSL</span>
+                  </label>
+                  <label className="toggle-row compact-toggle">
+                    <input
+                      type="checkbox"
+                      checked={emailSettingsDraft.inboundMarkSeen}
+                      onChange={(event) =>
+                        setEmailSettingsDraft((current) => ({ ...current, inboundMarkSeen: event.target.checked }))
+                      }
+                      disabled={!canManageEmailSettings}
+                    />
+                    <span>Mark seen</span>
+                  </label>
+                  <label className="toggle-row compact-toggle">
+                    <input
+                      type="checkbox"
+                      checked={emailSettingsDraft.clearInboundPassword}
+                      onChange={(event) =>
+                        setEmailSettingsDraft((current) => ({
+                          ...current,
+                          clearInboundPassword: event.target.checked,
+                          inboundPassword: event.target.checked ? '' : current.inboundPassword,
+                        }))
+                      }
+                      disabled={!canManageEmailSettings || !emailProviderSettings?.inbound_password_configured}
+                    />
+                    <span>Clear password</span>
+                  </label>
+                </div>
+              </section>
+              <section>
+                <div className="email-settings-heading">
+                  <Send size={16} />
+                  <strong>SMTP replies</strong>
+                  <label className="toggle-row compact-toggle">
+                    <input
+                      type="checkbox"
+                      checked={emailSettingsDraft.outboundEnabled}
+                      onChange={(event) =>
+                        setEmailSettingsDraft((current) => ({ ...current, outboundEnabled: event.target.checked }))
+                      }
+                      disabled={!canManageEmailSettings}
+                    />
+                    <span>Enabled</span>
+                  </label>
+                </div>
+                <label>
+                  <span>Host</span>
+                  <input
+                    value={emailSettingsDraft.outboundHost}
+                    onChange={(event) =>
+                      setEmailSettingsDraft((current) => ({ ...current, outboundHost: event.target.value }))
+                    }
+                    placeholder="smtp.provider.com"
+                    disabled={!canManageEmailSettings}
+                  />
+                </label>
+                <label>
+                  <span>Port</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="65535"
+                    value={emailSettingsDraft.outboundPort}
+                    onChange={(event) =>
+                      setEmailSettingsDraft((current) => ({ ...current, outboundPort: Number(event.target.value || 587) }))
+                    }
+                    disabled={!canManageEmailSettings}
+                  />
+                </label>
+                <label>
+                  <span>Username</span>
+                  <input
+                    value={emailSettingsDraft.outboundUsername}
+                    onChange={(event) =>
+                      setEmailSettingsDraft((current) => ({ ...current, outboundUsername: event.target.value }))
+                    }
+                    placeholder="jimb@wakanow.com"
+                    disabled={!canManageEmailSettings}
+                  />
+                </label>
+                <label>
+                  <span>From address</span>
+                  <input
+                    value={emailSettingsDraft.outboundFromEmail}
+                    onChange={(event) =>
+                      setEmailSettingsDraft((current) => ({ ...current, outboundFromEmail: event.target.value }))
+                    }
+                    placeholder="jimb@wakanow.com"
+                    disabled={!canManageEmailSettings}
+                  />
+                </label>
+                <label>
+                  <span>Password</span>
+                  <input
+                    type="password"
+                    value={emailSettingsDraft.outboundPassword}
+                    onChange={(event) =>
+                      setEmailSettingsDraft((current) => ({ ...current, outboundPassword: event.target.value }))
+                    }
+                    placeholder={emailProviderSettings?.outbound_password_configured ? 'Saved password' : 'SMTP password'}
+                    disabled={!canManageEmailSettings || emailSettingsDraft.clearOutboundPassword}
+                    autoComplete="new-password"
+                  />
+                </label>
+                <div className="email-settings-options">
+                  <label className="toggle-row compact-toggle">
+                    <input
+                      type="checkbox"
+                      checked={emailSettingsDraft.outboundUseStarttls}
+                      onChange={(event) =>
+                        setEmailSettingsDraft((current) => ({
+                          ...current,
+                          outboundUseStarttls: event.target.checked,
+                          outboundUseSsl: event.target.checked ? false : current.outboundUseSsl,
+                        }))
+                      }
+                      disabled={!canManageEmailSettings}
+                    />
+                    <span>STARTTLS</span>
+                  </label>
+                  <label className="toggle-row compact-toggle">
+                    <input
+                      type="checkbox"
+                      checked={emailSettingsDraft.outboundUseSsl}
+                      onChange={(event) =>
+                        setEmailSettingsDraft((current) => ({
+                          ...current,
+                          outboundUseSsl: event.target.checked,
+                          outboundUseStarttls: event.target.checked ? false : current.outboundUseStarttls,
+                        }))
+                      }
+                      disabled={!canManageEmailSettings}
+                    />
+                    <span>SSL</span>
+                  </label>
+                  <label className="toggle-row compact-toggle">
+                    <input
+                      type="checkbox"
+                      checked={emailSettingsDraft.clearOutboundPassword}
+                      onChange={(event) =>
+                        setEmailSettingsDraft((current) => ({
+                          ...current,
+                          clearOutboundPassword: event.target.checked,
+                          outboundPassword: event.target.checked ? '' : current.outboundPassword,
+                        }))
+                      }
+                      disabled={!canManageEmailSettings || !emailProviderSettings?.outbound_password_configured}
+                    />
+                    <span>Clear password</span>
+                  </label>
+                </div>
+              </section>
+            </div>
+            <div className="email-settings-actions">
+              <span>
+                {emailProviderSettings
+                  ? `Last saved ${formatTime(emailProviderSettings.updated_at)}`
+                  : 'Backend email settings will appear after sync.'}
+              </span>
+              <button
+                className="primary-action"
+                type="submit"
+                disabled={!canManageEmailSettings || emailSettingsBusy || !backendSession}
+              >
+                <Check size={15} />
+                Save email setup
+              </button>
+            </div>
+          </form>
+          <div className="automation-settings-panel outbound-provider-panel">
+            <div className="panel-head compact">
+              <div>
+                <span>Inbound adapters</span>
+                <h2>Provider intake readiness</h2>
+              </div>
+              <Inbox size={18} />
+            </div>
+            <div className="outbound-provider-grid" aria-label="Inbound provider adapter readiness">
+              {inboundProviderConfig.map((config) => (
+                <article key={`${config.provider}-${config.adapter}`}>
+                  <div className="outbound-provider-head">
+                    <span className={`channel-health-dot ${config.live_intake ? 'healthy' : 'degraded'}`} />
+                    <div>
+                      <strong>{titleCase(config.provider)} inbound</strong>
+                      <small>{config.notes}</small>
+                    </div>
+                    <em className={`chip status-${config.live_intake ? 'done' : 'pending'}`}>
+                      {config.live_intake ? 'Live' : 'Pending'}
+                    </em>
+                  </div>
+                  <div className="outbound-provider-meta">
+                    <span>
+                      <b>Adapter</b>
+                      {titleCase(config.adapter)}
+                    </span>
+                    <span>
+                      <b>Polling</b>
+                      {config.polling_enabled ? 'On' : 'Off'}
+                    </span>
+                    <span>
+                      <b>Missing</b>
+                      {config.missing_settings.length || 'None'}
+                    </span>
+                  </div>
+                  {config.missing_settings.length ? (
+                    <div className="connector-needed">
+                      <AlertTriangle size={15} />
+                      <span>{config.missing_settings.slice(0, 2).join(' · ')}</span>
+                    </div>
+                  ) : null}
+                </article>
+              ))}
+              {inboundProviderConfig.length === 0 ? (
+                <article className="outbound-empty">
+                  <AlertTriangle size={16} />
+                  <span>Inbound adapter readiness is not available for this role.</span>
+                </article>
+              ) : null}
+            </div>
+          </div>
+          <div className="automation-settings-panel outbound-provider-panel">
+            <div className="panel-head compact">
+              <div>
+                <span>Outbound adapters</span>
+                <h2>Provider send readiness</h2>
+              </div>
+              <Send size={18} />
+            </div>
+            <div className="outbound-provider-grid" aria-label="Outbound provider adapter readiness">
+              {outboundProviderConfig.map((config) => (
+                <article key={`${config.provider}-${config.adapter}`}>
+                  <div className="outbound-provider-head">
+                    <span className={`channel-health-dot ${config.live_delivery ? 'healthy' : 'degraded'}`} />
+                    <div>
+                      <strong>{titleCase(config.provider)} outbound</strong>
+                      <small>{config.notes}</small>
+                    </div>
+                    <em className={`chip status-${config.live_delivery ? 'done' : 'pending'}`}>
+                      {config.live_delivery ? 'Live' : 'Pending'}
+                    </em>
+                  </div>
+                  <div className="outbound-provider-meta">
+                    <span>
+                      <b>Adapter</b>
+                      {titleCase(config.adapter)}
+                    </span>
+                    <span>
+                      <b>Fallback</b>
+                      {config.fallback_adapter ? titleCase(config.fallback_adapter) : 'Off'}
+                    </span>
+                    <span>
+                      <b>Missing</b>
+                      {config.missing_settings.length || 'None'}
+                    </span>
+                  </div>
+                  {config.missing_settings.length ? (
+                    <div className="connector-needed">
+                      <AlertTriangle size={15} />
+                      <span>{config.missing_settings.slice(0, 2).join(' · ')}</span>
+                    </div>
+                  ) : null}
+                </article>
+              ))}
+              {outboundProviderConfig.length === 0 ? (
+                <article className="outbound-empty">
+                  <AlertTriangle size={16} />
+                  <span>Outbound adapter readiness is not available for this role.</span>
+                </article>
+              ) : null}
+            </div>
           </div>
           <div className="automation-settings-panel connector-control-center">
             <div className="panel-head compact">
@@ -3357,6 +9330,10 @@ function OmniApp() {
               ) : null}
             </div>
           </div>
+          </>
+          ) : null}
+          {setupSection === 'automation' ? (
+          <>
           <div className="automation-settings-panel">
             <div className="panel-head compact">
               <div>
@@ -3369,7 +9346,7 @@ function OmniApp() {
               <span>
                 <strong>Automate triage, routing, priority, and owner assignment</strong>
                 <small>
-                  Default for backend development: AI keeps the Work Queue moving unless this switch is turned off by an admin.
+                  AI keeps the Work Queue moving unless this switch is turned off by an admin.
                 </small>
               </span>
               <input
@@ -3395,11 +9372,218 @@ function OmniApp() {
                 </article>
               ))}
             </div>
-          </div>
-          <button className="secondary-action" type="button" onClick={resetDemo}>
-            <RotateCcw size={16} />
-            Reset review data
+	          </div>
+	          <div className="automation-settings-panel sla-policy-panel">
+	            <div className="panel-head compact">
+	              <div>
+	                <span>SLA policies</span>
+	                <h2>Promise targets</h2>
+	              </div>
+	              <button
+	                className={addSlaPolicyOpen ? 'secondary-action' : 'primary-action'}
+	                type="button"
+	                onClick={() => setAddSlaPolicyOpen((value) => !value)}
+	                disabled={!canManageSlaPolicies}
+	                aria-expanded={addSlaPolicyOpen}
+	              >
+	                {addSlaPolicyOpen ? <X size={16} /> : <Plus size={16} />}
+	                {addSlaPolicyOpen ? 'Close form' : 'Add policy'}
+	              </button>
+	            </div>
+	            <div className="sla-summary-strip" aria-label="SLA policy summary">
+	              <article>
+	                <strong>{activeSlaPolicies.length}</strong>
+	                <span>Active</span>
+	              </article>
+	              <article>
+	                <strong>{state.slaPolicies.length - activeSlaPolicies.length}</strong>
+	                <span>Paused</span>
+	              </article>
+	              <article>
+	                <strong>{state.slaPolicies.filter((policy) => policy.priority === 'urgent').length}</strong>
+	                <span>Urgent rules</span>
+	              </article>
+	            </div>
+	            {addSlaPolicyOpen ? (
+	              <form className="user-create-form sla-policy-form" onSubmit={handleCreateSlaPolicy}>
+	                <label>
+	                  <span>Policy name</span>
+	                  <input
+	                    required
+	                    value={slaPolicyDraft.name}
+	                    onChange={(event) =>
+	                      setSlaPolicyDraft((current) => ({ ...current, name: event.target.value }))
+	                    }
+	                    placeholder="VIP API response"
+	                    disabled={!canManageSlaPolicies || slaPolicyActionBusy}
+	                  />
+	                </label>
+	                <label>
+	                  <span>Priority</span>
+	                  <select
+	                    value={slaPolicyDraft.priority}
+	                    onChange={(event) =>
+	                      setSlaPolicyDraft((current) => ({
+	                        ...current,
+	                        priority: event.target.value as Priority,
+	                      }))
+	                    }
+	                    disabled={!canManageSlaPolicies || slaPolicyActionBusy}
+	                  >
+		                    {priorityOptions
+		                      .filter((option): option is Priority => option !== 'all')
+		                      .map((priority) => (
+		                        <option key={priority} value={priority}>
+		                          {titleCase(priority)}
+		                        </option>
+		                      ))}
+	                  </select>
+	                </label>
+	                <label>
+	                  <span>First reply minutes</span>
+	                  <input
+	                    type="number"
+	                    min={1}
+	                    value={slaPolicyDraft.firstResponseMinutes}
+	                    onChange={(event) =>
+	                      setSlaPolicyDraft((current) => ({
+	                        ...current,
+	                        firstResponseMinutes: Number(event.target.value),
+	                      }))
+	                    }
+	                    disabled={!canManageSlaPolicies || slaPolicyActionBusy}
+	                  />
+	                </label>
+	                <label>
+	                  <span>Resolution minutes</span>
+	                  <input
+	                    type="number"
+	                    min={1}
+	                    value={slaPolicyDraft.resolutionMinutes}
+	                    onChange={(event) =>
+	                      setSlaPolicyDraft((current) => ({
+	                        ...current,
+	                        resolutionMinutes: Number(event.target.value),
+	                      }))
+	                    }
+	                    disabled={!canManageSlaPolicies || slaPolicyActionBusy}
+	                  />
+	                </label>
+	                <label>
+	                  <span>Business hours</span>
+	                  <input
+	                    value={slaPolicyDraft.businessHours}
+	                    onChange={(event) =>
+	                      setSlaPolicyDraft((current) => ({
+	                        ...current,
+	                        businessHours: event.target.value,
+	                      }))
+	                    }
+	                    placeholder="24x7"
+	                    disabled={!canManageSlaPolicies || slaPolicyActionBusy}
+	                  />
+	                </label>
+	                <label>
+	                  <span>Position</span>
+	                  <input
+	                    type="number"
+	                    value={slaPolicyDraft.position}
+		                    onChange={(event) =>
+		                      setSlaPolicyDraft((current) => ({
+		                        ...current,
+		                        position: Number(event.target.value),
+		                      }))
+		                    }
+	                    disabled={!canManageSlaPolicies || slaPolicyActionBusy}
+	                  />
+	                </label>
+	                <div className="user-market-picker" aria-label="SLA channels">
+	                  <span>Channels</span>
+	                  <div>
+	                    {state.channels.slice(0, 8).map((channel) => (
+	                      <label key={channel.id}>
+	                        <input
+	                          type="checkbox"
+	                          checked={slaPolicyDraft.channels.includes(channel.id)}
+	                          onChange={() => toggleSlaPolicyDraftChannel(channel.id)}
+	                          disabled={!canManageSlaPolicies || slaPolicyActionBusy}
+	                        />
+	                        {channel.shortLabel}
+	                      </label>
+	                    ))}
+	                  </div>
+	                </div>
+	                <label className="setting-row compact-toggle">
+	                  <span>
+	                    <strong>Active</strong>
+	                    <small>Use this policy for matching new tickets.</small>
+	                  </span>
+	                  <input
+	                    type="checkbox"
+	                    role="switch"
+	                    checked={slaPolicyDraft.active}
+	                    onChange={(event) =>
+	                      setSlaPolicyDraft((current) => ({ ...current, active: event.target.checked }))
+	                    }
+	                    disabled={!canManageSlaPolicies || slaPolicyActionBusy}
+	                  />
+	                </label>
+	                <div className="form-actions">
+		                  <button
+		                    className="secondary-action"
+		                    type="button"
+		                    onClick={() => setAddSlaPolicyOpen(false)}
+		                  >
+		                    Cancel
+		                  </button>
+		                  <button
+		                    className="primary-action"
+		                    type="submit"
+		                    disabled={!canManageSlaPolicies || slaPolicyActionBusy}
+		                  >
+	                    <Plus size={16} />
+	                    {slaPolicyActionBusy ? 'Saving...' : 'Add policy'}
+	                  </button>
+	                </div>
+	              </form>
+	            ) : null}
+	            <div className="sla-policy-grid">
+	              {state.slaPolicies.map((policy) => (
+		                <article
+		                  className={policy.active ? 'sla-policy-card' : 'sla-policy-card paused'}
+		                  key={policy.id}
+		                >
+	                  <div>
+	                    <strong>{policy.name}</strong>
+	                    <span>{titleCase(policy.priority)} · {policy.businessHours}</span>
+	                  </div>
+	                  <small>
+	                    {policy.firstResponseMinutes}m first reply · {policy.resolutionMinutes}m resolution
+	                  </small>
+	                  <div className="tag-list compact-tags">
+	                    {policy.channels.slice(0, 5).map((channel) => (
+	                      <span key={channel}>{titleCase(channel)}</span>
+	                    ))}
+	                    {policy.channels.length === 0 ? <span>All channels</span> : null}
+	                  </div>
+	                  <button
+	                    className="secondary-action"
+	                    type="button"
+	                    onClick={() => void handleToggleSlaPolicy(policy.id, !policy.active)}
+	                    disabled={!canManageSlaPolicies || slaPolicyActionBusy}
+	                  >
+	                    {policy.active ? 'Pause' : 'Reactivate'}
+	                  </button>
+	                </article>
+	              ))}
+	            </div>
+	          </div>
+	          <button className="secondary-action" type="button" onClick={resetDemo}>
+	            <RotateCcw size={16} />
+	            Reset review data
           </button>
+          </>
+          ) : null}
         </section>
       </div>
     )
@@ -3527,7 +9711,24 @@ function OmniApp() {
     return renderTracker()
   }
 
+  // Kept callable while the ticket list is the default Freshdesk-style inbox.
+  void renderFilters
+  void renderConversationRow
+  void renderConversationDetail
+
   const currentScreen = screenConfig.find((item) => item.id === state.selectedScreen) ?? screenConfig[0]
+  const CurrentScreenIcon = currentScreen.icon
+  const pageTitle =
+    currentScreen.id === 'command'
+      ? 'Omnichannel Dashboard'
+      : currentScreen.id === 'inbox'
+        ? 'All tickets'
+        : currentScreen.id === 'knowledge'
+          ? 'Knowledge base (Wakanow)'
+          : currentScreen.id === 'channels'
+            ? 'Omnichat'
+            : currentScreen.label
+  const pageSubtitle = currentMarket ? `${currentMarket.name} market. ${screenLead[currentScreen.id]}` : screenLead[currentScreen.id]
 
   return (
     <div className="app-shell">
@@ -3587,24 +9788,59 @@ function OmniApp() {
       </aside>
 
       <main className="main-shell">
-        <header className="topbar">
-          <div>
-            <span className="section-kicker">Omni Ticket operations support</span>
-            <h1>{currentScreen.label}</h1>
-            <p className="screen-lead">
-              {currentMarket ? `${currentMarket.name} market · ` : ''}
-              {screenLead[currentScreen.id]}
-            </p>
+        <div className="omni-ai-announcement" aria-label="Omni AI announcement">
+          <Sparkles size={16} />
+          <span>Introducing Omni AI Agents: Your intelligent support representative</span>
+          <button type="button" onClick={() => setSetupSection('automation')}>Explore AI Agent</button>
+          <i />
+          <button type="button" onClick={() => announcePrototype('More Omni AI updates opened.')}>4 more</button>
+          <button type="button" aria-label="Dismiss announcement" onClick={() => announcePrototype('Announcement dismissed.')}>
+            <X size={14} />
+          </button>
+        </div>
+        <header className="topbar omni-desk-topbar" aria-label={pageSubtitle}>
+          <div className="omni-page-title">
+            <button className="desk-product-icon" type="button" aria-label={pageTitle}>
+              <CurrentScreenIcon size={16} />
+            </button>
+            <h1>{pageTitle}</h1>
+            {currentScreen.id === 'inbox' && <span className="count-pill">{state.conversations.length}</span>}
           </div>
           <div className="topbar-actions">
-            <div className="global-search">
-              <Search size={16} />
-              <input
-                value={state.filters.search}
-                onChange={(event) => setFilters({ search: event.target.value })}
-                placeholder="Search customers, conversations, tags"
-                aria-label="Global search"
-              />
+            <button className="desk-top-action" type="button" onClick={() => openQuickCreate('email')}>
+              <Plus size={14} />
+              New
+              <ChevronDown size={13} />
+            </button>
+            <div className="omni-search-button-wrap">
+              <button className="desk-top-action" type="button" onClick={() => setGlobalSearchOpen((value) => !value)}>
+                <Search size={14} />
+                Search
+              </button>
+              {globalSearchOpen && (
+                <div className="omni-search-popover">
+                  <div className="global-search active">
+                    <Search size={16} />
+                    <input
+                      value={state.filters.search}
+                      onFocus={() => setGlobalSearchOpen(true)}
+                      onChange={(event) => {
+                        const nextSearch = event.target.value
+                        setFilters({ search: nextSearch })
+                        if (nextSearch.trim().length < 2) {
+                          setGlobalSearchResults([])
+                          setGlobalSearchError('')
+                          setGlobalSearchLoading(false)
+                        }
+                        setGlobalSearchOpen(true)
+                      }}
+                      placeholder="Search tickets, customers, teams"
+                      aria-label="Global search"
+                    />
+                    {renderGlobalSearchResults()}
+                  </div>
+                </div>
+              )}
             </div>
             <button
               className="icon-button"
@@ -3615,14 +9851,15 @@ function OmniApp() {
             >
               <Bell size={18} />
             </button>
-            <a
-              className="primary-action"
-              href={routeHref({ screen: 'inbox' })}
-              onClick={(event) => handleAppLink(event, () => selectScreen('inbox'))}
-            >
-              <MessageSquare size={17} />
-              Work inbox
-            </a>
+            <button className="desk-top-action" type="button" onClick={() => announcePrototype('Support resources panel opened.')}>
+              Help
+            </button>
+            <button className="desk-top-action" type="button" onClick={() => setSetupSection('connectors')}>
+              Apps
+            </button>
+            <button className="desk-user-pill" type="button" onClick={() => announcePrototype('User menu opened.')}>
+              {initials(backendSession.user.name)}
+            </button>
           </div>
         </header>
 

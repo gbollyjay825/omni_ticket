@@ -1,16 +1,39 @@
+from datetime import datetime, timedelta
+from uuid import uuid4
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.store import InMemoryStore
-from app.db.mappers import agent_from_record, customer_from_record, ticket_from_record
-from app.db.models import AgentRecord, CustomerRecord, TicketRecord
-from app.models.domain import AnalyticsSnapshot, ChannelType, WorkQueueItem
+from app.db.mappers import (
+    agent_from_record,
+    analytics_rollup_from_record,
+    customer_from_record,
+    ticket_from_record,
+)
+from app.db.models import (
+    AgentRecord,
+    AnalyticsRollupRecord,
+    CsatFeedbackRecord,
+    CustomerRecord,
+    TicketRecord,
+)
+from app.models.domain import AnalyticsRollup, AnalyticsSnapshot, ChannelType, WorkQueueItem, utc_now
 from app.services.ai import automation_service
 from app.services.sla import sla_service
 
 
 OPEN_STATUSES = {"open", "pending", "waiting"}
 ACTIVE_AGENT_STATUSES = {"available", "busy", "away"}
+
+
+def _new_id(prefix: str) -> str:
+    return f"{prefix}_{uuid4().hex}"
+
+
+def _hour_period_start() -> datetime:
+    now = utc_now()
+    return now.replace(minute=0, second=0, microsecond=0)
 
 
 class OperationsRepository:
@@ -96,6 +119,16 @@ class OperationsRepository:
             if active_agents
             else 0
         )
+        csat_ratings = list(
+            db.scalars(
+                select(CsatFeedbackRecord.rating).where(CsatFeedbackRecord.market_id == market_id)
+            )
+        )
+        avg_csat = (
+            round(sum(csat_ratings) / len(csat_ratings), 2)
+            if csat_ratings
+            else None
+        )
         db.commit()
         return AnalyticsSnapshot(
             open_tickets=len(open_tickets),
@@ -104,7 +137,70 @@ class OperationsRepository:
             channel_volume=channel_volume,
             active_agents=len(active_agents),
             avg_occupancy=avg_occupancy,
+            avg_csat=avg_csat,
         )
+
+    def record_analytics_rollup(
+        self,
+        db: Session,
+        *,
+        market_id: str,
+        snapshot: AnalyticsSnapshot,
+    ) -> AnalyticsRollup:
+        period_start = _hour_period_start()
+        period_end = period_start + timedelta(hours=1)
+        record = db.scalar(
+            select(AnalyticsRollupRecord).where(
+                AnalyticsRollupRecord.market_id == market_id,
+                AnalyticsRollupRecord.period_start == period_start,
+            )
+        )
+        channel_volume = {
+            channel.value: count
+            for channel, count in snapshot.channel_volume.items()
+        }
+        if record is None:
+            record = AnalyticsRollupRecord(
+                id=_new_id("analytics_rollup"),
+                market_id=market_id,
+                period_start=period_start,
+                period_end=period_end,
+                open_tickets=snapshot.open_tickets,
+                at_risk_tickets=snapshot.at_risk_tickets,
+                breached_tickets=snapshot.breached_tickets,
+                active_agents=snapshot.active_agents,
+                avg_occupancy=snapshot.avg_occupancy,
+                avg_csat=snapshot.avg_csat,
+                channel_volume=channel_volume,
+            )
+            db.add(record)
+        else:
+            record.period_end = period_end
+            record.open_tickets = snapshot.open_tickets
+            record.at_risk_tickets = snapshot.at_risk_tickets
+            record.breached_tickets = snapshot.breached_tickets
+            record.active_agents = snapshot.active_agents
+            record.avg_occupancy = snapshot.avg_occupancy
+            record.avg_csat = snapshot.avg_csat
+            record.channel_volume = channel_volume
+            record.updated_at = utc_now()
+        db.flush()
+        return analytics_rollup_from_record(record)
+
+    def recent_analytics_rollups(
+        self,
+        db: Session,
+        *,
+        market_id: str,
+        limit: int = 24,
+    ) -> list[AnalyticsRollup]:
+        records = db.scalars(
+            select(AnalyticsRollupRecord)
+            .where(AnalyticsRollupRecord.market_id == market_id)
+            .order_by(AnalyticsRollupRecord.period_start.desc())
+            .limit(limit)
+        ).all()
+        return [analytics_rollup_from_record(record) for record in records]
 
 
 operations_repository = OperationsRepository()

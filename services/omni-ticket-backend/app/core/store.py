@@ -23,8 +23,13 @@ from app.models.domain import (
     Market,
     OutboundMessage,
     Priority,
+    ResponseMacro,
+    SlaPolicy,
     Sentiment,
+    SupportGroup,
     Ticket,
+    TicketField,
+    TicketFieldType,
     TicketStatus,
     TicketTask,
     TimelineEvent,
@@ -49,12 +54,16 @@ class InMemoryStore:
         self.sessions: dict[str, str] = {}
         self.channels: dict[str, Channel] = {}
         self.agents: dict[str, Agent] = {}
+        self.support_groups: dict[str, SupportGroup] = {}
         self.companies: dict[str, Company] = {}
         self.customers: dict[str, Customer] = {}
         self.tickets: dict[str, Ticket] = {}
         self.timeline: dict[str, list[TimelineEvent]] = {}
         self.handoffs: dict[str, Handoff] = {}
         self.knowledge: dict[str, KnowledgeArticle] = {}
+        self.response_macros: dict[str, ResponseMacro] = {}
+        self.ticket_fields: dict[str, TicketField] = {}
+        self.sla_policies: dict[str, SlaPolicy] = {}
         self.rules: dict[str, AutomationRule] = {}
         self.connector_events: dict[str, ConnectorEvent] = {}
         self.outbound_messages: dict[str, OutboundMessage] = {}
@@ -72,7 +81,7 @@ class InMemoryStore:
                     name="Nigeria",
                     timezone="Africa/Lagos",
                     currency="NGN",
-                    support_email="support.ng@example.com",
+                    support_email="jimb@wakanow.com",
                     whatsapp_number="+23480006664",
                     facebook_page="@omniticketng",
                     instagram_handle="@omniticketng",
@@ -142,7 +151,7 @@ class InMemoryStore:
                     market_id="market-ng",
                     type=ChannelType.email,
                     name="Nigeria support mailbox",
-                    handle="support.ng@example.com",
+                    handle="jimb@wakanow.com",
                     queued=38,
                     active=12,
                     sla_risk=5,
@@ -281,6 +290,166 @@ class InMemoryStore:
                 ),
             }
 
+            self.support_groups = {
+                "group-ng-billing": SupportGroup(
+                    id="group-ng-billing",
+                    market_id="market-ng",
+                    name="Billing Support",
+                    description="Owns payment, duplicate charge, refund, and billing recovery work.",
+                    team_email="billing-support@omniticket.example.com",
+                    channels=[ChannelType.email, ChannelType.portal, ChannelType.api],
+                    skills=["payments", "refunds", "billing"],
+                ),
+                "group-ng-chat": SupportGroup(
+                    id="group-ng-chat",
+                    market_id="market-ng",
+                    name="Chat Care",
+                    description="Handles live chat, SMS, WhatsApp, and fast-moving customer conversations.",
+                    team_email="chat-care@omniticket.example.com",
+                    channels=[ChannelType.whatsapp, ChannelType.sms, ChannelType.portal],
+                    skills=["live chat", "messaging", "frontline support"],
+                ),
+                "group-ng-social": SupportGroup(
+                    id="group-ng-social",
+                    market_id="market-ng",
+                    name="Social Care",
+                    description="Owns public social complaints, DMs, and reputation-sensitive replies.",
+                    team_email="social-care@omniticket.example.com",
+                    channels=[ChannelType.facebook, ChannelType.instagram],
+                    skills=["social", "complaints", "recovery"],
+                ),
+                "group-ng-escalations": SupportGroup(
+                    id="group-ng-escalations",
+                    market_id="market-ng",
+                    name="Escalations",
+                    description="Coordinates urgent, VIP, breached SLA, and cross-team recovery work.",
+                    team_email="escalations@omniticket.example.com",
+                    channels=[ChannelType.voice, ChannelType.internal, ChannelType.api],
+                    skills=["escalation", "vip", "sla"],
+                ),
+                "group-ng-fulfillment": SupportGroup(
+                    id="group-ng-fulfillment",
+                    market_id="market-ng",
+                    name="Fulfillment",
+                    description="Owns booking confirmation, partner fulfillment, and post-booking fixes.",
+                    team_email="fulfillment@omniticket.example.com",
+                    channels=[ChannelType.email, ChannelType.api, ChannelType.internal],
+                    skills=["booking", "fulfillment", "partner operations"],
+                ),
+                "group-ng-engineering": SupportGroup(
+                    id="group-ng-engineering",
+                    market_id="market-ng",
+                    name="Engineering",
+                    description="Owns platform defects, API issues, and technical incident resolution.",
+                    team_email="engineering@omniticket.example.com",
+                    channels=[ChannelType.api, ChannelType.internal],
+                    skills=["platform", "api", "incident"],
+                ),
+                "group-ng-account-ops": SupportGroup(
+                    id="group-ng-account-ops",
+                    market_id="market-ng",
+                    name="Account Operations",
+                    description="Handles account access, customer profile, and service recovery operations.",
+                    team_email="account-ops@omniticket.example.com",
+                    channels=[ChannelType.email, ChannelType.portal, ChannelType.voice],
+                    skills=["accounts", "identity", "operations"],
+                ),
+                "group-ng-compliance": SupportGroup(
+                    id="group-ng-compliance",
+                    market_id="market-ng",
+                    name="Compliance",
+                    description="Reviews sensitive customer, audit, retention, and policy-sensitive cases.",
+                    team_email="compliance@omniticket.example.com",
+                    channels=[ChannelType.email, ChannelType.internal],
+                    skills=["compliance", "audit", "policy"],
+                ),
+                "group-gh-care": SupportGroup(
+                    id="group-gh-care",
+                    market_id="market-gh",
+                    name="Ghana Care",
+                    description="Owns Ghana market customer care and local channel coverage.",
+                    team_email="ghana-care@omniticket.example.com",
+                    channels=[ChannelType.whatsapp, ChannelType.email, ChannelType.facebook],
+                    skills=["ghana", "local market", "customer care"],
+                ),
+                "group-uk-care": SupportGroup(
+                    id="group-uk-care",
+                    market_id="market-uk",
+                    name="UK Care",
+                    description="Owns UK support mailbox and regional customer operations.",
+                    team_email="uk-care@omniticket.example.com",
+                    channels=[ChannelType.email, ChannelType.portal],
+                    skills=["uk", "regional support"],
+                ),
+            }
+
+            self.sla_policies = {
+                "sla-ng-urgent": SlaPolicy(
+                    id="sla-ng-urgent",
+                    market_id="market-ng",
+                    name="Urgent customer response",
+                    channels=[
+                        ChannelType.email,
+                        ChannelType.whatsapp,
+                        ChannelType.voice,
+                        ChannelType.sms,
+                        ChannelType.instagram,
+                        ChannelType.facebook,
+                        ChannelType.portal,
+                        ChannelType.api,
+                    ],
+                    priority=Priority.urgent,
+                    first_response_minutes=15,
+                    resolution_minutes=240,
+                    business_hours="24x7",
+                    position=10,
+                ),
+                "sla-ng-live-high": SlaPolicy(
+                    id="sla-ng-live-high",
+                    market_id="market-ng",
+                    name="Live channel standard",
+                    channels=[ChannelType.whatsapp, ChannelType.sms, ChannelType.voice],
+                    priority=Priority.high,
+                    first_response_minutes=5,
+                    resolution_minutes=360,
+                    business_hours="24x7",
+                    position=20,
+                ),
+                "sla-ng-standard": SlaPolicy(
+                    id="sla-ng-standard",
+                    market_id="market-ng",
+                    name="Portal and partner systems standard",
+                    channels=[ChannelType.portal, ChannelType.api, ChannelType.email],
+                    priority=Priority.normal,
+                    first_response_minutes=60,
+                    resolution_minutes=1440,
+                    business_hours="Business hours",
+                    position=30,
+                ),
+                "sla-gh-standard": SlaPolicy(
+                    id="sla-gh-standard",
+                    market_id="market-gh",
+                    name="Ghana market standard",
+                    channels=[ChannelType.whatsapp, ChannelType.email, ChannelType.facebook],
+                    priority=Priority.normal,
+                    first_response_minutes=90,
+                    resolution_minutes=1440,
+                    business_hours="Business hours",
+                    position=30,
+                ),
+                "sla-uk-standard": SlaPolicy(
+                    id="sla-uk-standard",
+                    market_id="market-uk",
+                    name="UK support standard",
+                    channels=[ChannelType.email, ChannelType.portal],
+                    priority=Priority.normal,
+                    first_response_minutes=120,
+                    resolution_minutes=1440,
+                    business_hours="Business hours",
+                    position=30,
+                ),
+            }
+
             self.companies = {
                 "company-solace": Company(
                     id="company-solace",
@@ -400,6 +569,82 @@ class InMemoryStore:
                 ),
             }
 
+            self.response_macros = {
+                "macro-payment-recovery": ResponseMacro(
+                    id="macro-payment-recovery",
+                    market_id="market-ng",
+                    name="Duplicate payment recovery reply",
+                    channels=[ChannelType.email, ChannelType.whatsapp, ChannelType.portal],
+                    tags=["billing", "payment-risk", "recovery"],
+                    shortcut="/payment-reversal",
+                    body=(
+                        "Thanks for flagging this. I am checking the transaction reference, "
+                        "payment gateway state, and reversal timeline now. I will keep this "
+                        "ticket open until we confirm the duplicate charge is reversed or explain "
+                        "the next bank-side step."
+                    ),
+                ),
+                "macro-social-complaint": ResponseMacro(
+                    id="macro-social-complaint",
+                    market_id="market-ng",
+                    name="Public social complaint acknowledgement",
+                    channels=[ChannelType.facebook, ChannelType.instagram],
+                    tags=["social", "complaint", "recovery"],
+                    shortcut="/social-ack",
+                    body=(
+                        "Thanks for raising this with us. I am moving the private details into DM "
+                        "so we can protect your information, confirm ownership, and share the next "
+                        "update time without exposing account details publicly."
+                    ),
+                ),
+                "macro-sla-escalation": ResponseMacro(
+                    id="macro-sla-escalation",
+                    market_id="market-ng",
+                    name="SLA escalation ownership update",
+                    channels=[],
+                    tags=["escalation", "sla", "priority"],
+                    shortcut="/next-update",
+                    body=(
+                        "I can see this is time-sensitive. I am escalating it now and will share "
+                        "the owner, current status, and next confirmed update time in this thread."
+                    ),
+                ),
+            }
+
+            self.ticket_fields = {
+                "field-booking-reference": TicketField(
+                    id="field-booking-reference",
+                    market_id="market-ng",
+                    key="booking_reference",
+                    label="Booking reference",
+                    field_type=TicketFieldType.text,
+                    channels=[ChannelType.email, ChannelType.portal, ChannelType.api],
+                    placeholder="PNR or order ID",
+                    help_text="Connects the ticket to itinerary and payment records.",
+                    position=10,
+                ),
+                "field-issue-category": TicketField(
+                    id="field-issue-category",
+                    market_id="market-ng",
+                    key="issue_category",
+                    label="Issue category",
+                    field_type=TicketFieldType.select,
+                    options=["Booking", "Payment", "Refund", "Baggage", "Portal access"],
+                    help_text="Primary operational category for reporting and routing.",
+                    position=20,
+                ),
+                "field-trip-stage": TicketField(
+                    id="field-trip-stage",
+                    market_id="market-ng",
+                    key="trip_stage",
+                    label="Trip stage",
+                    field_type=TicketFieldType.select,
+                    options=["Pre-trip", "In-trip", "Post-trip"],
+                    channels=[ChannelType.email, ChannelType.whatsapp, ChannelType.sms, ChannelType.portal],
+                    position=30,
+                ),
+            }
+
             self.rules = {
                 "rule-social-risk": AutomationRule(
                     id="rule-social-risk",
@@ -421,6 +666,7 @@ class InMemoryStore:
             self.timeline = {}
             self.handoffs = {}
             self.connector_events = {}
+            self.outbound_messages = {}
             self.audit = []
             self.ai_decisions = []
             self._ticket_sequence = 1000

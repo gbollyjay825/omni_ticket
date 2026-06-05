@@ -27,6 +27,8 @@ Build a high-fidelity omnichannel operations support PWA with a production-shape
 - `src/backend.ts`: authenticated API bridge to the independent Python backend.
 - `Dockerfile` and `nginx.conf`: production static container for the SPA.
 
+Backend attachment governance now exposes lifecycle-aware delete/purge, retention readout, admin pruning, storage/scanner readiness, S3-compatible storage configuration, and external HTTP malware scanner configuration through `DELETE /api/v1/tickets/{ticket_id}/attachments/{attachment_id}`, `GET /api/v1/attachments/provider-config`, `GET /api/v1/attachments/retention`, and `POST /api/v1/attachments/retention/prune`. Downloads and signed links only serve active, clean attachments.
+
 ## Data Model
 
 Core entities:
@@ -100,11 +102,11 @@ The independent backend now exposes these routes and keeps them intentionally cl
 - `GET /api/v1/automation-rules`, `PATCH /api/v1/automation-rules/{id}`
 - `GET /api/v1/settings`, `PATCH /api/v1/settings`
 - `GET /api/v1/knowledge`, `PATCH /api/v1/knowledge/{id}`
-- `GET /api/v1/analytics/overview`, `GET /api/v1/work-queue`, `GET /api/v1/tracker`
+- `GET /api/v1/analytics/overview`, `GET /api/v1/work-queue`, `GET /api/v1/audit`, `GET /api/v1/audit/export`, `GET /api/v1/audit/retention`, `POST /api/v1/audit/retention/prune`, `GET /api/v1/tracker`
 
-The current backend uses SQLAlchemy persistence with local PostgreSQL database `omni_ticket` through the backend `.env`; SQLite remains available as a fallback by changing `OMNI_DATABASE_URL`. Public replies now move through a durable outbound-message table before the local-dev provider adapter marks them sent or failed. Live Freshdesk/Freshworks import or sync is still out of scope unless explicitly requested.
+The current backend uses SQLAlchemy persistence with local PostgreSQL database `omni_ticket` through the backend `.env`; SQLite remains available as a fallback by changing `OMNI_DATABASE_URL`. Email intake can poll IMAP when saved market email settings or runtime `OMNI_EMAIL_IMAP_*` fallback values are configured, and public replies now move through a durable outbound-message table before the provider adapter router dispatches them. Email replies can use SMTP from saved market email settings or runtime fallback values. WhatsApp, Facebook Messenger, Instagram DM, SMS, voice, alert delivery, and Anthropic AI credentials can now be saved as write-only Setup credentials, with runtime `OMNI_*` values remaining as fallback configuration. Signed SMS/voice/WhatsApp/Facebook/Instagram webhooks can create inbound tickets and update delivery receipts. Ticket CSAT feedback now persists in the database and feeds analytics summary plus hourly Insights rollups. Live Freshdesk/Freshworks import or sync is still out of scope unless explicitly requested.
 
-Security-sensitive backend paths now emit durable audit records for login success, failed login, rate-limit denial, explicit market selection, missing authentication, invalid sessions, and market-scope denial. These records include request IDs when available so operations admins can correlate audit entries with backend access logs and browser-visible request IDs.
+Security-sensitive backend paths now emit durable audit records for login success, failed login, rate-limit denial, explicit market selection, missing authentication, invalid sessions, and market-scope denial. Audit readers can export filtered CSV/JSON records, admins can run retention pruning, and the worker applies the configured audit retention policy each cycle. These records include request IDs when available so operations admins can correlate audit entries with backend access logs and browser-visible request IDs.
 
 ## Backend Worker Boundary
 
@@ -117,10 +119,12 @@ python -m app.worker --once --market-id market-ng
 The worker can also run continuously with `--interval-seconds`. Its current jobs are market-scoped and audited:
 
 - Process due outbound replies and retry failed sends when `next_attempt_at` is due.
+- Poll configured IMAP inboxes for email ticket intake.
 - Dead-letter outbound replies after max attempts.
 - Refresh SLA risk and breach state without a user opening the Work Queue.
 - Recompute the Work Queue order.
 - Run analytics rollups for operational dashboards.
+- Persist ticket CSAT feedback and include it in quality dashboards.
 
 Production deployment still needs a managed worker/scheduler target, alerting, and provider-specific adapter credentials.
 

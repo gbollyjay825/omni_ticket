@@ -16,6 +16,10 @@ from app.db.mappers import (
     knowledge_article_from_record,
     market_from_record,
     outbound_message_from_record,
+    response_macro_from_record,
+    sla_policy_from_record,
+    support_group_from_record,
+    ticket_field_from_record,
     ticket_from_record,
     timeline_event_from_record,
     user_from_record,
@@ -34,7 +38,11 @@ from app.db.models import (
     KnowledgeArticleRecord,
     MarketRecord,
     OutboundMessageRecord,
+    ResponseMacroRecord,
     SessionRecord,
+    SlaPolicyRecord,
+    SupportGroupRecord,
+    TicketFieldRecord,
     TicketRecord,
     TimelineEventRecord,
     UserRecord,
@@ -51,6 +59,7 @@ def persist_store_state(db: Session, state: InMemoryStore) -> None:
         _merge_record(db, MarketRecord, market.model_dump(mode="json"))
     for user in state.users.values():
         payload = user.model_dump(mode="json")
+        payload.pop("effective_permissions", None)
         existing = db.get(UserRecord, user.id)
         payload["password_hash"] = (
             existing.password_hash if existing and existing.password_hash else hash_password("omni-demo")
@@ -77,6 +86,19 @@ def persist_store_state(db: Session, state: InMemoryStore) -> None:
                 "languages": agent.languages,
             },
         )
+    for group in state.support_groups.values():
+        payload = group.model_dump(mode="json")
+        payload.pop("member_count", None)
+        payload.pop("open_ticket_count", None)
+        payload.pop("sla_risk_count", None)
+        payload.pop("created_at", None)
+        payload.pop("updated_at", None)
+        _merge_record(db, SupportGroupRecord, payload)
+    for policy in state.sla_policies.values():
+        payload = policy.model_dump(mode="json")
+        payload.pop("created_at", None)
+        payload.pop("updated_at", None)
+        _merge_record(db, SlaPolicyRecord, payload)
     for company in state.companies.values():
         _merge_record(db, CompanyRecord, company.model_dump(mode="json"))
     for customer in state.customers.values():
@@ -101,8 +123,19 @@ def persist_store_state(db: Session, state: InMemoryStore) -> None:
         _merge_record(db, HandoffRecord, payload)
     for article in state.knowledge.values():
         payload = article.model_dump(mode="json")
+        payload["submitted_for_review_at"] = article.submitted_for_review_at
+        payload["approved_at"] = article.approved_at
         payload.pop("updated_at", None)
         _merge_record(db, KnowledgeArticleRecord, payload)
+    for macro in state.response_macros.values():
+        payload = macro.model_dump(mode="json")
+        payload["last_used_at"] = macro.last_used_at
+        payload.pop("updated_at", None)
+        _merge_record(db, ResponseMacroRecord, payload)
+    for field in state.ticket_fields.values():
+        payload = field.model_dump(mode="json")
+        payload.pop("updated_at", None)
+        _merge_record(db, TicketFieldRecord, payload)
     for rule in state.rules.values():
         payload = rule.model_dump(mode="json")
         payload["last_fired_at"] = rule.last_fired_at
@@ -153,6 +186,14 @@ def hydrate_store_state(db: Session, state: InMemoryStore) -> None:
     state.agents = {
         agent.id: agent_from_record(agent) for agent in db.scalars(select(AgentRecord)).all()
     }
+    state.support_groups = {
+        group.id: support_group_from_record(group)
+        for group in db.scalars(select(SupportGroupRecord)).all()
+    }
+    state.sla_policies = {
+        policy.id: sla_policy_from_record(policy)
+        for policy in db.scalars(select(SlaPolicyRecord)).all()
+    }
     state.companies = {
         company.id: company_from_record(company) for company in db.scalars(select(CompanyRecord)).all()
     }
@@ -176,6 +217,14 @@ def hydrate_store_state(db: Session, state: InMemoryStore) -> None:
     state.knowledge = {
         article.id: knowledge_article_from_record(article)
         for article in db.scalars(select(KnowledgeArticleRecord)).all()
+    }
+    state.response_macros = {
+        macro.id: response_macro_from_record(macro)
+        for macro in db.scalars(select(ResponseMacroRecord)).all()
+    }
+    state.ticket_fields = {
+        field.id: ticket_field_from_record(field)
+        for field in db.scalars(select(TicketFieldRecord)).all()
     }
     state.rules = {
         rule.id: automation_rule_from_record(rule)

@@ -32,6 +32,7 @@ export type ArticleStatus = 'draft' | 'review' | 'published'
 export type RuleStatus = 'active' | 'paused' | 'failing'
 export type TrackerStatus = 'done' | 'in-progress' | 'pending' | 'blocked'
 export type HandoffStatus = 'requested' | 'accepted' | 'in-progress' | 'blocked' | 'completed'
+export type TicketFieldType = 'text' | 'textarea' | 'select' | 'multiselect' | 'checkbox' | 'number' | 'date'
 
 export interface Channel {
   id: ChannelId
@@ -76,6 +77,45 @@ export interface CopilotRecommendation {
   escalation: string
   recommendedAction: string
   confidence: number
+  knowledgeReasons?: string[]
+  responseMacros?: ResponseMacroSuggestion[]
+  duplicateSuggestions?: DuplicateTicketSuggestion[]
+}
+
+export interface ResponseMacro {
+  id: string
+  name: string
+  body: string
+  language: string
+  channels: ChannelId[]
+  tags: string[]
+  shortcut?: string
+  active: boolean
+  usageCount: number
+  lastUsedAt?: string
+  updatedAt: string
+}
+
+export interface ResponseMacroSuggestion {
+  macro: ResponseMacro
+  score: number
+  reasons: string[]
+  matchedTerms: string[]
+}
+
+export interface DuplicateTicketSuggestion {
+  ticketId: string
+  ticketNumber: string
+  subject: string
+  status: ConversationStatus
+  priority: Priority
+  channelId: ChannelId
+  customerName: string
+  customerEmail: string
+  score: number
+  reasons: string[]
+  matchedTerms: string[]
+  updatedAt: string
 }
 
 export interface OmniConversation {
@@ -99,9 +139,40 @@ export interface OmniConversation {
   language: string
   unread: boolean
   tags: string[]
+  customFields: Record<string, unknown>
   tasks: Task[]
   timeline: TimelineEvent[]
   copilot: CopilotRecommendation
+}
+
+export interface TicketField {
+  id: string
+  key: string
+  label: string
+  fieldType: TicketFieldType
+  required: boolean
+  active: boolean
+  system: boolean
+  options: string[]
+  channels: ChannelId[]
+  placeholder: string
+  helpText: string
+  position: number
+  updatedAt: string
+}
+
+export interface SupportGroup {
+  id: string
+  name: string
+  description: string
+  teamEmail?: string | null
+  active: boolean
+  channels: ChannelId[]
+  skills: string[]
+  memberCount: number
+  openTicketCount: number
+  slaRiskCount: number
+  updatedAt: string
 }
 
 export interface ContactMethod {
@@ -172,11 +243,14 @@ export interface AutomationRule {
 export interface SlaPolicy {
   id: string
   name: string
+  active: boolean
   channels: ChannelId[]
   priority: Priority
   firstResponseMinutes: number
   resolutionMinutes: number
   businessHours: string
+  position: number
+  updatedAt: string
 }
 
 export interface OutboxItem {
@@ -192,6 +266,7 @@ export interface OutboxItem {
 export interface HandoffRecord {
   id: string
   conversationId: string
+  linkedConversationId?: string
   ticketNumber: string
   customerId: string
   sourceTeam: string
@@ -267,7 +342,10 @@ export interface OmniState {
   conversations: OmniConversation[]
   customers: CustomerProfile[]
   agents: AgentProfile[]
+  supportGroups: SupportGroup[]
   articles: KnowledgeArticle[]
+  ticketFields: TicketField[]
+  responseMacros: ResponseMacro[]
   rules: AutomationRule[]
   slaPolicies: SlaPolicy[]
   handoffs: HandoffRecord[]
@@ -289,6 +367,7 @@ export type ScreenId =
   | 'analytics'
   | 'workforce'
   | 'admin'
+  | 'portal'
   | 'tracker'
 
 export interface ComposerInput {
@@ -310,4 +389,5 @@ export interface NewTicketInput {
   priority: Priority
   group: string
   assigneeId: string
+  customFields?: Record<string, unknown>
 }

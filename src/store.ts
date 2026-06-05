@@ -7,6 +7,7 @@ import type {
   ComposerInput,
   ConversationStatus,
   CustomerProfile,
+  DuplicateTicketSuggestion,
   HandoffStatus,
   InboxFilters,
   KnowledgeArticle,
@@ -14,10 +15,15 @@ import type {
   OmniConversation,
   OmniState,
   Priority,
+  ResponseMacro,
+  ResponseMacroSuggestion,
   RuleStatus,
   ScreenId,
   Sentiment,
+  SlaPolicy,
   SlaState,
+  SupportGroup,
+  TicketField,
   TimelineEvent,
   TimelineType,
   WorkspaceSettings,
@@ -25,37 +31,65 @@ import type {
 import {
   type BackendAgent,
   changeBackendPassword,
+  completeOidcLoginBackend,
+  confirmBackendMfa,
   createBackendAttachment,
+  createBackendSlaPolicy,
+  createBackendSupportGroup,
+  createBackendTicketField,
   createBackendUser,
   createBackendHandoff,
   createBackendTicket,
+  disableBackendMfa,
+  enrollBackendMfa,
   type BackendAutomationRule,
   type BackendChannel,
   type BackendCompany,
+  type BackendCreateSlaPolicyInput,
+  type BackendCreateSupportGroupInput,
   type BackendCreateUserInput,
   type BackendCustomer,
+  type BackendDuplicateTicketSuggestion,
   type BackendHandoff,
   type BackendKnowledgeArticle,
+  type BackendCreateTicketFieldInput,
   fetchBackendSnapshot,
+  fetchOidcProviderConfig,
   getBackendBaseUrl,
   loginBackend,
   patchBackendAutomationRule,
   patchBackendChannel,
   patchBackendHandoff,
   patchBackendKnowledgeArticle,
+  patchBackendOperationalAlert,
   patchBackendSettings,
+  patchBackendSlaPolicy,
+  patchBackendSupportGroup,
   patchBackendTicket,
+  patchBackendTicketField,
   patchBackendUser,
   type BackendLoginInput,
+  type BackendMfaEnrollment,
+  type BackendOidcCallbackInput,
+  type BackendOperationalAlertStatus,
+  type BackendResponseMacro,
+  type BackendResponseMacroSuggestion,
   type BackendSession,
+  type BackendSlaPolicy,
   type BackendSyncState,
+  type BackendUpdateSlaPolicyInput,
+  type BackendUpdateSupportGroupInput,
   type BackendUpdateUserInput,
+  type BackendUpdateTicketFieldInput,
   type BackendTicket,
+  type BackendTicketField,
   type BackendTicketContext,
   type BackendTimelineEvent,
   type BackendSnapshot,
   postBackendReply,
+  recordBackendResponseMacroUse,
   retryBackendOutboundMessage,
+  startOidcLoginBackend,
   uploadBackendAttachment,
 } from './backend'
 import { initialOmniState } from './seed'
@@ -68,7 +102,7 @@ interface TicketDeskDb extends DBSchema {
 }
 
 const dbName = 'omni-ticket'
-const stateKey = 'state-v17'
+const stateKey = 'state-v20'
 const backendSessionKey = 'omni-ticket-backend-session'
 const screenIds: ScreenId[] = [
   'command',
@@ -81,6 +115,7 @@ const screenIds: ScreenId[] = [
   'analytics',
   'workforce',
   'admin',
+  'portal',
   'tracker',
 ]
 const channelIds: (ChannelId | 'all')[] = [
@@ -147,6 +182,31 @@ function updateRoute(updates: RouteUpdate) {
   }
 }
 
+function sessionFromSnapshot(session: BackendSession, snapshot: BackendSnapshot): BackendSession {
+  return {
+    ...session,
+    user: snapshot.session.user,
+    market: snapshot.session.market,
+  }
+}
+
+function sessionChanged(current: BackendSession, next: BackendSession) {
+  return (
+    current.market.id !== next.market.id ||
+    JSON.stringify(current.user) !== JSON.stringify(next.user)
+  )
+}
+
+function isBackendAuthError(error: unknown) {
+  if (!(error instanceof Error)) return false
+  return (
+    error.message.startsWith('401') ||
+    error.message === 'Session expired' ||
+    error.message === 'Invalid session' ||
+    error.message === 'Authentication required'
+  )
+}
+
 async function getDb() {
   return openDB<TicketDeskDb>(dbName, 1, {
     upgrade(db) {
@@ -171,6 +231,10 @@ function mergeReferenceData(state: OmniState): OmniState {
   return {
     ...state,
     settings: state.settings ?? initialOmniState.settings,
+    ticketFields: state.ticketFields ?? initialOmniState.ticketFields,
+    supportGroups: state.supportGroups ?? initialOmniState.supportGroups,
+    slaPolicies: state.slaPolicies ?? initialOmniState.slaPolicies,
+    responseMacros: state.responseMacros ?? initialOmniState.responseMacros,
     epics: initialOmniState.epics,
     backlog: initialOmniState.backlog,
     issues: initialOmniState.issues,
@@ -329,6 +393,55 @@ function mapChannel(channel: BackendChannel): Channel {
   }
 }
 
+function mapTicketField(field: BackendTicketField): TicketField {
+  return {
+    id: field.id,
+    key: field.key,
+    label: field.label,
+    fieldType: field.field_type,
+    required: field.required,
+    active: field.active,
+    system: field.system,
+    options: field.options,
+    channels: field.channels.map(normalizeChannelId),
+    placeholder: field.placeholder,
+    helpText: field.help_text,
+    position: field.position,
+    updatedAt: field.updated_at,
+  }
+}
+
+function mapSupportGroup(group: BackendSnapshot['supportGroups'][number]): SupportGroup {
+  return {
+    id: group.id,
+    name: group.name,
+    description: group.description,
+    teamEmail: group.team_email,
+    active: group.active,
+    channels: group.channels.map(normalizeChannelId),
+    skills: group.skills,
+    memberCount: group.member_count,
+    openTicketCount: group.open_ticket_count,
+    slaRiskCount: group.sla_risk_count,
+    updatedAt: group.updated_at,
+  }
+}
+
+function mapSlaPolicy(policy: BackendSlaPolicy): SlaPolicy {
+  return {
+    id: policy.id,
+    name: policy.name,
+    active: policy.active,
+    channels: policy.channels.map(normalizeChannelId),
+    priority: mapPriority(policy.priority),
+    firstResponseMinutes: policy.first_response_minutes,
+    resolutionMinutes: policy.resolution_minutes,
+    businessHours: policy.business_hours,
+    position: policy.position,
+    updatedAt: policy.updated_at,
+  }
+}
+
 function mapAgent(agent: BackendAgent, ticketContexts: BackendTicketContext[]): AgentProfile {
   const assignedTickets = ticketContexts.filter((context) => context.ticket.assignee_id === agent.id)
   return {
@@ -386,6 +499,9 @@ function buildCopilot(context: BackendTicketContext, settings: WorkspaceSettings
   const latestDecision = context.ai_decisions
     .slice()
     .sort((a, b) => b.created_at.localeCompare(a.created_at))[0]
+  const topKnowledgeSuggestion = context.knowledge_suggestions?.[0]
+  const macroSuggestions = context.macro_suggestions?.map(mapResponseMacroSuggestion) ?? []
+  const topMacroSuggestion = macroSuggestions[0]
   return {
     summary: context.ticket.ai_summary || latestDecision?.summary || 'Backend snapshot is ready for review.',
     intent: context.ticket.tags[0] ?? 'Operational support',
@@ -398,11 +514,14 @@ function buildCopilot(context: BackendTicketContext, settings: WorkspaceSettings
           ? 'Backend SLA state is at risk and should be handled next.'
           : 'Backend SLA state is on track.',
     suggestedReply:
+      topMacroSuggestion?.macro.body ||
       context.ticket.recommended_action ||
       'Acknowledge the customer, confirm ownership, and set the next update time.',
-    suggestedArticle: context.company?.name
-      ? `Resolution guidance for ${context.company.name}`
-      : 'Customer response checklist',
+    suggestedArticle:
+      topKnowledgeSuggestion?.article.title ??
+      (context.company?.name
+        ? `Resolution guidance for ${context.company.name}`
+        : 'Customer response checklist'),
     escalation:
       settings.aiWorkQueueAutomationEnabled && latestDecision
         ? `AI queue decision ${latestDecision.decision_type} is active.`
@@ -410,7 +529,12 @@ function buildCopilot(context: BackendTicketContext, settings: WorkspaceSettings
     recommendedAction:
       context.ticket.recommended_action ||
       'Review the backend ticket context and confirm the next action.',
-    confidence: Math.round((latestDecision?.confidence ?? 0.72) * 100),
+    confidence:
+      Math.max(topKnowledgeSuggestion?.score ?? 0, topMacroSuggestion?.score ?? 0) ||
+      Math.round((latestDecision?.confidence ?? 0.72) * 100),
+    knowledgeReasons: topKnowledgeSuggestion?.reasons ?? [],
+    responseMacros: macroSuggestions,
+    duplicateSuggestions: context.duplicate_suggestions?.map(mapDuplicateTicketSuggestion) ?? [],
   }
 }
 
@@ -457,6 +581,7 @@ function mapConversation(
     language: 'English',
     unread: latestTimeline?.authorRole === 'customer',
     tags: context.ticket.tags,
+    customFields: context.ticket.custom_fields ?? {},
     tasks:
       context.ticket.tasks.length > 0
         ? context.ticket.tasks.map((task) => ({
@@ -481,9 +606,13 @@ function mapHandoff(
   conversationsById: Map<string, OmniConversation>,
 ): OmniState['handoffs'][number] {
   const conversation = conversationsById.get(handoff.ticket_id)
+  const linkedConversation = handoff.linked_ticket_id
+    ? conversationsById.get(handoff.linked_ticket_id)
+    : undefined
   return {
     id: handoff.id,
     conversationId: handoff.ticket_id,
+    linkedConversationId: linkedConversation?.id ?? handoff.linked_ticket_id ?? undefined,
     ticketNumber: conversation?.ticketNumber ?? handoff.ticket_id,
     customerId: conversation?.customerId ?? '',
     sourceTeam: handoff.from_team,
@@ -530,6 +659,50 @@ function mapKnowledgeArticle(article: BackendKnowledgeArticle): KnowledgeArticle
   }
 }
 
+function mapResponseMacro(macro: BackendResponseMacro): ResponseMacro {
+  return {
+    id: macro.id,
+    name: macro.name,
+    body: macro.body,
+    language: macro.language,
+    channels: macro.channels.map(normalizeChannelId),
+    tags: macro.tags,
+    shortcut: macro.shortcut ?? undefined,
+    active: macro.active,
+    usageCount: macro.usage_count,
+    lastUsedAt: macro.last_used_at ?? undefined,
+    updatedAt: macro.updated_at,
+  }
+}
+
+function mapResponseMacroSuggestion(suggestion: BackendResponseMacroSuggestion): ResponseMacroSuggestion {
+  return {
+    macro: mapResponseMacro(suggestion.macro),
+    score: suggestion.score,
+    reasons: suggestion.reasons,
+    matchedTerms: suggestion.matched_terms,
+  }
+}
+
+function mapDuplicateTicketSuggestion(
+  suggestion: BackendDuplicateTicketSuggestion,
+): DuplicateTicketSuggestion {
+  return {
+    ticketId: suggestion.ticket.id,
+    ticketNumber: suggestion.ticket.public_id,
+    subject: suggestion.ticket.subject,
+    status: mapStatus(suggestion.ticket.status),
+    priority: mapPriority(suggestion.ticket.priority),
+    channelId: normalizeChannelId(suggestion.ticket.channel),
+    customerName: suggestion.customer?.name ?? 'Unknown customer',
+    customerEmail: suggestion.customer?.email ?? '',
+    score: suggestion.score,
+    reasons: suggestion.reasons,
+    matchedTerms: suggestion.matched_terms,
+    updatedAt: suggestion.ticket.updated_at,
+  }
+}
+
 function mapRule(rule: BackendAutomationRule): OmniState['rules'][number] {
   const status: RuleStatus = rule.enabled ? 'active' : 'paused'
   return {
@@ -558,6 +731,8 @@ function mergeBackendSnapshot(current: OmniState, snapshot: BackendSnapshot): Om
   const customers = snapshot.customers.map((customer) => mapCustomer(customer, companiesById, snapshot.tickets))
   const agents = snapshot.agents.map((agent) => mapAgent(agent, snapshot.tickets))
   const handoffs = snapshot.handoffs.map((handoff) => mapHandoff(handoff, conversationsById))
+  const supportGroups = (snapshot.support_groups ?? snapshot.supportGroups ?? []).map(mapSupportGroup)
+  const slaPolicies = (snapshot.sla_policies ?? snapshot.slaPolicies ?? []).map(mapSlaPolicy)
   const selectedConversationId =
     conversations.find((conversation) => conversation.id === current.selectedConversationId)?.id ??
     conversations[0]?.id ??
@@ -589,7 +764,11 @@ function mergeBackendSnapshot(current: OmniState, snapshot: BackendSnapshot): Om
     conversations,
     customers,
     agents,
+    supportGroups,
+    slaPolicies,
     articles: snapshot.knowledge.map(mapKnowledgeArticle),
+    ticketFields: (snapshot.ticket_fields ?? snapshot.ticketFields ?? []).map(mapTicketField),
+    responseMacros: snapshot.macros.map(mapResponseMacro),
     rules: snapshot.rules.map(mapRule),
     handoffs,
     selectedConversationId,
@@ -693,6 +872,14 @@ function filterConversation(conversation: OmniConversation, filters: InboxFilter
   )
 }
 
+async function fetchOptionalOidcProviderConfig() {
+  try {
+    return await fetchOidcProviderConfig()
+  } catch {
+    return undefined
+  }
+}
+
 export function useOmniStore() {
   const [state, setState] = useState<OmniState>(initialOmniState)
   const [backendSession, setBackendSession] = useState<BackendSession | null>(() => {
@@ -756,6 +943,24 @@ export function useOmniStore() {
   }, [])
 
   useEffect(() => {
+    if (!online) return
+    let cancelled = false
+    fetchOidcProviderConfig()
+      .then((config) => {
+        if (cancelled) return
+        setBackendSync((current) => ({
+          ...current,
+          oidcProviderConfig: config,
+        }))
+      })
+      .catch(() => undefined)
+
+    return () => {
+      cancelled = true
+    }
+  }, [online])
+
+  useEffect(() => {
     const onPopState = () => {
       patchState((current) => routeStateFromUrl(current))
     }
@@ -783,6 +988,25 @@ export function useOmniStore() {
     }
   }
 
+  async function applyBackendSession(session: BackendSession) {
+    saveBackendSession(session)
+    const [snapshot, oidcProviderConfig] = await Promise.all([
+      fetchBackendSnapshot(session),
+      fetchOptionalOidcProviderConfig(),
+    ])
+    const nextSession = sessionFromSnapshot(session, snapshot)
+    if (sessionChanged(session, nextSession)) saveBackendSession(nextSession)
+    patchState((current) => mergeBackendSnapshot(current, snapshot))
+    setBackendSync((current) => ({
+      ...current,
+      status: 'connected',
+      baseUrl: getBackendBaseUrl(),
+      lastSyncAt: new Date().toISOString(),
+      snapshot,
+      oidcProviderConfig: oidcProviderConfig ?? current.oidcProviderConfig,
+    }))
+  }
+
   async function login(input: BackendLoginInput) {
     setBackendSync((current) => ({
       ...current,
@@ -791,15 +1015,7 @@ export function useOmniStore() {
     }))
     try {
       const session = await loginBackend(input)
-      saveBackendSession(session)
-      const snapshot = await fetchBackendSnapshot(session)
-      patchState((current) => mergeBackendSnapshot(current, snapshot))
-      setBackendSync({
-        status: 'connected',
-        baseUrl: getBackendBaseUrl(),
-        lastSyncAt: new Date().toISOString(),
-        snapshot,
-      })
+      await applyBackendSession(session)
     } catch (error) {
       saveBackendSession(null)
       setBackendSync((current) => ({
@@ -807,6 +1023,51 @@ export function useOmniStore() {
         status: 'error',
         error: error instanceof Error ? error.message : 'Login failed',
       }))
+    }
+  }
+
+  async function beginOidcLogin(marketId: string) {
+    setBackendSync((current) => ({
+      ...current,
+      status: 'syncing',
+      error: undefined,
+    }))
+    try {
+      const returnTo =
+        typeof window === 'undefined'
+          ? undefined
+          : `${window.location.origin}${window.location.pathname}`
+      const start = await startOidcLoginBackend({ market_id: marketId, return_to: returnTo })
+      window.location.assign(start.authorization_url)
+      return true
+    } catch (error) {
+      setBackendSync((current) => ({
+        ...current,
+        status: 'error',
+        error: error instanceof Error ? error.message : 'SSO login failed',
+      }))
+      return false
+    }
+  }
+
+  async function completeOidcLogin(input: BackendOidcCallbackInput) {
+    setBackendSync((current) => ({
+      ...current,
+      status: 'syncing',
+      error: undefined,
+    }))
+    try {
+      const session = await completeOidcLoginBackend(input)
+      await applyBackendSession(session)
+      return true
+    } catch (error) {
+      saveBackendSession(null)
+      setBackendSync((current) => ({
+        ...current,
+        status: 'error',
+        error: error instanceof Error ? error.message : 'SSO login failed',
+      }))
+      return false
     }
   }
 
@@ -820,11 +1081,30 @@ export function useOmniStore() {
 
   async function switchMarket(marketId: string) {
     if (!backendSession) return
-    await login({
-      email: backendSession.user.email,
-      password: 'omni-demo',
-      market_id: marketId,
-    })
+    const market = backendSession.available_markets.find((item) => item.id === marketId)
+    if (!market) {
+      setBackendSync((current) => ({
+        ...current,
+        status: 'error',
+        error: 'You do not have access to that market.',
+      }))
+      return
+    }
+    const nextSession = { ...backendSession, market }
+    setBackendSync((current) => ({
+      ...current,
+      status: 'syncing',
+      error: undefined,
+    }))
+    try {
+      await applyBackendSession(nextSession)
+    } catch (error) {
+      setBackendSync((current) => ({
+        ...current,
+        status: 'error',
+        error: error instanceof Error ? error.message : 'Market switch failed',
+      }))
+    }
   }
 
   async function refreshBackend() {
@@ -852,16 +1132,23 @@ export function useOmniStore() {
     }))
 
     try {
-      const snapshot = await fetchBackendSnapshot(backendSession)
+      const [snapshot, oidcProviderConfig] = await Promise.all([
+        fetchBackendSnapshot(backendSession),
+        fetchOptionalOidcProviderConfig(),
+      ])
+      const nextSession = sessionFromSnapshot(backendSession, snapshot)
+      if (sessionChanged(backendSession, nextSession)) saveBackendSession(nextSession)
       patchState((current) => mergeBackendSnapshot(current, snapshot))
-      setBackendSync({
+      setBackendSync((current) => ({
+        ...current,
         status: 'connected',
         baseUrl: getBackendBaseUrl(),
         lastSyncAt: new Date().toISOString(),
         snapshot,
-      })
+        oidcProviderConfig: oidcProviderConfig ?? current.oidcProviderConfig,
+      }))
     } catch (error) {
-      if (error instanceof Error && error.message.startsWith('401')) {
+      if (isBackendAuthError(error)) {
         saveBackendSession(null)
       }
       setBackendSync((current) => ({
@@ -882,20 +1169,24 @@ export function useOmniStore() {
       error: undefined,
     }))
 
-    fetchBackendSnapshot(backendSession)
-      .then((snapshot) => {
+    Promise.all([fetchBackendSnapshot(backendSession), fetchOptionalOidcProviderConfig()])
+      .then(([snapshot, oidcProviderConfig]) => {
         if (cancelled) return
+        const nextSession = sessionFromSnapshot(backendSession, snapshot)
+        if (sessionChanged(backendSession, nextSession)) saveBackendSession(nextSession)
         patchState((current) => mergeBackendSnapshot(current, snapshot))
-        setBackendSync({
+        setBackendSync((current) => ({
+          ...current,
           status: 'connected',
           baseUrl: getBackendBaseUrl(),
           lastSyncAt: new Date().toISOString(),
           snapshot,
-        })
+          oidcProviderConfig: oidcProviderConfig ?? current.oidcProviderConfig,
+        }))
       })
       .catch((error) => {
         if (cancelled) return
-        if (error instanceof Error && error.message.startsWith('401')) {
+        if (isBackendAuthError(error)) {
           saveBackendSession(null)
         }
         setBackendSync((current) => ({
@@ -1005,7 +1296,7 @@ export function useOmniStore() {
     })
   }
 
-  function syncBackendMutation<T>(
+  async function syncBackendMutation<T>(
     operation: (session: BackendSession) => Promise<T>,
     selection?: (result: T) => {
       screen?: ScreenId
@@ -1014,7 +1305,16 @@ export function useOmniStore() {
       channelId?: ChannelId | 'all'
     },
   ) {
-    if (!online || !backendSession) return false
+    if (!online || !backendSession) {
+      setBackendSync((current) => ({
+        ...current,
+        status: 'error',
+        error: !online
+          ? 'Browser is offline. Backend writes resume when connectivity returns.'
+          : 'Sign in before writing backend data.',
+      }))
+      return false
+    }
     const session = backendSession
 
     setBackendSync((current) => ({
@@ -1023,23 +1323,22 @@ export function useOmniStore() {
       error: undefined,
     }))
 
-    void operation(session)
-      .then(async (result) => {
-        const snapshot = await fetchBackendSnapshot(session)
-        commitBackendSnapshot(snapshot, selection?.(result))
-      })
-      .catch((error) => {
-        if (error instanceof Error && error.message.startsWith('401')) {
-          saveBackendSession(null)
-        }
-        setBackendSync((current) => ({
-          ...current,
-          status: 'error',
-          error: error instanceof Error ? error.message : 'Backend write failed',
-        }))
-      })
-
-    return true
+    try {
+      const result = await operation(session)
+      const snapshot = await fetchBackendSnapshot(session)
+      commitBackendSnapshot(snapshot, selection?.(result))
+      return true
+    } catch (error) {
+      if (isBackendAuthError(error)) {
+        saveBackendSession(null)
+      }
+      setBackendSync((current) => ({
+        ...current,
+        status: 'error',
+        error: error instanceof Error ? error.message : 'Backend write failed',
+      }))
+      return false
+    }
   }
 
   function selectScreen(screen: ScreenId) {
@@ -1100,7 +1399,7 @@ export function useOmniStore() {
     }))
   }
 
-  function submitComposer(input: ComposerInput) {
+  async function submitComposer(input: ComposerInput) {
     const trimmedBody = input.body.trim()
     if (!trimmedBody && !input.attachment) return
 
@@ -1128,7 +1427,7 @@ export function useOmniStore() {
 
     if (input.mode === 'handoff') {
       if (
-        syncBackendMutation(
+        await syncBackendMutation(
           async (session) => {
             await saveAttachment(session)
             return createBackendHandoff(
@@ -1161,7 +1460,7 @@ export function useOmniStore() {
         return
       }
     } else if (
-      syncBackendMutation(
+      await syncBackendMutation(
         async (session) => {
           await saveAttachment(session)
           return postBackendReply(
@@ -1270,9 +1569,9 @@ export function useOmniStore() {
     })
   }
 
-  function createConversation(input: NewTicketInput) {
+  async function createConversation(input: NewTicketInput) {
     if (
-      syncBackendMutation(
+      await syncBackendMutation(
         (session) =>
           createBackendTicket(
             {
@@ -1282,6 +1581,7 @@ export function useOmniStore() {
               channel: backendChannelId(input.channelId),
               priority: backendPriority(input.priority),
               tags: ['new-request'],
+              custom_fields: input.customFields ?? {},
             },
             session,
           ),
@@ -1324,6 +1624,7 @@ export function useOmniStore() {
         language: 'English',
         unread: true,
         tags: aiAutomationEnabled ? ['new-request', 'ai-routed'] : ['new-request'],
+        customFields: input.customFields ?? {},
         tasks: [
           {
             id: uid('task'),
@@ -1396,20 +1697,22 @@ export function useOmniStore() {
     })
   }
 
-  function updateConversation(conversationId: string, patch: Partial<OmniConversation>) {
+  async function updateConversation(conversationId: string, patch: Partial<OmniConversation>) {
     const backendPatch: {
       status?: BackendTicket['status']
       priority?: BackendTicket['priority']
       assignee_id?: string | null
+      custom_fields?: Record<string, unknown>
     } = {}
 
     if (patch.status) backendPatch.status = backendStatus(patch.status)
     if (patch.priority) backendPatch.priority = backendPriority(patch.priority)
     if ('assigneeId' in patch) backendPatch.assignee_id = patch.assigneeId || null
+    if ('customFields' in patch) backendPatch.custom_fields = patch.customFields
 
     if (
       Object.keys(backendPatch).length > 0 &&
-      syncBackendMutation(
+      await syncBackendMutation(
         (session) => patchBackendTicket(conversationId, backendPatch, session),
         () => {
           const conversation = state.conversations.find((item) => item.id === conversationId)
@@ -1491,11 +1794,11 @@ export function useOmniStore() {
     }))
   }
 
-  function toggleChannelIntake(channelId: ChannelId) {
+  async function toggleChannelIntake(channelId: ChannelId) {
     const channel = state.channels.find((item) => item.id === channelId)
     if (
       channel &&
-      syncBackendMutation((session) =>
+      await syncBackendMutation((session) =>
         patchBackendChannel(
           channelId,
           {
@@ -1522,11 +1825,11 @@ export function useOmniStore() {
     }))
   }
 
-  function toggleRule(ruleId: string) {
+  async function toggleRule(ruleId: string) {
     const rule = state.rules.find((item) => item.id === ruleId)
     if (
       rule &&
-      syncBackendMutation((session) =>
+      await syncBackendMutation((session) =>
         patchBackendAutomationRule(
           ruleId,
           {
@@ -1549,9 +1852,9 @@ export function useOmniStore() {
     }))
   }
 
-  function publishArticle(articleId: string) {
+  async function publishArticle(articleId: string) {
     if (
-      syncBackendMutation((session) =>
+      await syncBackendMutation((session) =>
         patchBackendKnowledgeArticle(
           articleId,
           {
@@ -1580,6 +1883,30 @@ export function useOmniStore() {
     return syncBackendMutation((session) => patchBackendUser(userId, patch, session))
   }
 
+  function createSupportGroup(input: BackendCreateSupportGroupInput) {
+    return syncBackendMutation((session) => createBackendSupportGroup(input, session))
+  }
+
+  function updateSupportGroup(groupId: string, patch: BackendUpdateSupportGroupInput) {
+    return syncBackendMutation((session) => patchBackendSupportGroup(groupId, patch, session))
+  }
+
+  function createSlaPolicy(input: BackendCreateSlaPolicyInput) {
+    return syncBackendMutation((session) => createBackendSlaPolicy(input, session))
+  }
+
+  function updateSlaPolicy(policyId: string, patch: BackendUpdateSlaPolicyInput) {
+    return syncBackendMutation((session) => patchBackendSlaPolicy(policyId, patch, session))
+  }
+
+  function createTicketField(input: BackendCreateTicketFieldInput) {
+    return syncBackendMutation((session) => createBackendTicketField(input, session))
+  }
+
+  function updateTicketField(fieldId: string, patch: BackendUpdateTicketFieldInput) {
+    return syncBackendMutation((session) => patchBackendTicketField(fieldId, patch, session))
+  }
+
   function changePassword(currentPassword: string, newPassword: string) {
     return syncBackendMutation((session) =>
       changeBackendPassword(
@@ -1592,16 +1919,114 @@ export function useOmniStore() {
     )
   }
 
+  async function enrollMfa(): Promise<BackendMfaEnrollment | null> {
+    if (!online || !backendSession) return null
+    setBackendSync((current) => ({
+      ...current,
+      status: 'syncing',
+      error: undefined,
+    }))
+    try {
+      const enrollment = await enrollBackendMfa(backendSession)
+      setBackendSync((current) => ({
+        ...current,
+        status: 'connected',
+        lastSyncAt: new Date().toISOString(),
+      }))
+      return enrollment
+    } catch (error) {
+      setBackendSync((current) => ({
+        ...current,
+        status: 'error',
+        error: error instanceof Error ? error.message : 'MFA enrollment failed',
+      }))
+      return null
+    }
+  }
+
+  async function confirmMfa(code: string) {
+    if (!online || !backendSession) return false
+    const session = backendSession
+    setBackendSync((current) => ({
+      ...current,
+      status: 'syncing',
+      error: undefined,
+    }))
+    try {
+      const user = await confirmBackendMfa({ code }, session)
+      const nextSession = { ...session, user }
+      saveBackendSession(nextSession)
+      const snapshot = await fetchBackendSnapshot(nextSession)
+      commitBackendSnapshot(snapshot)
+      return true
+    } catch (error) {
+      setBackendSync((current) => ({
+        ...current,
+        status: 'error',
+        error: error instanceof Error ? error.message : 'MFA confirmation failed',
+      }))
+      return false
+    }
+  }
+
+  async function disableMfa(currentPassword: string, code?: string) {
+    if (!online || !backendSession) return false
+    const session = backendSession
+    setBackendSync((current) => ({
+      ...current,
+      status: 'syncing',
+      error: undefined,
+    }))
+    try {
+      const user = await disableBackendMfa(
+        {
+          current_password: currentPassword,
+          code: code || undefined,
+        },
+        session,
+      )
+      const nextSession = { ...session, user }
+      saveBackendSession(nextSession)
+      const snapshot = await fetchBackendSnapshot(nextSession)
+      commitBackendSnapshot(snapshot)
+      return true
+    } catch (error) {
+      setBackendSync((current) => ({
+        ...current,
+        status: 'error',
+        error: error instanceof Error ? error.message : 'MFA disable failed',
+      }))
+      return false
+    }
+  }
+
   function retryOutboundMessage(messageId: string) {
     return syncBackendMutation((session) => retryBackendOutboundMessage(messageId, session))
   }
 
-  function updateHandoffStatus(handoffId: string, status: HandoffStatus) {
+  function updateOperationalAlertStatus(
+    alertId: string,
+    status: BackendOperationalAlertStatus,
+    note?: string,
+  ) {
+    return syncBackendMutation((session) =>
+      patchBackendOperationalAlert(
+        alertId,
+        {
+          status,
+          note,
+        },
+        session,
+      ),
+    )
+  }
+
+  async function updateHandoffStatus(handoffId: string, status: HandoffStatus) {
     const backendStatusValue =
       status === 'completed' ? 'resolved' : status === 'in-progress' ? 'accepted' : status
 
     if (
-      syncBackendMutation((session) =>
+      await syncBackendMutation((session) =>
         patchBackendHandoff(
           handoffId,
           {
@@ -1650,13 +2075,13 @@ export function useOmniStore() {
     })
   }
 
-  function toggleHandoffChecklist(handoffId: string, taskId: string) {
+  async function toggleHandoffChecklist(handoffId: string, taskId: string) {
     const handoff = state.handoffs.find((item) => item.id === handoffId)
     const task = handoff?.checklist.find((item) => item.id === taskId)
     if (
       handoff &&
       task &&
-      syncBackendMutation((session) =>
+      await syncBackendMutation((session) =>
         patchBackendHandoff(
           handoffId,
           {
@@ -1684,6 +2109,10 @@ export function useOmniStore() {
           : handoff,
       ),
     }))
+  }
+
+  function recordResponseMacroUse(macroId: string, ticketId: string) {
+    return syncBackendMutation((session) => recordBackendResponseMacroUse(macroId, ticketId, session))
   }
 
   function resetDemo() {
@@ -1714,14 +2143,27 @@ export function useOmniStore() {
     publishArticle,
     createUser,
     updateUser,
+    createSupportGroup,
+    updateSupportGroup,
+    createSlaPolicy,
+    updateSlaPolicy,
+    createTicketField,
+    updateTicketField,
     changePassword,
+    enrollMfa,
+    confirmMfa,
+    disableMfa,
     retryOutboundMessage,
+    updateOperationalAlertStatus,
     updateSettings,
     updateHandoffStatus,
     toggleHandoffChecklist,
+    recordResponseMacroUse,
     resetDemo,
     backendSession,
     login,
+    beginOidcLogin,
+    completeOidcLogin,
     logout,
     switchMarket,
     backendSync,

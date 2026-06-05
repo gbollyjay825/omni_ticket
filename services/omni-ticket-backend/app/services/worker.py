@@ -8,7 +8,10 @@ from uuid import uuid4
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.store import InMemoryStore
+from app.db.audit import audit_retention_policy, prune_audit_events
+from app.db.alerts import operational_alert_repository
 from app.db.mappers import audit_event_from_record, ticket_from_record
 from app.db.models import (
     AuditEventRecord,
@@ -18,7 +21,12 @@ from app.db.models import (
 )
 from app.db.operations import OPEN_STATUSES, operations_repository
 from app.db.outbound import outbound_repository
-from app.models.domain import OutboundMessageStatus, utc_now
+from app.db.ticketing import ticket_repository
+from app.models.domain import OperationalAlertSeverity, OutboundMessageStatus, utc_now
+from app.services.alert_delivery import AlertWebhookTransport, alert_delivery_service
+from app.services.attachments import attachment_storage
+from app.services.escalation import escalation_service
+from app.services.inbound_adapters import inbound_adapter_router
 from app.services.sla import sla_service
 
 
@@ -92,6 +100,58 @@ class BackgroundWorkerService:
             )
         )
 
+    def sync_inbound_email(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        market_id: str,
+        *,
+        limit: int,
+        actor: str = WORKER_ACTOR,
+    ) -> WorkerJobResult:
+        sync_result = inbound_adapter_router.sync_email(
+            db,
+            state,
+            market_id,
+            limit=limit,
+        )
+        details = sync_result.to_details()
+        result = WorkerJobResult(
+            name="email_inbound_sync",
+            market_id=market_id,
+            processed=sync_result.processed,
+            succeeded=sync_result.succeeded + sync_result.deduplicated,
+            failed=sync_result.failed,
+            details=details,
+        )
+        if sync_result.failed:
+            operational_alert_repository.upsert_alert(
+                db,
+                market_id=market_id,
+                severity=OperationalAlertSeverity.warning,
+                source="email_inbound_worker",
+                entity_type="market",
+                entity_id=market_id,
+                dedupe_key=f"email-inbound:{market_id}:sync-failure",
+                title="Email inbound sync failed",
+                message="The email intake worker could not complete mailbox polling.",
+                details=details,
+                actor=actor,
+            )
+        if sync_result.processed or sync_result.failed:
+            _audit_worker(
+                db,
+                state,
+                action="worker.email_inbound_sync",
+                entity_type="market",
+                entity_id=market_id,
+                market_id=market_id,
+                details=details,
+                actor=actor,
+            )
+        db.commit()
+        return result
+
     def process_due_outbound(
         self,
         db: Session,
@@ -145,8 +205,54 @@ class BackgroundWorkerService:
                     result.succeeded += 1
                 elif message.status == OutboundMessageStatus.dead_lettered:
                     result.dead_lettered += 1
+                    operational_alert_repository.upsert_alert(
+                        db,
+                        market_id=market_id,
+                        severity=OperationalAlertSeverity.critical,
+                        source="outbound_worker",
+                        entity_type="outbound_message",
+                        entity_id=message.id,
+                        dedupe_key=f"outbound:{message.id}:dead_lettered",
+                        title=f"{message.provider.value.title()} reply is dead-lettered",
+                        message=(
+                            "A customer-facing outbound message exhausted retries and needs "
+                            "connector or operator intervention."
+                        ),
+                        details={
+                            "ticket_id": message.ticket_id,
+                            "provider": message.provider.value,
+                            "attempts": message.attempts,
+                            "max_attempts": message.max_attempts,
+                            "last_error": message.last_error,
+                        },
+                        actor=actor,
+                    )
                 else:
                     result.failed += 1
+                    operational_alert_repository.upsert_alert(
+                        db,
+                        market_id=market_id,
+                        severity=OperationalAlertSeverity.warning,
+                        source="outbound_worker",
+                        entity_type="outbound_message",
+                        entity_id=message.id,
+                        dedupe_key=f"outbound:{message.id}:delivery_failure",
+                        title=f"{message.provider.value.title()} reply delivery failed",
+                        message="An outbound message failed and is queued for retry.",
+                        details={
+                            "ticket_id": message.ticket_id,
+                            "provider": message.provider.value,
+                            "attempts": message.attempts,
+                            "max_attempts": message.max_attempts,
+                            "next_attempt_at": (
+                                message.next_attempt_at.isoformat()
+                                if message.next_attempt_at
+                                else None
+                            ),
+                            "last_error": message.last_error,
+                        },
+                        actor=actor,
+                    )
                 db.commit()
             except Exception as exc:  # pragma: no cover - defensive isolation for production workers
                 db.rollback()
@@ -158,6 +264,19 @@ class BackgroundWorkerService:
                     entity_type="outbound_message",
                     entity_id=message_id,
                     market_id=market_id,
+                    details={"error": str(exc)},
+                    actor=actor,
+                )
+                operational_alert_repository.upsert_alert(
+                    db,
+                    market_id=market_id,
+                    severity=OperationalAlertSeverity.critical,
+                    source="outbound_worker",
+                    entity_type="outbound_message",
+                    entity_id=message_id,
+                    dedupe_key=f"outbound:{message_id}:worker_exception",
+                    title="Outbound worker exception",
+                    message="The outbound worker hit an exception while processing a message.",
                     details={"error": str(exc)},
                     actor=actor,
                 )
@@ -206,6 +325,7 @@ class BackgroundWorkerService:
             processed=len(records),
         )
         changed_ticket_ids: list[str] = []
+        notified_ticket_ids: list[str] = []
         for record in records:
             previous_risk = record.sla.get("risk")
             previous_breached = bool(record.sla.get("breached"))
@@ -228,8 +348,63 @@ class BackgroundWorkerService:
                     },
                     actor=actor,
                 )
-        result.succeeded = len(changed_ticket_ids)
-        result.details = {"changed_ticket_ids": changed_ticket_ids}
+            notification = escalation_service.notification_payload(db, ticket, state=state)
+            if notification and not escalation_service.already_notified(
+                db,
+                ticket.id,
+                market_id=market_id,
+                risk=ticket.sla.risk,
+            ):
+                message = escalation_service.notification_message(ticket, notification)
+                escalation_service.append_notification_timeline(
+                    db,
+                    state,
+                    record,
+                    actor=actor,
+                    body=message,
+                    metadata=notification,
+                )
+                ticket.updated_at = record.updated_at
+                state.tickets[ticket.id] = ticket
+                notified_ticket_ids.append(ticket.id)
+                _audit_worker(
+                    db,
+                    state,
+                    action="worker.supervisor_notification",
+                    entity_type="ticket",
+                    entity_id=ticket.id,
+                    market_id=market_id,
+                    details=notification | {"message": message},
+                    actor=actor,
+                )
+                operational_alert_repository.upsert_alert(
+                    db,
+                    market_id=market_id,
+                    severity=(
+                        OperationalAlertSeverity.critical
+                        if ticket.sla.breached
+                        else OperationalAlertSeverity.warning
+                    ),
+                    source="sla_worker",
+                    entity_type="ticket",
+                    entity_id=ticket.id,
+                    dedupe_key=f"sla:{ticket.id}:{ticket.sla.risk}",
+                    title=f"Ticket {ticket.public_id} needs supervisor attention",
+                    message=message,
+                    details=notification
+                    | {
+                        "ticket_id": ticket.id,
+                        "public_id": ticket.public_id,
+                        "sla_risk": ticket.sla.risk,
+                        "breached": ticket.sla.breached,
+                    },
+                    actor=actor,
+                )
+        result.succeeded = len(changed_ticket_ids) + len(notified_ticket_ids)
+        result.details = {
+            "changed_ticket_ids": changed_ticket_ids,
+            "notified_ticket_ids": notified_ticket_ids,
+        }
         db.commit()
         return result
 
@@ -275,7 +450,16 @@ class BackgroundWorkerService:
         actor: str = WORKER_ACTOR,
     ) -> WorkerJobResult:
         snapshot = operations_repository.analytics_summary(db, state, market_id)
-        details = snapshot.model_dump(mode="json")
+        rollup = operations_repository.record_analytics_rollup(
+            db,
+            market_id=market_id,
+            snapshot=snapshot,
+        )
+        details = snapshot.model_dump(mode="json") | {
+            "rollup_id": rollup.id,
+            "period_start": rollup.period_start.isoformat(),
+            "period_end": rollup.period_end.isoformat(),
+        }
         result = WorkerJobResult(
             name="analytics_rollup",
             market_id=market_id,
@@ -296,6 +480,136 @@ class BackgroundWorkerService:
         db.commit()
         return result
 
+    def dispatch_alert_deliveries(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        market_id: str,
+        *,
+        actor: str = WORKER_ACTOR,
+        sender: AlertWebhookTransport | None = None,
+    ) -> WorkerJobResult:
+        details = alert_delivery_service.dispatch_due_webhooks(
+            db,
+            market_id=market_id,
+            actor=actor,
+            sender=sender,
+        )
+        result = WorkerJobResult(
+            name="alert_delivery",
+            market_id=market_id,
+            processed=len(details["delivery_ids"]),
+            succeeded=details["sent"],
+            failed=details["failed"],
+            details=details,
+        )
+        if (
+            details["webhook_configured"]
+            or result.processed
+            or result.succeeded
+            or result.failed
+        ):
+            _audit_worker(
+                db,
+                state,
+                action="worker.alert_delivery",
+                entity_type="market",
+                entity_id=market_id,
+                market_id=market_id,
+                details=details,
+                actor=actor,
+            )
+            db.commit()
+        return result
+
+    def prune_audit_retention(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        market_id: str,
+        *,
+        actor: str = WORKER_ACTOR,
+    ) -> WorkerJobResult:
+        policy = audit_retention_policy(
+            db,
+            market_id=market_id,
+            retention_days=settings.audit_retention_days,
+            export_max_rows=settings.audit_export_max_rows,
+        )
+        deleted_events = prune_audit_events(
+            db,
+            market_id=market_id,
+            retention_days=settings.audit_retention_days,
+            state=state,
+        )
+        details = {
+            "retention_days": policy["retention_days"],
+            "cutoff_at": policy["cutoff_at"].isoformat(),
+            "prunable_events": policy["prunable_events"],
+            "deleted_events": deleted_events,
+        }
+        result = WorkerJobResult(
+            name="audit_retention",
+            market_id=market_id,
+            processed=deleted_events,
+            succeeded=deleted_events,
+            details=details,
+        )
+        if deleted_events:
+            _audit_worker(
+                db,
+                state,
+                action="worker.audit_retention",
+                entity_type="audit",
+                entity_id=market_id,
+                market_id=market_id,
+                details=details,
+                actor=actor,
+            )
+            db.commit()
+        return result
+
+    def prune_attachment_retention(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        market_id: str,
+        *,
+        actor: str = WORKER_ACTOR,
+    ) -> WorkerJobResult:
+        policy = ticket_repository.attachment_retention_policy(
+            db,
+            market_id=market_id,
+            active_retention_days=settings.attachment_retention_days,
+            deleted_retention_days=settings.attachment_deleted_retention_days,
+            prune_limit=settings.attachment_retention_prune_limit,
+        )
+        attachment_ids, audit_event_id = ticket_repository.prune_attachment_retention(
+            db,
+            state,
+            market_id=market_id,
+            active_retention_days=settings.attachment_retention_days,
+            deleted_retention_days=settings.attachment_deleted_retention_days,
+            limit=settings.attachment_retention_prune_limit,
+            actor=actor,
+            storage_delete=attachment_storage.delete,
+        )
+        details = {
+            "purgeable_attachments": policy.purgeable_attachments,
+            "purged_attachments": len(attachment_ids),
+            "attachment_ids": attachment_ids,
+            "active_retention_days": policy.active_retention_days,
+            "deleted_retention_days": policy.deleted_retention_days,
+            "audit_event_id": audit_event_id,
+        }
+        return WorkerJobResult(
+            name="attachment_retention",
+            market_id=market_id,
+            processed=len(attachment_ids),
+            succeeded=len(attachment_ids),
+            details=details,
+        )
+
     def run_once(
         self,
         db: Session,
@@ -309,6 +623,15 @@ class BackgroundWorkerService:
         jobs: list[WorkerJobResult] = []
         for market_id in self.market_ids(db, market_ids):
             jobs.append(
+                self.sync_inbound_email(
+                    db,
+                    state,
+                    market_id,
+                    limit=settings.email_imap_fetch_limit,
+                    actor=actor,
+                )
+            )
+            jobs.append(
                 self.process_due_outbound(
                     db,
                     state,
@@ -320,6 +643,9 @@ class BackgroundWorkerService:
             jobs.append(self.refresh_sla_states(db, state, market_id, actor=actor))
             jobs.append(self.recompute_work_queue(db, state, market_id, actor=actor))
             jobs.append(self.rollup_analytics(db, state, market_id, actor=actor))
+            jobs.append(self.dispatch_alert_deliveries(db, state, market_id, actor=actor))
+            jobs.append(self.prune_audit_retention(db, state, market_id, actor=actor))
+            jobs.append(self.prune_attachment_retention(db, state, market_id, actor=actor))
         return WorkerRunSummary(
             started_at=started_at.isoformat(),
             finished_at=utc_now().isoformat(),

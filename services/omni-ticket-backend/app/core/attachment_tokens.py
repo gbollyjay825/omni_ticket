@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
+from uuid import uuid4
 
 from app.core.config import settings
 
@@ -16,6 +17,8 @@ class AttachmentTokenPayload:
     ticket_id: str
     attachment_id: str
     expires_at: datetime
+    token_id: str = "legacy"
+    created_by: str = "unknown"
 
 
 def _base36(value: int) -> str:
@@ -57,16 +60,21 @@ def create_attachment_download_token(
     market_id: str,
     ticket_id: str,
     attachment_id: str,
+    created_by: str = "system",
+    ttl_minutes: int | None = None,
 ) -> tuple[str, datetime]:
     expires_at = datetime.now(timezone.utc) + timedelta(
-        minutes=settings.attachment_download_ttl_minutes
+        minutes=ttl_minutes or settings.attachment_download_ttl_minutes
     )
+    token_id = uuid4().hex
     payload = ".".join(
         [
             _b64_encode(market_id),
             _b64_encode(ticket_id),
             _b64_encode(attachment_id),
             _base36(int(expires_at.timestamp())),
+            _b64_encode(token_id),
+            _b64_encode(created_by),
         ]
     )
     return f"{TOKEN_PREFIX}.{payload}.{_signature(payload)}", expires_at
@@ -74,10 +82,35 @@ def create_attachment_download_token(
 
 def parse_attachment_download_token(token: str) -> AttachmentTokenPayload | None:
     parts = token.split(".")
-    if len(parts) != 6 or parts[0] != TOKEN_PREFIX:
+    if parts[0] != TOKEN_PREFIX:
         return None
-    _, market_part, ticket_part, attachment_part, expiry_part, provided_signature = parts
-    payload = ".".join([market_part, ticket_part, attachment_part, expiry_part])
+    if len(parts) == 6:
+        _, market_part, ticket_part, attachment_part, expiry_part, provided_signature = parts
+        token_id_part: str | None = None
+        created_by_part: str | None = None
+        payload_parts = [market_part, ticket_part, attachment_part, expiry_part]
+    elif len(parts) == 8:
+        (
+            _,
+            market_part,
+            ticket_part,
+            attachment_part,
+            expiry_part,
+            token_id_part,
+            created_by_part,
+            provided_signature,
+        ) = parts
+        payload_parts = [
+            market_part,
+            ticket_part,
+            attachment_part,
+            expiry_part,
+            token_id_part,
+            created_by_part,
+        ]
+    else:
+        return None
+    payload = ".".join(payload_parts)
     if not hmac.compare_digest(_signature(payload), provided_signature):
         return None
     try:
@@ -86,6 +119,8 @@ def parse_attachment_download_token(token: str) -> AttachmentTokenPayload | None
             ticket_id=_b64_decode(ticket_part),
             attachment_id=_b64_decode(attachment_part),
             expires_at=datetime.fromtimestamp(_from_base36(expiry_part), tz=timezone.utc),
+            token_id=_b64_decode(token_id_part) if token_id_part else "legacy",
+            created_by=_b64_decode(created_by_part) if created_by_part else "unknown",
         )
     except (ValueError, UnicodeDecodeError):
         return None

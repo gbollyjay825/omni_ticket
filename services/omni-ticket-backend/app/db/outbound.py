@@ -11,10 +11,14 @@ from app.db.models import (
     AuditEventRecord,
     ConnectorAccountRecord,
     ConnectorEventRecord,
+    CustomerRecord,
+    MarketRecord,
     OutboundMessageRecord,
     TicketRecord,
     TimelineEventRecord,
 )
+from app.db.email_settings import email_provider_settings_repository
+from app.db.integration_credentials import integration_credential_settings_repository
 from app.models.domain import (
     ChannelType,
     ConnectorDirection,
@@ -23,6 +27,7 @@ from app.models.domain import (
     TimelineEventType,
     utc_now,
 )
+from app.services.outbound_adapters import OutboundSendContext, outbound_adapter_router
 
 
 def _new_id(prefix: str) -> str:
@@ -59,6 +64,54 @@ def _message_or_404(db: Session, message_id: str, market_id: str) -> OutboundMes
     if record is None or record.market_id != market_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Outbound message not found")
     return record
+
+
+def _find_message_by_receipt(
+    db: Session,
+    *,
+    market_id: str,
+    provider: ChannelType,
+    outbound_message_id: str | None = None,
+    provider_message_id: str | None = None,
+    idempotency_key: str | None = None,
+) -> OutboundMessageRecord | None:
+    if outbound_message_id:
+        record = db.get(OutboundMessageRecord, outbound_message_id)
+        if record is not None and record.market_id == market_id and record.provider == provider.value:
+            return record
+    if idempotency_key:
+        record = db.scalar(
+            select(OutboundMessageRecord).where(
+                OutboundMessageRecord.market_id == market_id,
+                OutboundMessageRecord.provider == provider.value,
+                OutboundMessageRecord.idempotency_key == idempotency_key,
+            )
+        )
+        if record is not None:
+            return record
+    if provider_message_id:
+        records = db.scalars(
+            select(OutboundMessageRecord).where(
+                OutboundMessageRecord.market_id == market_id,
+                OutboundMessageRecord.provider == provider.value,
+            )
+        ).all()
+        for record in records:
+            payload = record.payload or {}
+            if str(payload.get("external_id") or "") == provider_message_id:
+                return record
+            provider_payload = payload.get("provider_payload") or {}
+            if not isinstance(provider_payload, dict):
+                continue
+            if str(provider_payload.get("external_id") or "") == provider_message_id:
+                return record
+            provider_response = provider_payload.get("provider_response") or {}
+            if not isinstance(provider_response, dict):
+                continue
+            for key in ("message_id", "messageId", "id", "sid", "reference", "provider_id"):
+                if str(provider_response.get(key) or "") == provider_message_id:
+                    return record
+    return None
 
 
 def _account_for(
@@ -225,6 +278,200 @@ class OutboundRepository:
         state.outbound_messages[message.id] = message
         return message
 
+    def queue_handoff_forward(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        *,
+        ticket: TicketRecord,
+        timeline_event: TimelineEventRecord,
+        handoff_id: str,
+        to_team: str,
+        to_email: str,
+        actor: str,
+        subject: str,
+        body: str,
+        linked_ticket_id: str | None = None,
+        linked_ticket_public_id: str | None = None,
+    ) -> OutboundMessage:
+        resolved_key = f"{ticket.id}:{handoff_id}:handoff-forward:email"
+        existing = db.scalar(
+            select(OutboundMessageRecord).where(
+                OutboundMessageRecord.market_id == ticket.market_id,
+                OutboundMessageRecord.provider == ChannelType.email.value,
+                OutboundMessageRecord.idempotency_key == resolved_key,
+            )
+        )
+        if existing is not None:
+            return outbound_message_from_record(existing)
+
+        payload = {
+            "source": "handoff_forward",
+            "timeline_event_id": timeline_event.id,
+            "handoff_id": handoff_id,
+            "to_team": to_team,
+            "to_email": to_email,
+            "subject": subject,
+            "source_ticket_id": ticket.id,
+            "source_ticket_public_id": ticket.public_id,
+            "linked_ticket_id": linked_ticket_id,
+            "linked_ticket_public_id": linked_ticket_public_id,
+            "reply_target": "linked_ticket" if linked_ticket_id else "source_ticket",
+            "reply_target_ticket_id": linked_ticket_id or ticket.id,
+        }
+        connector_event = ConnectorEventRecord(
+            id=_new_id("connector"),
+            market_id=ticket.market_id,
+            provider=ChannelType.email.value,
+            direction=ConnectorDirection.outbound.value,
+            external_id=resolved_key,
+            ticket_id=ticket.id,
+            status=OutboundMessageStatus.queued.value,
+            payload={**payload, "body": body, "actor": actor},
+        )
+        db.add(connector_event)
+        db.flush()
+
+        message_record = OutboundMessageRecord(
+            id=_new_id("outbound"),
+            market_id=ticket.market_id,
+            ticket_id=ticket.id,
+            timeline_event_id=timeline_event.id,
+            connector_event_id=connector_event.id,
+            provider=ChannelType.email.value,
+            status=OutboundMessageStatus.queued.value,
+            actor=actor,
+            body=body,
+            idempotency_key=resolved_key,
+            attempts=0,
+            max_attempts=3,
+            payload=payload,
+        )
+        db.add(message_record)
+        db.flush()
+
+        connector_event.payload = {
+            **connector_event.payload,
+            "outbound_message_id": message_record.id,
+        }
+        timeline_event.event_metadata = {
+            **timeline_event.event_metadata,
+            "handoff_forward_status": OutboundMessageStatus.queued.value,
+            "handoff_forward_to": to_email,
+            "handoff_forward_outbound_message_id": message_record.id,
+            "handoff_forward_connector_event_id": connector_event.id,
+            "handoff_forward_reply_target_ticket_id": linked_ticket_id or ticket.id,
+            "handoff_forward_reply_target": payload["reply_target"],
+        }
+        _audit(
+            db,
+            state,
+            actor=actor,
+            action="handoff.forward.queue",
+            entity_type="handoff",
+            entity_id=handoff_id,
+            market_id=ticket.market_id,
+            details={"ticket_id": ticket.id, "to_team": to_team, "to_email": to_email},
+        )
+        message = outbound_message_from_record(message_record)
+        state.outbound_messages[message.id] = message
+        return message
+
+    def queue_email(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        *,
+        ticket: TicketRecord,
+        timeline_event: TimelineEventRecord,
+        actor: str,
+        to_email: str,
+        subject: str,
+        body: str,
+        source: str,
+        idempotency_key: str,
+        payload_extra: dict | None = None,
+        audit_action: str = "outbound.email.queue",
+    ) -> OutboundMessage:
+        existing = db.scalar(
+            select(OutboundMessageRecord).where(
+                OutboundMessageRecord.market_id == ticket.market_id,
+                OutboundMessageRecord.provider == ChannelType.email.value,
+                OutboundMessageRecord.idempotency_key == idempotency_key,
+            )
+        )
+        if existing is not None:
+            return outbound_message_from_record(existing)
+
+        payload = {
+            "source": source,
+            "timeline_event_id": timeline_event.id,
+            "to_email": to_email,
+            "subject": subject,
+            **(payload_extra or {}),
+        }
+        connector_event = ConnectorEventRecord(
+            id=_new_id("connector"),
+            market_id=ticket.market_id,
+            provider=ChannelType.email.value,
+            direction=ConnectorDirection.outbound.value,
+            external_id=idempotency_key,
+            ticket_id=ticket.id,
+            status=OutboundMessageStatus.queued.value,
+            payload={**payload, "body": body, "actor": actor},
+        )
+        db.add(connector_event)
+        db.flush()
+
+        message_record = OutboundMessageRecord(
+            id=_new_id("outbound"),
+            market_id=ticket.market_id,
+            ticket_id=ticket.id,
+            timeline_event_id=timeline_event.id,
+            connector_event_id=connector_event.id,
+            provider=ChannelType.email.value,
+            status=OutboundMessageStatus.queued.value,
+            actor=actor,
+            body=body,
+            idempotency_key=idempotency_key,
+            attempts=0,
+            max_attempts=3,
+            payload=payload,
+        )
+        db.add(message_record)
+        db.flush()
+
+        connector_event.payload = {
+            **connector_event.payload,
+            "outbound_message_id": message_record.id,
+        }
+        timeline_event.event_metadata = {
+            **timeline_event.event_metadata,
+            "delivery_status": OutboundMessageStatus.queued.value,
+            "outbound_message_id": message_record.id,
+            "connector_event_id": connector_event.id,
+            "to_email": to_email,
+            "source": source,
+        }
+        _audit(
+            db,
+            state,
+            actor=actor,
+            action=audit_action,
+            entity_type="outbound_message",
+            entity_id=message_record.id,
+            market_id=ticket.market_id,
+            details={
+                "ticket_id": ticket.id,
+                "provider": ChannelType.email.value,
+                "to_email": to_email,
+                "source": source,
+            },
+        )
+        message = outbound_message_from_record(message_record)
+        state.outbound_messages[message.id] = message
+        return message
+
     def process_message(
         self,
         db: Session,
@@ -256,16 +503,45 @@ class OutboundRepository:
 
         account = _account_for(db, market_id=market_id, provider=message.provider)
         ready, error = _local_adapter_ready(account)
+        send_result = None
+        if ready and account is not None:
+            send_result = outbound_adapter_router.send(
+                OutboundSendContext(
+                    account=account,
+                    ticket=ticket,
+                    message=message,
+                    customer=db.get(CustomerRecord, ticket.customer_id),
+                    market=db.get(MarketRecord, market_id),
+                    email_settings=email_provider_settings_repository.runtime_settings(
+                        db,
+                        market_id=market_id,
+                    ),
+                    integration_credentials=integration_credential_settings_repository.runtime_credentials(
+                        db,
+                        market_id=market_id,
+                    ),
+                )
+            )
+            ready = send_result.succeeded
+            error = send_result.error
         if ready:
             message.status = OutboundMessageStatus.sent.value
             message.sent_at = utc_now()
             message.next_attempt_at = None
+            message.payload = {
+                **message.payload,
+                "adapter": send_result.adapter if send_result else "local-dev",
+                "external_id": send_result.external_id if send_result else None,
+                "provider_payload": send_result.payload if send_result else {},
+            }
             if connector_event is not None:
                 connector_event.status = OutboundMessageStatus.sent.value
                 connector_event.payload = {
                     **connector_event.payload,
                     "sent_at": message.sent_at.isoformat(),
-                    "adapter": "local-dev",
+                    "adapter": send_result.adapter if send_result else "local-dev",
+                    "external_id": send_result.external_id if send_result else None,
+                    "provider_payload": send_result.payload if send_result else {},
                 }
             if message.timeline_event_id:
                 timeline = db.get(TimelineEventRecord, message.timeline_event_id)
@@ -280,7 +556,10 @@ class OutboundRepository:
                 ticket=ticket,
                 message=message,
                 status_value=OutboundMessageStatus.sent,
-                body=f"Outbound {message.provider} message sent by local-dev adapter.",
+                body=(
+                    f"Outbound {message.provider} message sent by "
+                    f"{send_result.adapter if send_result else 'local-dev'} adapter."
+                ),
             )
             _audit(
                 db,
@@ -290,7 +569,12 @@ class OutboundRepository:
                 entity_type="outbound_message",
                 entity_id=message.id,
                 market_id=market_id,
-                details={"provider": message.provider, "attempts": message.attempts},
+                details={
+                    "provider": message.provider,
+                    "attempts": message.attempts,
+                    "adapter": send_result.adapter if send_result else "local-dev",
+                    "external_id": send_result.external_id if send_result else None,
+                },
             )
         else:
             message.last_error = error
@@ -306,6 +590,7 @@ class OutboundRepository:
                     **connector_event.payload,
                     "last_error": error,
                     "attempts": message.attempts,
+                    "adapter": send_result.adapter if send_result else None,
                 }
             if account is not None:
                 account.failure_count += 1
@@ -339,7 +624,12 @@ class OutboundRepository:
                 entity_type="outbound_message",
                 entity_id=message.id,
                 market_id=market_id,
-                details={"provider": message.provider, "attempts": message.attempts, "error": error},
+                details={
+                    "provider": message.provider,
+                    "attempts": message.attempts,
+                    "error": error,
+                    "adapter": send_result.adapter if send_result else None,
+                },
             )
 
         message.updated_at = utc_now()
@@ -375,6 +665,141 @@ class OutboundRepository:
             )
             db.flush()
         return self.process_message(db, state, message.id, market_id, actor=actor)
+
+    def record_delivery_receipt(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        *,
+        market_id: str,
+        provider: ChannelType,
+        status_label: str,
+        provider_message_id: str | None = None,
+        outbound_message_id: str | None = None,
+        idempotency_key: str | None = None,
+        delivery_id: str | None = None,
+        raw_payload: dict | None = None,
+        actor: str = "provider-webhook",
+    ) -> OutboundMessage:
+        message = _find_message_by_receipt(
+            db,
+            market_id=market_id,
+            provider=provider,
+            outbound_message_id=outbound_message_id,
+            provider_message_id=provider_message_id,
+            idempotency_key=idempotency_key,
+        )
+        if message is None:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND,
+                detail="Outbound message not found for delivery receipt",
+            )
+        ticket = db.get(TicketRecord, message.ticket_id)
+        if ticket is None or ticket.market_id != market_id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Ticket not found")
+
+        normalized_status = status_label.strip().lower() or "unknown"
+        failure_statuses = {"failed", "undelivered", "rejected", "error", "blocked", "expired"}
+        success_statuses = {"delivered", "sent", "accepted", "queued", "success", "ok"}
+        receipt_received_at = utc_now()
+        receipt_payload = {
+            "status": status_label,
+            "normalized_status": normalized_status,
+            "provider_message_id": provider_message_id,
+            "delivery_id": delivery_id,
+            "received_at": receipt_received_at.isoformat(),
+            "payload": raw_payload or {},
+        }
+        message.payload = {**(message.payload or {}), "delivery_receipt": receipt_payload}
+
+        if normalized_status in failure_statuses:
+            message.status = OutboundMessageStatus.dead_lettered.value
+            message.last_error = f"Provider delivery receipt reported {status_label}."
+            message.next_attempt_at = None
+        elif normalized_status in success_statuses:
+            message.status = OutboundMessageStatus.sent.value
+            message.sent_at = message.sent_at or receipt_received_at
+            message.last_error = None
+            message.next_attempt_at = None
+
+        connector_event = (
+            db.get(ConnectorEventRecord, message.connector_event_id)
+            if message.connector_event_id
+            else None
+        )
+        if connector_event is not None:
+            connector_event.status = normalized_status
+            connector_event.payload = {
+                **(connector_event.payload or {}),
+                "delivery_receipt": receipt_payload,
+            }
+
+        receipt_external_id = (
+            f"receipt:{delivery_id}"
+            if delivery_id
+            else f"receipt:{provider_message_id or message.id}:{normalized_status}"
+        )
+        receipt_event = ConnectorEventRecord(
+            id=_new_id("connector"),
+            market_id=market_id,
+            provider=provider.value,
+            direction=ConnectorDirection.inbound.value,
+            external_id=receipt_external_id,
+            ticket_id=message.ticket_id,
+            status="delivery-receipt",
+            payload={
+                "outbound_message_id": message.id,
+                "provider_message_id": provider_message_id,
+                "receipt_status": status_label,
+                "metadata": {
+                    "webhook_delivery_id": delivery_id,
+                    "source": "provider_delivery_receipt",
+                },
+                "payload": raw_payload or {},
+            },
+        )
+        db.add(receipt_event)
+        db.flush()
+
+        if message.timeline_event_id:
+            timeline = db.get(TimelineEventRecord, message.timeline_event_id)
+            if timeline is not None:
+                timeline.event_metadata = {
+                    **(timeline.event_metadata or {}),
+                    "delivery_status": message.status,
+                    "delivery_receipt_status": normalized_status,
+                }
+        _mark_delivery_event(
+            db,
+            state,
+            ticket=ticket,
+            message=message,
+            status_value=OutboundMessageStatus(message.status),
+            body=f"{provider.value.upper()} delivery receipt reported {status_label}.",
+            error=message.last_error,
+        )
+        _audit(
+            db,
+            state,
+            actor=actor,
+            action="outbound.delivery_receipt",
+            entity_type="outbound_message",
+            entity_id=message.id,
+            market_id=market_id,
+            details={
+                "provider": provider.value,
+                "status": status_label,
+                "normalized_status": normalized_status,
+                "provider_message_id": provider_message_id,
+                "delivery_id": delivery_id,
+                "connector_event_id": receipt_event.id,
+            },
+        )
+        message.updated_at = utc_now()
+        db.flush()
+        domain_message = outbound_message_from_record(message)
+        state.outbound_messages[domain_message.id] = domain_message
+        return domain_message
 
 
 outbound_repository = OutboundRepository()

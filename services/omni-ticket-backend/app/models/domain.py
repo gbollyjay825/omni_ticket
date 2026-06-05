@@ -49,6 +49,16 @@ class Sentiment(StrEnum):
     angry = "angry"
 
 
+class TicketFieldType(StrEnum):
+    text = "text"
+    textarea = "textarea"
+    select = "select"
+    multiselect = "multiselect"
+    checkbox = "checkbox"
+    number = "number"
+    date = "date"
+
+
 class AgentStatus(StrEnum):
     available = "available"
     busy = "busy"
@@ -67,6 +77,12 @@ class TimelineEventType(StrEnum):
     status_change = "status_change"
     ai_decision = "ai_decision"
     connector_receipt = "connector_receipt"
+
+
+class CsatSource(StrEnum):
+    customer_survey = "customer_survey"
+    agent_recorded = "agent_recorded"
+    service_import = "service_import"
 
 
 class HandoffStatus(StrEnum):
@@ -100,6 +116,33 @@ class OutboundMessageStatus(StrEnum):
     dead_lettered = "dead_lettered"
 
 
+class ProductionAccountReferenceStatus(StrEnum):
+    requested = "requested"
+    provisioned = "provisioned"
+    connected = "connected"
+    blocked = "blocked"
+    retired = "retired"
+
+
+class OperationalAlertSeverity(StrEnum):
+    info = "info"
+    warning = "warning"
+    critical = "critical"
+
+
+class OperationalAlertStatus(StrEnum):
+    open = "open"
+    acknowledged = "acknowledged"
+    resolved = "resolved"
+
+
+class OperationalAlertDeliveryStatus(StrEnum):
+    queued = "queued"
+    sending = "sending"
+    sent = "sent"
+    failed = "failed"
+
+
 class AttachmentScanStatus(StrEnum):
     pending = "pending"
     clean = "clean"
@@ -107,11 +150,47 @@ class AttachmentScanStatus(StrEnum):
     failed = "failed"
 
 
+class AttachmentLifecycleStatus(StrEnum):
+    active = "active"
+    deleted = "deleted"
+    purged = "purged"
+
+
+class KnowledgeArticleStatus(StrEnum):
+    draft = "draft"
+    in_review = "in_review"
+    approved = "approved"
+    published = "published"
+    archived = "archived"
+
+
 class UserRole(StrEnum):
     agent = "agent"
     supervisor = "supervisor"
     admin = "admin"
     auditor = "auditor"
+    service_account = "service_account"
+
+
+class Permission(StrEnum):
+    operations_write = "operations.write"
+    supervisor_control = "supervisor.control"
+    audit_read = "audit.read"
+    setup_manage = "setup.manage"
+
+
+class PermissionProfile(StrEnum):
+    role_default = "role_default"
+    read_only = "read_only"
+    operations = "operations"
+    supervisor = "supervisor"
+    admin = "admin"
+    custom = "custom"
+
+
+class PermissionOverrides(BaseModel):
+    allow: list[Permission] = Field(default_factory=list)
+    deny: list[Permission] = Field(default_factory=list)
 
 
 class Market(BaseModel):
@@ -137,6 +216,15 @@ class User(BaseModel):
     default_market_id: str
     active: bool = True
     password_reset_required: bool = False
+    mfa_enabled: bool = False
+    mfa_confirmed_at: datetime | None = None
+    mfa_last_verified_at: datetime | None = None
+    permission_profile: PermissionProfile = PermissionProfile.role_default
+    permission_overrides: PermissionOverrides = Field(default_factory=PermissionOverrides)
+    effective_permissions: list[Permission] = Field(default_factory=list)
+    external_identity_provider: str | None = None
+    external_subject: str | None = None
+    external_last_login_at: datetime | None = None
     last_login_at: datetime | None = None
 
 
@@ -144,6 +232,37 @@ class LoginRequest(BaseModel):
     email: EmailStr
     password: str
     market_id: str | None = None
+    mfa_code: str | None = None
+
+
+class OidcProviderConfig(BaseModel):
+    provider_name: str
+    enabled: bool
+    configured: bool
+    login_available: bool
+    authorization_endpoint_configured: bool
+    token_endpoint_configured: bool
+    userinfo_endpoint_configured: bool
+    redirect_url_configured: bool
+    client_configured: bool
+    auto_provision_enabled: bool
+    default_role: UserRole
+    default_market_id: str | None = None
+    allowed_email_domains: list[str] = Field(default_factory=list)
+    required_settings: list[str] = Field(default_factory=list)
+    missing_settings: list[str] = Field(default_factory=list)
+    notes: str
+
+
+class OidcStartResponse(BaseModel):
+    authorization_url: str
+    state: str
+    expires_at: datetime
+
+
+class OidcCallbackRequest(BaseModel):
+    code: str = Field(min_length=1)
+    state: str = Field(min_length=1)
 
 
 class CreateUserRequest(BaseModel):
@@ -154,6 +273,8 @@ class CreateUserRequest(BaseModel):
     market_ids: list[str] = Field(default_factory=list)
     default_market_id: str | None = None
     active: bool = True
+    permission_profile: PermissionProfile = PermissionProfile.role_default
+    permission_overrides: PermissionOverrides = Field(default_factory=PermissionOverrides)
 
 
 class UpdateUserRequest(BaseModel):
@@ -164,11 +285,30 @@ class UpdateUserRequest(BaseModel):
     market_ids: list[str] | None = None
     default_market_id: str | None = None
     active: bool | None = None
+    permission_profile: PermissionProfile | None = None
+    permission_overrides: PermissionOverrides | None = None
 
 
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str = Field(min_length=8)
+
+
+class MfaEnrollmentResponse(BaseModel):
+    secret: str
+    otpauth_uri: str
+    issuer: str = "Omni Ticket"
+    digits: int = 6
+    period_seconds: int = 30
+
+
+class ConfirmMfaRequest(BaseModel):
+    code: str = Field(min_length=6, max_length=12)
+
+
+class DisableMfaRequest(BaseModel):
+    current_password: str
+    code: str | None = Field(default=None, min_length=6, max_length=12)
 
 
 class AuthSession(BaseModel):
@@ -186,6 +326,123 @@ class WorkspaceSettings(BaseModel):
     default_timezone: str = "Africa/Lagos"
     business_hours: str = "Mon-Fri 08:00-18:00"
     public_brand_name: str = "Omni Ticket"
+
+
+class EmailProviderSettings(BaseModel):
+    market_id: str = "market-ng"
+    inbound_enabled: bool = False
+    inbound_host: str = ""
+    inbound_port: int = Field(default=993, ge=1, le=65535)
+    inbound_username: str = ""
+    inbound_mailbox: str = "INBOX"
+    inbound_use_ssl: bool = True
+    inbound_mark_seen: bool = True
+    inbound_password_configured: bool = False
+    outbound_enabled: bool = False
+    outbound_host: str = ""
+    outbound_port: int = Field(default=587, ge=1, le=65535)
+    outbound_username: str = ""
+    outbound_from_email: str = ""
+    outbound_use_starttls: bool = True
+    outbound_use_ssl: bool = False
+    outbound_password_configured: bool = False
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class UpdateEmailProviderSettingsRequest(BaseModel):
+    inbound_enabled: bool | None = None
+    inbound_host: str | None = Field(default=None, max_length=255)
+    inbound_port: int | None = Field(default=None, ge=1, le=65535)
+    inbound_username: str | None = Field(default=None, max_length=255)
+    inbound_password: str | None = Field(default=None, max_length=500)
+    inbound_mailbox: str | None = Field(default=None, max_length=120)
+    inbound_use_ssl: bool | None = None
+    inbound_mark_seen: bool | None = None
+    clear_inbound_password: bool = False
+    outbound_enabled: bool | None = None
+    outbound_host: str | None = Field(default=None, max_length=255)
+    outbound_port: int | None = Field(default=None, ge=1, le=65535)
+    outbound_username: str | None = Field(default=None, max_length=255)
+    outbound_password: str | None = Field(default=None, max_length=500)
+    outbound_from_email: str | None = Field(default=None, max_length=255)
+    outbound_use_starttls: bool | None = None
+    outbound_use_ssl: bool | None = None
+    clear_outbound_password: bool = False
+
+
+class IntegrationCredentialSettings(BaseModel):
+    market_id: str = "market-ng"
+    ai_provider: str = "auto"
+    anthropic_api_base_url: str = "https://api.anthropic.com"
+    anthropic_model: str = "claude-sonnet-4-6"
+    anthropic_api_key_configured: bool = False
+    alert_webhook_url: str = ""
+    alert_webhook_secret_configured: bool = False
+    alert_delivery_min_severity: OperationalAlertSeverity = OperationalAlertSeverity.warning
+    sms_http_endpoint: str = ""
+    sms_http_from: str = ""
+    sms_http_auth_header: str = "Authorization"
+    sms_http_auth_scheme: str = "Bearer"
+    sms_http_delivery_callback_url: str = ""
+    sms_http_auth_token_configured: bool = False
+    voice_http_endpoint: str = ""
+    voice_http_from: str = ""
+    voice_http_auth_header: str = "Authorization"
+    voice_http_auth_scheme: str = "Bearer"
+    voice_http_status_callback_url: str = ""
+    voice_http_auth_token_configured: bool = False
+    whatsapp_cloud_api_base_url: str = "https://graph.facebook.com/v25.0"
+    whatsapp_phone_number_id: str = ""
+    whatsapp_preview_urls: bool = False
+    whatsapp_access_token_configured: bool = False
+    facebook_graph_api_base_url: str = "https://graph.facebook.com/v25.0"
+    facebook_page_id: str = ""
+    facebook_messaging_type: str = "RESPONSE"
+    facebook_page_access_token_configured: bool = False
+    instagram_graph_api_base_url: str = "https://graph.instagram.com/v25.0"
+    instagram_business_account_id: str = ""
+    instagram_access_token_configured: bool = False
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class UpdateIntegrationCredentialSettingsRequest(BaseModel):
+    ai_provider: str | None = Field(default=None, max_length=32)
+    anthropic_api_key: str | None = Field(default=None, max_length=1000)
+    anthropic_api_base_url: str | None = Field(default=None, max_length=255)
+    anthropic_model: str | None = Field(default=None, max_length=120)
+    clear_anthropic_api_key: bool = False
+    alert_webhook_url: str | None = Field(default=None, max_length=500)
+    alert_webhook_secret: str | None = Field(default=None, max_length=1000)
+    alert_delivery_min_severity: OperationalAlertSeverity | None = None
+    clear_alert_webhook_secret: bool = False
+    sms_http_endpoint: str | None = Field(default=None, max_length=500)
+    sms_http_auth_token: str | None = Field(default=None, max_length=1000)
+    sms_http_from: str | None = Field(default=None, max_length=120)
+    sms_http_auth_header: str | None = Field(default=None, max_length=120)
+    sms_http_auth_scheme: str | None = Field(default=None, max_length=80)
+    sms_http_delivery_callback_url: str | None = Field(default=None, max_length=500)
+    clear_sms_http_auth_token: bool = False
+    voice_http_endpoint: str | None = Field(default=None, max_length=500)
+    voice_http_auth_token: str | None = Field(default=None, max_length=1000)
+    voice_http_from: str | None = Field(default=None, max_length=120)
+    voice_http_auth_header: str | None = Field(default=None, max_length=120)
+    voice_http_auth_scheme: str | None = Field(default=None, max_length=80)
+    voice_http_status_callback_url: str | None = Field(default=None, max_length=500)
+    clear_voice_http_auth_token: bool = False
+    whatsapp_cloud_api_base_url: str | None = Field(default=None, max_length=255)
+    whatsapp_phone_number_id: str | None = Field(default=None, max_length=160)
+    whatsapp_access_token: str | None = Field(default=None, max_length=1000)
+    whatsapp_preview_urls: bool | None = None
+    clear_whatsapp_access_token: bool = False
+    facebook_graph_api_base_url: str | None = Field(default=None, max_length=255)
+    facebook_page_id: str | None = Field(default=None, max_length=160)
+    facebook_page_access_token: str | None = Field(default=None, max_length=1000)
+    facebook_messaging_type: str | None = Field(default=None, max_length=40)
+    clear_facebook_page_access_token: bool = False
+    instagram_graph_api_base_url: str | None = Field(default=None, max_length=255)
+    instagram_business_account_id: str | None = Field(default=None, max_length=160)
+    instagram_access_token: str | None = Field(default=None, max_length=1000)
+    clear_instagram_access_token: bool = False
 
 
 class Channel(BaseModel):
@@ -212,6 +469,22 @@ class Agent(BaseModel):
     capacity: int = 8
     skills: list[ChannelType] = Field(default_factory=list)
     languages: list[str] = Field(default_factory=lambda: ["en"])
+
+
+class SupportGroup(BaseModel):
+    id: str
+    market_id: str = "market-ng"
+    name: str
+    description: str = ""
+    team_email: EmailStr | None = None
+    active: bool = True
+    channels: list[ChannelType] = Field(default_factory=list)
+    skills: list[str] = Field(default_factory=list)
+    member_count: int = 0
+    open_ticket_count: int = 0
+    sla_risk_count: int = 0
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
 
 
 class Company(BaseModel):
@@ -248,6 +521,21 @@ class SlaState(BaseModel):
     resolution_due_at: datetime
     risk: str = "on_track"
     breached: bool = False
+
+
+class SlaPolicy(BaseModel):
+    id: str
+    market_id: str = "market-ng"
+    name: str
+    active: bool = True
+    channels: list[ChannelType] = Field(default_factory=list)
+    priority: Priority = Priority.normal
+    first_response_minutes: int = Field(default=120, ge=1)
+    resolution_minutes: int = Field(default=1440, ge=1)
+    business_hours: str = "Business hours"
+    position: int = 100
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
 
 
 class TicketTask(BaseModel):
@@ -294,6 +582,7 @@ class Ticket(BaseModel):
     assignee_id: str | None = None
     team: str = "General Support"
     tags: list[str] = Field(default_factory=list)
+    custom_fields: dict[str, Any] = Field(default_factory=dict)
     tasks: list[TicketTask] = Field(default_factory=list)
     sla: SlaState
     ai_summary: str = ""
@@ -306,6 +595,7 @@ class Handoff(BaseModel):
     id: str
     market_id: str = "market-ng"
     ticket_id: str
+    linked_ticket_id: str | None = None
     from_team: str
     to_team: str
     requested_by: str
@@ -322,11 +612,164 @@ class KnowledgeArticle(BaseModel):
     id: str
     market_ids: list[str] = Field(default_factory=lambda: ["market-ng"])
     title: str
-    status: str = "published"
+    status: KnowledgeArticleStatus = KnowledgeArticleStatus.published
     language: str = "en"
     channels: list[ChannelType] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
     body: str
+    submitted_for_review_at: datetime | None = None
+    approved_at: datetime | None = None
+    approved_by: str | None = None
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class KnowledgeSuggestion(BaseModel):
+    article: KnowledgeArticle
+    score: int
+    reasons: list[str] = Field(default_factory=list)
+    matched_terms: list[str] = Field(default_factory=list)
+
+
+class PortalAnswerSuggestion(BaseModel):
+    article_id: str
+    title: str
+    body: str
+    language: str
+    tags: list[str] = Field(default_factory=list)
+    score: int
+    reasons: list[str] = Field(default_factory=list)
+    matched_terms: list[str] = Field(default_factory=list)
+    updated_at: datetime
+
+
+class PortalAnswersResponse(BaseModel):
+    market_id: str
+    market_code: str
+    query: str = ""
+    suggestions: list[PortalAnswerSuggestion] = Field(default_factory=list)
+    ticket_fields: list["TicketField"] = Field(default_factory=list)
+
+
+class CreatePortalTicketRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=180)
+    email: EmailStr
+    subject: str = Field(min_length=4, max_length=255)
+    description: str = Field(min_length=10, max_length=8000)
+    phone: str | None = Field(default=None, max_length=80)
+    priority: Priority | None = None
+    custom_fields: dict[str, Any] = Field(default_factory=dict)
+    search_query: str | None = Field(default=None, max_length=500)
+
+
+class PortalTicketResponse(BaseModel):
+    ticket_id: str
+    public_id: str
+    status: TicketStatus
+    priority: Priority
+    created_at: datetime
+    article_suggestions: list[PortalAnswerSuggestion] = Field(default_factory=list)
+
+
+class PortalTicketTimelineEvent(BaseModel):
+    id: str
+    type: TimelineEventType
+    channel: ChannelType
+    actor: str
+    body: str
+    created_at: datetime
+
+
+class PortalAttachmentResponse(BaseModel):
+    id: str
+    filename: str
+    content_type: str
+    size_bytes: int
+    scan_status: AttachmentScanStatus
+    lifecycle_status: AttachmentLifecycleStatus
+    created_at: datetime
+
+
+class PortalTicketDetailResponse(BaseModel):
+    ticket_id: str
+    public_id: str
+    subject: str
+    description: str
+    status: TicketStatus
+    customer_status: str
+    priority: Priority
+    created_at: datetime
+    updated_at: datetime
+    next_step: str
+    reply_allowed: bool = True
+    timeline: list[PortalTicketTimelineEvent] = Field(default_factory=list)
+    attachments: list[PortalAttachmentResponse] = Field(default_factory=list)
+    article_suggestions: list[PortalAnswerSuggestion] = Field(default_factory=list)
+
+
+class PortalTicketReplyRequest(BaseModel):
+    email: EmailStr
+    body: str = Field(min_length=2, max_length=8000)
+
+
+class ResponseMacro(BaseModel):
+    id: str
+    market_id: str = "market-ng"
+    name: str
+    body: str
+    language: str = "en"
+    channels: list[ChannelType] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    shortcut: str | None = None
+    active: bool = True
+    usage_count: int = 0
+    last_used_at: datetime | None = None
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class ResponseMacroSuggestion(BaseModel):
+    macro: ResponseMacro
+    score: int
+    reasons: list[str] = Field(default_factory=list)
+    matched_terms: list[str] = Field(default_factory=list)
+
+
+class DuplicateTicketSuggestion(BaseModel):
+    ticket: Ticket
+    customer: Customer | None = None
+    score: int = Field(ge=0, le=100)
+    reasons: list[str] = Field(default_factory=list)
+    matched_terms: list[str] = Field(default_factory=list)
+
+
+class MergeTicketsRequest(BaseModel):
+    source_ticket_id: str = Field(min_length=1, max_length=64)
+    reason: str = Field(min_length=4, max_length=1000)
+    actor: str | None = Field(default=None, max_length=180)
+    close_source: bool = True
+
+
+class MergeTicketsResponse(BaseModel):
+    target_ticket: Ticket
+    source_ticket: Ticket
+    target_timeline_event: TimelineEvent
+    source_timeline_event: TimelineEvent
+    audit_event_id: str | None = None
+
+
+class TicketField(BaseModel):
+    id: str
+    market_id: str = "market-ng"
+    key: str = Field(pattern=r"^[a-z][a-z0-9_]{1,63}$")
+    label: str
+    field_type: TicketFieldType = TicketFieldType.text
+    required: bool = False
+    active: bool = True
+    system: bool = False
+    options: list[str] = Field(default_factory=list)
+    channels: list[ChannelType] = Field(default_factory=list)
+    placeholder: str = ""
+    help_text: str = ""
+    position: int = 100
     updated_at: datetime = Field(default_factory=utc_now)
 
 
@@ -396,6 +839,125 @@ class OutboundMessage(BaseModel):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class OutboundProviderConfig(BaseModel):
+    provider: ChannelType
+    adapter: str
+    configured: bool = False
+    live_delivery: bool = False
+    fallback_adapter: str | None = None
+    required_settings: list[str] = Field(default_factory=list)
+    missing_settings: list[str] = Field(default_factory=list)
+    notes: str = ""
+
+
+class InboundProviderConfig(BaseModel):
+    provider: ChannelType
+    adapter: str
+    configured: bool = False
+    live_intake: bool = False
+    polling_enabled: bool = False
+    required_settings: list[str] = Field(default_factory=list)
+    missing_settings: list[str] = Field(default_factory=list)
+    notes: str = ""
+
+
+class AttachmentProviderConfig(BaseModel):
+    storage_backend: str = "local"
+    storage_configured: bool = True
+    storage_live: bool = True
+    scanner_adapter: str = "local"
+    scanner_configured: bool = True
+    live_scanning: bool = False
+    required_settings: list[str] = Field(default_factory=list)
+    missing_settings: list[str] = Field(default_factory=list)
+    notes: str = ""
+
+
+class ProductionAccountRequestItem(BaseModel):
+    id: str
+    area: str
+    provider: str
+    purpose: str
+    backend_use: str
+    status: str
+    required_credentials: list[str] = Field(default_factory=list)
+    missing_settings: list[str] = Field(default_factory=list)
+    callback_urls: list[str] = Field(default_factory=list)
+    setup_location: str = "Setup"
+    credential_reference_name: str = ""
+    account_owner: str = ""
+    notes: str = ""
+
+
+class ProductionAccountRequestPack(BaseModel):
+    market_id: str
+    recipient_email: EmailStr
+    generated_at: datetime = Field(default_factory=utc_now)
+    total_items: int
+    ready_items: int
+    missing_items: int
+    subject: str
+    body: str
+    mailto_url: str
+    items: list[ProductionAccountRequestItem] = Field(default_factory=list)
+
+
+class ProductionAccountRequestDelivery(BaseModel):
+    pack: ProductionAccountRequestPack
+    outbound_message: OutboundMessage
+    ticket_id: str
+    ticket_public_id: str
+    already_queued: bool = False
+    queued_at: datetime = Field(default_factory=utc_now)
+
+
+class ProductionAccountReference(BaseModel):
+    id: str
+    market_id: str = "market-ng"
+    provider: str
+    area: str
+    account_name: str
+    account_identifier: str = ""
+    status: ProductionAccountReferenceStatus = ProductionAccountReferenceStatus.requested
+    owner_email: EmailStr | None = None
+    credential_reference: str = ""
+    docs_reference: str = ""
+    callback_urls: list[str] = Field(default_factory=list)
+    notes: str = ""
+    created_by: str = ""
+    updated_by: str = ""
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class ProductionAccountReferenceDocs(BaseModel):
+    market_id: str
+    markdown: str
+    generated_at: datetime = Field(default_factory=utc_now)
+
+
+class ProductionReadinessItem(BaseModel):
+    id: str
+    category: str
+    label: str
+    status: str
+    summary: str
+    evidence: list[str] = Field(default_factory=list)
+    next_action: str = ""
+    docs_reference: str = ""
+
+
+class ProductionReadinessChecklist(BaseModel):
+    market_id: str
+    generated_at: datetime = Field(default_factory=utc_now)
+    overall_status: str
+    total_items: int
+    ready_items: int
+    action_items: int
+    blocked_items: int
+    items: list[ProductionReadinessItem] = Field(default_factory=list)
+
+
 class Attachment(BaseModel):
     id: str
     market_id: str = "market-ng"
@@ -408,8 +970,39 @@ class Attachment(BaseModel):
     uploaded_by: str
     scan_status: AttachmentScanStatus = AttachmentScanStatus.pending
     scan_result: str | None = None
+    lifecycle_status: AttachmentLifecycleStatus = AttachmentLifecycleStatus.active
+    retained_until: datetime | None = None
+    deleted_at: datetime | None = None
+    deleted_by: str | None = None
+    deletion_reason: str | None = None
+    purged_at: datetime | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+
+
+class DeleteAttachmentRequest(BaseModel):
+    reason: str = "Manual attachment deletion"
+    purge_storage: bool = False
+
+
+class AttachmentRetentionPolicy(BaseModel):
+    market_id: str
+    active_retention_days: int
+    deleted_retention_days: int
+    active_cutoff_at: datetime
+    deleted_cutoff_at: datetime
+    prune_limit: int
+    active_attachments: int
+    deleted_attachments: int
+    purged_attachments: int
+    purgeable_attachments: int
+
+
+class AttachmentRetentionResult(BaseModel):
+    policy: AttachmentRetentionPolicy
+    purged_attachments: int
+    attachment_ids: list[str] = Field(default_factory=list)
+    audit_event_id: str | None = None
 
 
 class AuditEvent(BaseModel):
@@ -423,12 +1016,114 @@ class AuditEvent(BaseModel):
     details: dict[str, Any] = Field(default_factory=dict)
 
 
+class AuditRetentionPolicy(BaseModel):
+    market_id: str
+    retention_days: int
+    cutoff_at: datetime
+    retained_events: int
+    prunable_events: int
+    export_max_rows: int
+
+
+class AuditRetentionResult(BaseModel):
+    policy: AuditRetentionPolicy
+    deleted_events: int
+    audit_event_id: str | None = None
+
+
+class OperationalAlert(BaseModel):
+    id: str
+    market_id: str
+    severity: OperationalAlertSeverity = OperationalAlertSeverity.warning
+    status: OperationalAlertStatus = OperationalAlertStatus.open
+    source: str
+    entity_type: str
+    entity_id: str
+    dedupe_key: str
+    title: str
+    message: str
+    details: dict[str, Any] = Field(default_factory=dict)
+    occurrence_count: int = 1
+    first_seen_at: datetime = Field(default_factory=utc_now)
+    last_seen_at: datetime = Field(default_factory=utc_now)
+    acknowledged_at: datetime | None = None
+    acknowledged_by: str | None = None
+    resolved_at: datetime | None = None
+    resolved_by: str | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class OperationalAlertDelivery(BaseModel):
+    id: str
+    market_id: str
+    alert_id: str
+    destination_type: str = "webhook"
+    destination_name: str = "operations_webhook"
+    status: OperationalAlertDeliveryStatus = OperationalAlertDeliveryStatus.queued
+    attempts: int = 0
+    max_attempts: int = 3
+    next_attempt_at: datetime | None = None
+    sent_at: datetime | None = None
+    last_error: str | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class OperationalAlertDeliveryConfig(BaseModel):
+    webhook_configured: bool = False
+    destination_type: str = "webhook"
+    destination_name: str = "operations_webhook"
+    min_severity: OperationalAlertSeverity = OperationalAlertSeverity.warning
+    max_attempts: int = 3
+
+
 class WorkQueueItem(BaseModel):
     ticket: Ticket
     customer: Customer
     assignee: Agent | None
     score: int
     reasons: list[str]
+
+
+class SupervisorRecommendation(BaseModel):
+    id: str
+    market_id: str
+    title: str
+    summary: str
+    action: str
+    severity: OperationalAlertSeverity = OperationalAlertSeverity.warning
+    category: str
+    priority_score: int = Field(ge=0, le=100)
+    ticket_id: str | None = None
+    handoff_id: str | None = None
+    support_group: str | None = None
+    owner_id: str | None = None
+    reasons: list[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class GlobalSearchResultType(StrEnum):
+    ticket = "ticket"
+    customer = "customer"
+    company = "company"
+    knowledge = "knowledge"
+    support_group = "support_group"
+    handoff = "handoff"
+    agent = "agent"
+
+
+class GlobalSearchResult(BaseModel):
+    id: str
+    type: GlobalSearchResultType
+    title: str
+    subtitle: str = ""
+    description: str = ""
+    score: int = Field(ge=0, le=100)
+    screen: str | None = None
+    entity_id: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class AnalyticsSnapshot(BaseModel):
@@ -438,6 +1133,23 @@ class AnalyticsSnapshot(BaseModel):
     channel_volume: dict[ChannelType, int]
     active_agents: int
     avg_occupancy: int
+    avg_csat: float | None = None
+
+
+class AnalyticsRollup(BaseModel):
+    id: str
+    market_id: str
+    period_start: datetime
+    period_end: datetime
+    open_tickets: int
+    at_risk_tickets: int
+    breached_tickets: int
+    active_agents: int
+    avg_occupancy: int
+    avg_csat: float | None = None
+    channel_volume: dict[ChannelType, int]
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
 
 
 class CreateTicketRequest(BaseModel):
@@ -449,6 +1161,27 @@ class CreateTicketRequest(BaseModel):
     priority: Priority | None = None
     external_id: str | None = None
     tags: list[str] = Field(default_factory=list)
+    custom_fields: dict[str, Any] = Field(default_factory=dict)
+
+
+class CsatFeedback(BaseModel):
+    id: str
+    market_id: str = "market-ng"
+    ticket_id: str
+    customer_id: str
+    rating: int = Field(ge=1, le=5)
+    comment: str | None = None
+    source: CsatSource = CsatSource.customer_survey
+    submitted_by: str | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class CreateCsatFeedbackRequest(BaseModel):
+    rating: int = Field(ge=1, le=5)
+    comment: str | None = Field(default=None, max_length=1000)
+    source: CsatSource = CsatSource.customer_survey
+    submitted_by: str | None = Field(default=None, max_length=180)
 
 
 class CreateCompanyRequest(BaseModel):
@@ -501,14 +1234,80 @@ class UpdateAgentStatusRequest(BaseModel):
     status: AgentStatus
 
 
+class CreateSupportGroupRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    description: str = Field(default="", max_length=2000)
+    team_email: EmailStr | None = None
+    active: bool = True
+    channels: list[ChannelType] = Field(default_factory=list)
+    skills: list[str] = Field(default_factory=list)
+
+
+class UpdateSupportGroupRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=120)
+    description: str | None = Field(default=None, max_length=2000)
+    team_email: EmailStr | None = None
+    active: bool | None = None
+    channels: list[ChannelType] | None = None
+    skills: list[str] | None = None
+
+
+class CreateSlaPolicyRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=180)
+    active: bool = True
+    channels: list[ChannelType] = Field(default_factory=list)
+    priority: Priority = Priority.normal
+    first_response_minutes: int = Field(default=120, ge=1, le=10080)
+    resolution_minutes: int = Field(default=1440, ge=1, le=43200)
+    business_hours: str = Field(default="Business hours", max_length=120)
+    position: int = 100
+
+
+class UpdateSlaPolicyRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=180)
+    active: bool | None = None
+    channels: list[ChannelType] | None = None
+    priority: Priority | None = None
+    first_response_minutes: int | None = Field(default=None, ge=1, le=10080)
+    resolution_minutes: int | None = Field(default=None, ge=1, le=43200)
+    business_hours: str | None = Field(default=None, max_length=120)
+    position: int | None = None
+
+
 class UpdateTicketRequest(BaseModel):
     status: TicketStatus | None = None
     priority: Priority | None = None
     assignee_id: str | None = None
     tags: list[str] | None = None
+    custom_fields: dict[str, Any] | None = None
     task_item_id: str | None = None
     task_item_complete: bool | None = None
     recommended_action: str | None = None
+
+
+class CreateTicketFieldRequest(BaseModel):
+    key: str = Field(pattern=r"^[a-z][a-z0-9_]{1,63}$")
+    label: str
+    field_type: TicketFieldType = TicketFieldType.text
+    required: bool = False
+    active: bool = True
+    options: list[str] = Field(default_factory=list)
+    channels: list[ChannelType] = Field(default_factory=list)
+    placeholder: str = ""
+    help_text: str = ""
+    position: int = 100
+
+
+class UpdateTicketFieldRequest(BaseModel):
+    label: str | None = None
+    field_type: TicketFieldType | None = None
+    required: bool | None = None
+    active: bool | None = None
+    options: list[str] | None = None
+    channels: list[ChannelType] | None = None
+    placeholder: str | None = None
+    help_text: str | None = None
+    position: int | None = None
 
 
 class WorkQueueOverrideRequest(BaseModel):
@@ -613,10 +1412,36 @@ class UpdateConnectorAccountRequest(BaseModel):
     capabilities: list[str] | None = None
 
 
+class CreateProductionAccountReferenceRequest(BaseModel):
+    provider: str = Field(min_length=2, max_length=80)
+    area: str = Field(min_length=2, max_length=160)
+    account_name: str = Field(min_length=2, max_length=180)
+    account_identifier: str = Field(default="", max_length=255)
+    status: ProductionAccountReferenceStatus = ProductionAccountReferenceStatus.requested
+    owner_email: EmailStr | None = None
+    credential_reference: str = Field(default="", max_length=255)
+    docs_reference: str = Field(default="", max_length=500)
+    callback_urls: list[str] = Field(default_factory=list)
+    notes: str = Field(default="", max_length=2000)
+
+
+class UpdateProductionAccountReferenceRequest(BaseModel):
+    provider: str | None = Field(default=None, min_length=2, max_length=80)
+    area: str | None = Field(default=None, min_length=2, max_length=160)
+    account_name: str | None = Field(default=None, min_length=2, max_length=180)
+    account_identifier: str | None = Field(default=None, max_length=255)
+    status: ProductionAccountReferenceStatus | None = None
+    owner_email: EmailStr | None = None
+    credential_reference: str | None = Field(default=None, max_length=255)
+    docs_reference: str | None = Field(default=None, max_length=500)
+    callback_urls: list[str] | None = None
+    notes: str | None = Field(default=None, max_length=2000)
+
+
 class CreateKnowledgeArticleRequest(BaseModel):
     market_ids: list[str] | None = None
     title: str
-    status: str = "draft"
+    status: KnowledgeArticleStatus = KnowledgeArticleStatus.draft
     language: str = "en"
     channels: list[ChannelType] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
@@ -625,11 +1450,32 @@ class CreateKnowledgeArticleRequest(BaseModel):
 
 class UpdateKnowledgeArticleRequest(BaseModel):
     title: str | None = None
-    status: str | None = None
+    status: KnowledgeArticleStatus | None = None
     language: str | None = None
     channels: list[ChannelType] | None = None
     tags: list[str] | None = None
     body: str | None = None
+
+
+class CreateResponseMacroRequest(BaseModel):
+    market_id: str | None = None
+    name: str
+    body: str
+    language: str = "en"
+    channels: list[ChannelType] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    shortcut: str | None = None
+    active: bool = True
+
+
+class UpdateResponseMacroRequest(BaseModel):
+    name: str | None = None
+    body: str | None = None
+    language: str | None = None
+    channels: list[ChannelType] | None = None
+    tags: list[str] | None = None
+    shortcut: str | None = None
+    active: bool | None = None
 
 
 class CreateAutomationRuleRequest(BaseModel):
@@ -645,6 +1491,11 @@ class UpdateAutomationRuleRequest(BaseModel):
     enabled: bool | None = None
     trigger: str | None = None
     action: str | None = None
+
+
+class UpdateOperationalAlertRequest(BaseModel):
+    status: OperationalAlertStatus
+    note: str | None = None
 
 
 def default_sla(priority: Priority, now: datetime | None = None) -> SlaState:

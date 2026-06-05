@@ -2,28 +2,40 @@ from app.db.models import (
     AgentRecord,
     AttachmentRecord,
     AiDecisionRecord,
+    AnalyticsRollupRecord,
     AuditEventRecord,
     AutomationRuleRecord,
     ChannelRecord,
     ConnectorAccountRecord,
     CompanyRecord,
     ConnectorEventRecord,
+    CsatFeedbackRecord,
     CustomerRecord,
     HandoffRecord,
     KnowledgeArticleRecord,
+    OperationalAlertDeliveryRecord,
     MarketRecord,
+    OperationalAlertRecord,
     OutboundMessageRecord,
+    ProductionAccountReferenceRecord,
+    ResponseMacroRecord,
+    SlaPolicyRecord,
+    SupportGroupRecord,
     TicketRecord,
+    TicketFieldRecord,
     TimelineEventRecord,
     UserRecord,
     WorkspaceSettingsRecord,
 )
+from app.core.permissions import effective_permissions_for, normalize_permission_overrides
 from app.models.domain import (
     Agent,
     AgentStatus,
     AiDecision,
+    AnalyticsRollup,
     AuditEvent,
     Attachment,
+    AttachmentLifecycleStatus,
     AttachmentScanStatus,
     AutomationRule,
     Channel,
@@ -34,16 +46,29 @@ from app.models.domain import (
     ConnectorAccount,
     ConnectorAccountStatus,
     ContactPoint,
+    CsatFeedback,
+    CsatSource,
     Customer,
     Handoff,
     KnowledgeArticle,
     Market,
+    OperationalAlert,
+    OperationalAlertDelivery,
+    OperationalAlertDeliveryStatus,
+    OperationalAlertSeverity,
+    OperationalAlertStatus,
     OutboundMessage,
     OutboundMessageStatus,
+    ProductionAccountReference,
+    ResponseMacro,
+    SlaPolicy,
+    SupportGroup,
+    TicketField,
     Sentiment,
     Ticket,
     TimelineEvent,
     User,
+    PermissionProfile,
     UserRole,
     WorkspaceSettings,
 )
@@ -66,6 +91,8 @@ def market_from_record(record: MarketRecord) -> Market:
 
 
 def user_from_record(record: UserRecord) -> User:
+    permission_overrides = normalize_permission_overrides(record.permission_overrides)
+    permission_profile = PermissionProfile(record.permission_profile)
     return User(
         id=record.id,
         name=record.name,
@@ -75,6 +102,19 @@ def user_from_record(record: UserRecord) -> User:
         default_market_id=record.default_market_id,
         active=record.active,
         password_reset_required=record.password_reset_required,
+        mfa_enabled=record.mfa_enabled,
+        mfa_confirmed_at=record.mfa_confirmed_at,
+        mfa_last_verified_at=record.mfa_last_verified_at,
+        permission_profile=permission_profile,
+        permission_overrides=permission_overrides,
+        effective_permissions=effective_permissions_for(
+            record.role,
+            permission_profile,
+            permission_overrides,
+        ),
+        external_identity_provider=record.external_identity_provider,
+        external_subject=record.external_subject,
+        external_last_login_at=record.external_last_login_at,
         last_login_at=record.last_login_at,
     )
 
@@ -117,6 +157,51 @@ def agent_from_record(record: AgentRecord) -> Agent:
         capacity=record.capacity,
         skills=[ChannelType(skill) for skill in record.skills],
         languages=record.languages,
+    )
+
+
+def support_group_from_record(
+    record: SupportGroupRecord,
+    *,
+    member_count: int = 0,
+    open_ticket_count: int = 0,
+    sla_risk_count: int = 0,
+) -> SupportGroup:
+    return SupportGroup.model_validate(
+        {
+            "id": record.id,
+            "market_id": record.market_id,
+            "name": record.name,
+            "description": record.description,
+            "team_email": record.team_email or None,
+            "active": record.active,
+            "channels": record.channels,
+            "skills": record.skills,
+            "member_count": member_count,
+            "open_ticket_count": open_ticket_count,
+            "sla_risk_count": sla_risk_count,
+            "created_at": record.created_at,
+            "updated_at": record.updated_at,
+        }
+    )
+
+
+def sla_policy_from_record(record: SlaPolicyRecord) -> SlaPolicy:
+    return SlaPolicy.model_validate(
+        {
+            "id": record.id,
+            "market_id": record.market_id,
+            "name": record.name,
+            "active": record.active,
+            "channels": record.channels,
+            "priority": record.priority,
+            "first_response_minutes": record.first_response_minutes,
+            "resolution_minutes": record.resolution_minutes,
+            "business_hours": record.business_hours,
+            "position": record.position,
+            "created_at": record.created_at,
+            "updated_at": record.updated_at,
+        }
     )
 
 
@@ -163,11 +248,33 @@ def ticket_from_record(record: TicketRecord) -> Ticket:
             "assignee_id": record.assignee_id,
             "team": record.team,
             "tags": record.tags,
+            "custom_fields": record.custom_fields,
             "tasks": record.tasks,
             "sla": record.sla,
             "ai_summary": record.ai_summary,
             "recommended_action": record.recommended_action,
             "created_at": record.created_at,
+            "updated_at": record.updated_at,
+        }
+    )
+
+
+def ticket_field_from_record(record: TicketFieldRecord) -> TicketField:
+    return TicketField.model_validate(
+        {
+            "id": record.id,
+            "market_id": record.market_id,
+            "key": record.key,
+            "label": record.label,
+            "field_type": record.field_type,
+            "required": record.required,
+            "active": record.active,
+            "system": record.system,
+            "options": record.options,
+            "channels": record.channels,
+            "placeholder": record.placeholder,
+            "help_text": record.help_text,
+            "position": record.position,
             "updated_at": record.updated_at,
         }
     )
@@ -189,12 +296,30 @@ def timeline_event_from_record(record: TimelineEventRecord) -> TimelineEvent:
     )
 
 
+def csat_feedback_from_record(record: CsatFeedbackRecord) -> CsatFeedback:
+    return CsatFeedback.model_validate(
+        {
+            "id": record.id,
+            "market_id": record.market_id,
+            "ticket_id": record.ticket_id,
+            "customer_id": record.customer_id,
+            "rating": record.rating,
+            "comment": record.comment,
+            "source": CsatSource(record.source),
+            "submitted_by": record.submitted_by,
+            "created_at": record.created_at,
+            "updated_at": record.updated_at,
+        }
+    )
+
+
 def handoff_from_record(record: HandoffRecord) -> Handoff:
     return Handoff.model_validate(
         {
             "id": record.id,
             "market_id": record.market_id,
             "ticket_id": record.ticket_id,
+            "linked_ticket_id": record.linked_ticket_id,
             "from_team": record.from_team,
             "to_team": record.to_team,
             "requested_by": record.requested_by,
@@ -220,6 +345,28 @@ def knowledge_article_from_record(record: KnowledgeArticleRecord) -> KnowledgeAr
             "channels": record.channels,
             "tags": record.tags,
             "body": record.body,
+            "submitted_for_review_at": record.submitted_for_review_at,
+            "approved_at": record.approved_at,
+            "approved_by": record.approved_by,
+            "updated_at": record.updated_at,
+        }
+    )
+
+
+def response_macro_from_record(record: ResponseMacroRecord) -> ResponseMacro:
+    return ResponseMacro.model_validate(
+        {
+            "id": record.id,
+            "market_id": record.market_id,
+            "name": record.name,
+            "body": record.body,
+            "language": record.language,
+            "channels": record.channels,
+            "tags": record.tags,
+            "shortcut": record.shortcut,
+            "active": record.active,
+            "usage_count": record.usage_count,
+            "last_used_at": record.last_used_at,
             "updated_at": record.updated_at,
         }
     )
@@ -305,6 +452,104 @@ def outbound_message_from_record(record: OutboundMessageRecord) -> OutboundMessa
     )
 
 
+def production_account_reference_from_record(
+    record: ProductionAccountReferenceRecord,
+) -> ProductionAccountReference:
+    return ProductionAccountReference.model_validate(
+        {
+            "id": record.id,
+            "market_id": record.market_id,
+            "provider": record.provider,
+            "area": record.area,
+            "account_name": record.account_name,
+            "account_identifier": record.account_identifier,
+            "status": record.status,
+            "owner_email": record.owner_email or None,
+            "credential_reference": record.credential_reference,
+            "docs_reference": record.docs_reference,
+            "callback_urls": record.callback_urls,
+            "notes": record.notes,
+            "created_by": record.created_by,
+            "updated_by": record.updated_by,
+            "created_at": record.created_at,
+            "updated_at": record.updated_at,
+        }
+    )
+
+
+def analytics_rollup_from_record(record: AnalyticsRollupRecord) -> AnalyticsRollup:
+    return AnalyticsRollup.model_validate(
+        {
+            "id": record.id,
+            "market_id": record.market_id,
+            "period_start": record.period_start,
+            "period_end": record.period_end,
+            "open_tickets": record.open_tickets,
+            "at_risk_tickets": record.at_risk_tickets,
+            "breached_tickets": record.breached_tickets,
+            "active_agents": record.active_agents,
+            "avg_occupancy": record.avg_occupancy,
+            "avg_csat": record.avg_csat,
+            "channel_volume": {
+                ChannelType(channel): count
+                for channel, count in record.channel_volume.items()
+            },
+            "created_at": record.created_at,
+            "updated_at": record.updated_at,
+        }
+    )
+
+
+def operational_alert_from_record(record: OperationalAlertRecord) -> OperationalAlert:
+    return OperationalAlert.model_validate(
+        {
+            "id": record.id,
+            "market_id": record.market_id,
+            "severity": OperationalAlertSeverity(record.severity),
+            "status": OperationalAlertStatus(record.status),
+            "source": record.source,
+            "entity_type": record.entity_type,
+            "entity_id": record.entity_id,
+            "dedupe_key": record.dedupe_key,
+            "title": record.title,
+            "message": record.message,
+            "details": record.details,
+            "occurrence_count": record.occurrence_count,
+            "first_seen_at": record.first_seen_at,
+            "last_seen_at": record.last_seen_at,
+            "acknowledged_at": record.acknowledged_at,
+            "acknowledged_by": record.acknowledged_by,
+            "resolved_at": record.resolved_at,
+            "resolved_by": record.resolved_by,
+            "created_at": record.created_at,
+            "updated_at": record.updated_at,
+        }
+    )
+
+
+def operational_alert_delivery_from_record(
+    record: OperationalAlertDeliveryRecord,
+) -> OperationalAlertDelivery:
+    return OperationalAlertDelivery.model_validate(
+        {
+            "id": record.id,
+            "market_id": record.market_id,
+            "alert_id": record.alert_id,
+            "destination_type": record.destination_type,
+            "destination_name": record.destination_name,
+            "status": OperationalAlertDeliveryStatus(record.status),
+            "attempts": record.attempts,
+            "max_attempts": record.max_attempts,
+            "next_attempt_at": record.next_attempt_at,
+            "sent_at": record.sent_at,
+            "last_error": record.last_error,
+            "payload": record.payload,
+            "created_at": record.created_at,
+            "updated_at": record.updated_at,
+        }
+    )
+
+
 def attachment_from_record(record: AttachmentRecord) -> Attachment:
     return Attachment.model_validate(
         {
@@ -319,6 +564,12 @@ def attachment_from_record(record: AttachmentRecord) -> Attachment:
             "uploaded_by": record.uploaded_by,
             "scan_status": AttachmentScanStatus(record.scan_status),
             "scan_result": record.scan_result,
+            "lifecycle_status": AttachmentLifecycleStatus(record.lifecycle_status),
+            "retained_until": record.retained_until,
+            "deleted_at": record.deleted_at,
+            "deleted_by": record.deleted_by,
+            "deletion_reason": record.deletion_reason,
+            "purged_at": record.purged_at,
             "created_at": record.created_at,
             "updated_at": record.updated_at,
         }

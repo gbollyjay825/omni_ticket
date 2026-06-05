@@ -14,11 +14,13 @@ Build an independent Python backend for Omni Ticket that powers ticketing, omnic
 - Redis for queues, locks, short-lived cache, rate limits, and connector state in the production phase
 - Celery, Dramatiq, or RQ for background work in the production phase
 - OpenTelemetry-compatible logging/tracing
-- Object storage for attachments and malware scanning provider
+- Attachment lifecycle governance with local storage today, plus S3-compatible storage and external HTTP malware scanner adapters awaiting managed provider credentials
 
 ## Current Vertical Slice
 
 The current backend is intentionally usable before the production data platform is selected. It includes typed domain models, seeded operational data, an in-memory repository boundary, live FastAPI routes, connector intake simulation, queue automation, SLA risk refresh, audit events, and tests. The repository boundary is designed to be replaced by PostgreSQL without changing the public API contract.
+
+As of 2026-06-04, the local verification path for this slice is green: frontend lint, no-emit TypeScript checks, and frontend build passed, and the standalone backend compile, lint, typecheck, tests (`63 passed`), migration sanity, and one-shot worker smoke all passed in the backend virtual environment. The main remaining local delivery gap is documentation drift only: the standalone backend workspace at `/Users/gbolahan.salami/Documents/omni-ticket-backend` is reviewable from this automation but not writable, so doc sync must be completed from a write-capable backend pass.
 
 The production persistence foundation now includes:
 
@@ -36,17 +38,24 @@ The production persistence foundation now includes:
 - Database-first ticket, timeline, reply/note, handoff, AI decision, and outbound connector-event workflows.
 - Database-backed handoff lifecycle updates for acceptance, blocker capture, due-date changes, checklist progress, and close-loop timeline history.
 - Database-first ticket task completion updates through the existing ticket mutation path.
-- Database-first channel, agent status, knowledge article, and automation-rule management workflows.
+- Database-first channel, agent status, knowledge article, and automation-rule management workflows, including typed review states plus submitted-for-review and approval metadata.
+- Backend-ranked knowledge suggestions for ticket contexts, with market/channel scope, match scores, matched terms, and Agent Assist reasons.
+- Database-first response macros/canned replies with channel/tag scope, ticket-ranked suggestions, usage tracking, audit events, and composer insertion visibility.
 - Database-first automation-rule execution during ticket creation for routing, priority escalation, tags, checklist tasks, rule `last_fired_at`, failure count, timeline history, and audit history.
 - Database-first simulated inbound connector intake that creates/reuses customers, creates tickets, records connector events, writes connector receipt timeline events, and deduplicates provider payloads.
 - Database-first analytics summary and Work Queue reads that refresh SLA state, score priority queues, calculate channel volume, and report active agent occupancy.
+- Production list controls for customer and ticket APIs, with market-scoped search, allowlisted sorting, optional pagination, and count headers while preserving list response compatibility.
+- Optional ETag/If-Match optimistic concurrency for company, customer, and ticket updates so stale edit forms can fail fast with `412 Precondition Failed`.
+- Worker-driven supervisor escalation notifications for at-risk or breached high-priority, public-social, and VIP-impact tickets, with one internal-note timeline event per risk state plus durable audit history.
 - Database-backed connector account readiness for Email, WhatsApp Business, Facebook Messenger, Instagram DM, SMS, and voice, including credential references rather than raw secrets.
 - Signed connector webhook endpoint for provider callbacks with account readiness checks, HMAC verification, timestamp freshness, delivery-id replay protection, connector-account failure state, and audit history.
 - Database-backed fixed-window rate limiter for login, authenticated connector intake, and signed provider webhooks, returning `429` plus `Retry-After` before expensive downstream work.
 - Database-backed admin user creation and management for role, active state, market assignment, and default market.
+- Service-account users for machine-driven operational access without audit-reader or setup-admin permissions.
 - Database-backed outbound message queue for public replies, including idempotency keys, connector-account readiness checks, delivery status, retry, and dead-letter states.
 - Binary attachment upload/download support with a local storage adapter, configurable max size, and clean-scan-only download access.
 - Background worker service and `python -m app.worker` entrypoint for due outbound retries, dead-letter handling, SLA refresh, Work Queue recompute, analytics rollups, and worker audit events.
+- Legacy local SQLite bootstrap repair for missing auth and knowledge-review columns plus explicit Alembic head stamping so older local databases can still satisfy worker startup and migration smoke checks without a manual reset.
 - Deployment packaging with Dockerfile, Procfile, compose stack, `.env.example`, and staging/production configuration validation.
 - Test-only database rebinding so smoke tests can run against a temporary SQLite file instead of the repo-default PostgreSQL database.
 - Runtime-store mirroring for channels, agents, companies, customers, tickets, timeline events, handoffs, knowledge, rules, connector events, AI decisions, and audit history, with startup hydration from the database.
@@ -74,8 +83,10 @@ Current local auth model:
 - `POST /api/v1/auth/users` creates database-backed users for admins with a per-user temporary password hash.
 - `PATCH /api/v1/auth/users/{user_id}` updates user role, active state, market assignments, default market, and admin-set temporary password reset.
 - `POST /api/v1/auth/password` lets an authenticated user change their own password and clear reset-required state.
+- `POST /api/v1/auth/mfa/enroll`, `POST /api/v1/auth/mfa/confirm`, and `POST /api/v1/auth/mfa/disable` provide database-backed local TOTP MFA; enabled users must include `mfa_code` on login.
+- User records carry `permission_profile`, `permission_overrides`, and computed `effective_permissions`; route guards enforce `operations.write`, `supervisor.control`, `audit.read`, and `setup.manage`.
 
-Production auth still needs a real identity provider, MFA/SSO, token refresh, custom permission profiles, and optional external policy enforcement.
+Production auth now includes an OIDC SSO adapter boundary with PKCE authorization start, one-time callback state, userinfo lookup, existing-user linking, guarded provisioning, and Login/Setup readiness. External client credentials, token refresh policy, and optional external policy enforcement remain pending.
 
 Current role policy:
 
@@ -145,6 +156,8 @@ When enabled, backend automation must:
 - Recommend next action, reply draft, article, escalation, or handoff.
 - Record every AI decision as an auditable event with confidence, model version, input references, and override status.
 
+Duplicate detection is implemented as backend-ranked `duplicate_suggestions` on ticket contexts and a guarded `POST /tickets/{ticket_id}/merge` operation. Merge writes internal notes to both tickets, preserves source comments/attachment metadata in the target note, marks the source as merged, optionally closes it, and records `ticket.merge` audit history.
+
 When disabled, backend behavior must:
 
 - Continue creating tickets and ingesting messages.
@@ -178,12 +191,18 @@ AI should not autonomously send customer-facing messages without a separately ap
 - `POST /api/v1/tickets`
 - `GET /api/v1/tickets/{ticket_id}`
 - `PATCH /api/v1/tickets/{ticket_id}`
+- `GET /api/v1/tickets/{ticket_id}/knowledge-suggestions`
+- `GET /api/v1/tickets/{ticket_id}/macro-suggestions`
 - `GET /api/v1/tickets/{ticket_id}/timeline`
 - `POST /api/v1/tickets/{ticket_id}/timeline`
 - `POST /api/v1/tickets/{ticket_id}/attachments/binary`
+- `DELETE /api/v1/tickets/{ticket_id}/attachments/{attachment_id}`
 - `POST /api/v1/tickets/{ticket_id}/attachments/{attachment_id}/download-link`
 - `GET /api/v1/tickets/{ticket_id}/attachments/{attachment_id}/download`
 - `GET /api/v1/tickets/{ticket_id}/attachments/{attachment_id}/download/signed`
+- `GET /api/v1/attachments/provider-config`
+- `GET /api/v1/attachments/retention`
+- `POST /api/v1/attachments/retention/prune`
 - `POST /api/v1/tickets/{ticket_id}/reply`
 - `POST /api/v1/tickets/{ticket_id}/handoffs`
 - `GET /api/v1/work-queue`
@@ -205,12 +224,19 @@ AI should not autonomously send customer-facing messages without a separately ap
 - `GET /api/v1/knowledge`
 - `POST /api/v1/knowledge`
 - `PATCH /api/v1/knowledge/{article_id}`
+- `GET /api/v1/macros`
+- `POST /api/v1/macros`
+- `PATCH /api/v1/macros/{macro_id}`
+- `POST /api/v1/macros/{macro_id}/use`
 - `GET /api/v1/automation-rules`
 - `POST /api/v1/automation-rules`
 - `PATCH /api/v1/automation-rules/{rule_id}`
 - `GET /api/v1/analytics/summary`
 - `GET /api/v1/analytics/overview`
 - `GET /api/v1/audit`
+- `GET /api/v1/audit/export`
+- `GET /api/v1/audit/retention`
+- `POST /api/v1/audit/retention/prune`
 - `GET /api/v1/tracker`
 - `GET /api/v1/frontend/snapshot`
 - `PATCH /api/v1/settings/ai-work-queue-automation`

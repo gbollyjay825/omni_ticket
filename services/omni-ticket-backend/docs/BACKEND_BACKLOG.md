@@ -1,16 +1,16 @@
 # Omni Ticket Backend Development Backlog
 
-Last updated: 2026-05-29
+Last updated: 2026-06-05
 
 ## Current Milestone
 
-Status: Working Python/FastAPI vertical slice is running locally on `http://127.0.0.1:8000` against local PostgreSQL database `omni_ticket`, with the primary mutable operational paths, core operational reads, market-scoped connector account metadata, password-backed admin user management, durable outbound delivery queue, automation-rule execution, worker foundation, deployment packaging, and binary attachment storage/download support moved onto SQLAlchemy-backed repositories. Local smoke tests pass, and the monorepo now includes a root GitHub Actions CI workflow for frontend lint/build plus backend compile, lint, typecheck, tests, migration sanity, and worker smoke.
+Status: Working Python/FastAPI vertical slice is running locally and on the isolated Omni VM deployment at `https://omni.wakanow.com`, with the primary mutable operational paths, core operational reads, market-scoped connector account metadata, password-backed admin user management, local TOTP MFA, custom permission profiles, durable audit export/retention, attachment lifecycle retention, durable outbound delivery queue, automation-rule execution, worker foundation, deployment packaging, binary attachment storage/download support, knowledge approval metadata, backend-ranked knowledge suggestions, backend-ranked response macros, duplicate ticket suggestions and audited merge, backend-ranked supervisor recommendations, support-group team inboxes, linked handoff team tickets, handoff-forward email queueing, threaded handoff email replies, threaded customer email replies, audited signed attachment links in handoff forwards, IMAP attachment capture, public portal attachment upload, backend global search, sanitized production account-request packs, backend-queued account-request email with an internal readiness ticket, non-secret provider account-reference tracking with API_DOCS snippet generation, production launch readiness checklist, worker-driven supervisor escalation notifications, external alert delivery attempts, IMAP/SMTP email boundaries, WhatsApp/Facebook/Instagram/SMS/voice connector boundaries, production customer/ticket list search and pagination controls, optional optimistic concurrency guards, and service-account role support moved onto SQLAlchemy-backed repositories. Local smoke tests pass, and the monorepo now includes a root GitHub Actions CI workflow for frontend lint/build plus backend compile, lint, typecheck, tests, migration sanity, and worker smoke.
 
 Completed in this build:
 
 - Independent backend repository and virtual environment.
 - FastAPI app, config, CORS, health route, and Swagger docs.
-- Typed domain model for channels, connector accounts, agents, companies, customers, tickets, SLA, timeline, handoffs, knowledge, rules, connector events, audit, settings, and AI decisions.
+- Typed domain model for channels, connector accounts, agents, support groups, companies, customers, tickets, SLA, timeline, handoffs, knowledge, rules, connector events, audit, settings, and AI decisions.
 - In-memory repository boundary with realistic seeded omnichannel data.
 - Ticket, timeline, reply, handoff, customer, company, knowledge, rule, analytics, settings, connector, audit, and tracker APIs.
 - AI Work Queue automation default-on with admin disable switch.
@@ -24,24 +24,47 @@ Completed in this build:
 - Database-backed workspace settings with durable AI Work Queue automation enable/disable behavior.
 - Database-backed customer and company APIs with restart-safe rehydration before ticket creation.
 - Database-first ticket, timeline, reply/note, handoff, AI decision, and outbound connector-event workflows.
-- Database-first channel, agent status, knowledge article, and automation-rule management workflows.
+- Database-first channel, agent status, support group, knowledge article, and automation-rule management workflows.
+- Market-scoped support groups with CRUD APIs, team inbox email addresses, live member/open-ticket/SLA-risk counters, audit history, frontend Setup visibility, handoff routing choices, and safe rename propagation across agents, tickets, and handoffs.
+- Handoff-forward email threading with source-ticket, linked-ticket, handoff, and reply-target SMTP headers; matching inbound IMAP replies append to the linked internal ticket and leave a source-ticket note.
+- Knowledge article review-state validation with submitted-for-review and approval metadata persisted in the database.
+- Backend-ranked knowledge suggestions for ticket contexts, including article score, matched terms, and match reasons surfaced to Agent Assist.
+- Database-backed response macros with channel/tag scope, ticket-ranked suggestions, usage tracking, audit events, and composer visibility.
+- Backend-ranked duplicate ticket suggestions with customer/contact, reference, subject, label, channel, and recency reasons, plus an audited ticket merge operation that closes/marks the source and carries source thread/attachment context into the target note.
+- Backend-ranked supervisor recommendations for blocked handoffs, due handoffs, queue pressure, and reassignment, exposed through supervisor-only operations APIs and the frontend snapshot.
+- Market-scoped global search across tickets, customers, companies, answers, support groups, handoffs, and agents, with frontend topbar result routing.
+- Production launch readiness checklist with live migration evidence, queued account-request evidence, non-secret account-reference counts, secret-hygiene checks, provider credential gates, storage/scanner status, SSO status, alerting status, observability next actions, and Setup visibility.
 - Database-first automation-rule execution during ticket creation for routing, priority escalation, tags, checklist tasks, rule health, timeline history, and audit history.
 - Database-first simulated inbound connector intake with customer creation/reuse, ticket creation, connector receipt timeline events, and idempotent deduplication.
 - Database-first analytics summary and Work Queue reads with SLA refresh, channel volume, agent occupancy, and queue scoring.
+- Production list controls for customer and ticket APIs, including market-scoped search, filters, allowlisted sorting, optional pagination, and count headers without changing the list response shape.
+- Optional ETag/If-Match optimistic concurrency protection for company, customer, and ticket updates so stale admin/browser edits return `412` instead of overwriting newer changes.
+- Worker-driven supervisor notifications for at-risk or breached high-priority, public-social, and VIP-impact tickets, with internal-note timeline history and deduplicated audit records.
 - Database-backed connector account readiness for Email, WhatsApp Business, Facebook Messenger, Instagram DM, SMS, and voice, including status, credential reference, webhook state, send permission, failures, capabilities, and market isolation.
 - Signed connector webhook endpoint for provider callbacks with HMAC verification, timestamp tolerance, delivery-id replay protection, account failure tracking, and audit history.
 - Database-backed fixed-window rate limiting for login, authenticated connector intake, and signed provider webhooks, with Redis, gateway, or WAF limits still recommended for multi-region scale.
 - Request correlation middleware with `X-Request-ID`, processing-time response headers, and structured JSON access logs.
 - Database-backed admin user creation and update APIs for role, active status, market assignment, and default market.
 - Per-user PBKDF2 password hashes, admin-set temporary passwords, password reset-required state, user password-change endpoint, and login timestamp capture.
-- Database-backed outbound message queue for public replies with idempotency keys, connector-account readiness checks, delivery status, retry, and dead-letter states.
+- Database-backed local TOTP MFA enrollment, confirmation, login enforcement, disable flow, account-recovery reset, and audit events.
+- Database-backed custom permission profiles, per-permission allow/deny overrides, permission-aware route enforcement, frontend Setup controls, and self-lockout protection.
+- Permission-gated audit CSV/JSON export, configurable retention policy, admin prune endpoint, worker pruning, export audit records, and frontend Setup controls.
+- Attachment lifecycle governance with active/deleted/purged states, supervisor delete/purge, configurable retention policy, admin prune endpoint, worker cleanup, audit history, and frontend Setup controls.
+- Database-backed outbound message queue for public replies and support-group handoff forwards with idempotency keys, connector-account readiness checks, delivery status, retry, and dead-letter states.
+- Email reply threading for customer responses that reference Omni outbound messages, with duplicate prevention, reopen behavior, `customer-replied` tagging, timeline history, connector events, and audit records.
+- IMAP email intake now captures attachments through the same scanning/storage path as operator uploads, stores clean files, records blocked files as metadata-only attachments, and avoids duplicate attachments during replay.
+- Public portal users can upload proof files to tickets and replies; portal detail shows sanitized attachment metadata while internal storage keys stay hidden.
+- Handoff-forward case context now includes audited signed download links for clean active attachments, with blocked/deleted files listed as metadata only.
+- Frontend now includes an Omni transition shell with mirrored navigation labels, Omni utility actions, dashboard-first Omnichannel layout, ticket actions/context tabs, Omnichat module tabs, Admin module catalog, and Analytics report library so Wakanow users can move with familiar screen anatomy under Omni language.
 - Binary attachment upload/download path with local storage adapter, configurable size limit, blocked-file scan enforcement, and clean-only retrieval.
+- Signed attachment download links with per-link token IDs, creator identity, correlated creation/download audit records, path mismatch rejection, and no-store/nosniff download response headers.
 - Background worker service and `python -m app.worker` entrypoint for due outbound retries, dead-letter handling, SLA refresh, Work Queue recompute, analytics rollups, and worker audit events.
+- Legacy local SQLite bootstrap repair for missing auth and knowledge-review columns plus explicit Alembic head stamping so older local databases can still satisfy worker startup and migration smoke checks without a manual reset.
 - Dockerfile, Procfile, compose stack, `.env.example`, deployment docs, and staging/production configuration validation for separate release, web, and worker processes.
 - Isolated smoke-test path that rebinds backend tests to a temporary SQLite database instead of mutating the repo-default PostgreSQL runtime.
 - Database-backed ticket task completion updates through the existing ticket patch API, with persistence across runtime reset.
 - Local PostgreSQL runtime configured through `.env` with Postgres-safe seed ordering.
-- Database-backed mirror for channels, agents, companies, customers, tickets, timeline events, handoffs, knowledge, rules, connector events, AI decisions, and audit history, with startup rehydration into the runtime store.
+- Database-backed mirror for channels, agents, support groups, companies, customers, tickets, timeline events, handoffs, knowledge, rules, connector events, AI decisions, and audit history, with startup rehydration into the runtime store.
 - Smoke tests, lint, and typecheck passing.
 - Root GitHub Actions CI workflow added for frontend lint/build plus backend `compileall`, `ruff`, `mypy`, `pytest`, migration sanity, and worker smoke.
 - Database-backed handoff lifecycle updates for acceptance, blocker capture, due-date changes, checklist progress, close-loop timeline events, and restart-safe persistence.
@@ -49,35 +72,40 @@ Completed in this build:
 Known production dependencies:
 
 - PostgreSQL provider.
-- Production identity provider, MFA/SSO, and tenant/RBAC policy.
+- Production SSO/OIDC client credentials; OIDC PKCE start/callback boundary, local TOTP MFA, and custom permission profiles are built.
 - WhatsApp Business API credentials.
 - Meta app credentials for Facebook Messenger and Instagram DM.
 - Mailbox provider credentials.
 - SMS/voice provider credentials.
-- Attachment object storage and production malware scanning provider.
+- Managed attachment object storage credentials and production malware scanning provider account; S3-compatible storage and HTTP scanner adapter boundaries are built.
+- Any `blocked` or `action_required` launch gate surfaced by `GET /api/v1/production/readiness-checklist`.
+
+Omni parity reference:
+
+- The authenticated Wakanow source support workspaces were inspected on 2026-06-05 for parity planning. The frontend now mirrors the transition shell and screen anatomy under Omni language; remaining deeper backend/product parity includes durable saved views, export/scheduled report jobs, forums, field service scheduling, WhatsApp proactive campaign execution, custom objects/purchase history automation, and third-party provider credentials.
 
 ## Phase 0: Repository Foundation
 
 1. Initialize independent Python repository. Done.
 2. Add FastAPI app shell, health route, test harness, linting, typing, and environment config. Done.
-3. Add CI pipeline for lint, typecheck, tests, and build. Done for backend lint/typecheck/tests; frontend build remains tracked in the separate frontend repo.
+3. Add CI pipeline for lint, typecheck, tests, and build. Done for backend lint/typecheck/tests and verified end-to-end alongside the frontend repo.
 4. Define environment strategy for local, staging, and production. Done for current deployable package, including isolated smoke-test database rebinding; hosting-specific values pending.
 
 ## Phase 1: Data Platform
 
 1. Choose and provision PostgreSQL. Local PostgreSQL runtime is active; managed production provider pending.
 2. Add SQLAlchemy or SQLModel models and Alembic migrations. Done.
-3. Model tenants, users, roles, teams, agents, customers, companies, channels, tickets, timeline events, SLAs, handoffs, knowledge articles, settings, and audit events. Done at schema level.
+3. Model tenants, users, roles, teams/support groups, agents, customers, companies, channels, tickets, timeline events, SLAs, handoffs, knowledge articles, settings, and audit events. Done at schema level.
 4. Add seed data migration for local development. Started with database seeding from reference data.
 5. Add repository layer with transaction boundaries. Auth/session/settings/customer/company/ticket/timeline/handoff/channel/agent/knowledge/rule/inbound connector/analytics/work-queue/connector account/outbound queue/worker paths are database-first; production deployment scheduling, dashboards, and alerting remain pending.
 
 ## Phase 2: Auth, Tenancy, And Security
 
-1. Implement authentication provider integration. Database-backed local sessions and per-user password hashes done; production provider, MFA, and SSO pending.
-2. Add RBAC for agent, supervisor, admin, auditor, and service account roles. Route-level policy is done for current user roles; service-account policy remains pending.
+1. Implement authentication provider integration. Database-backed local sessions, per-user password hashes, local TOTP MFA, and the OIDC PKCE start/callback boundary are done; external SSO/OIDC client credentials remain pending.
+2. Add RBAC for agent, supervisor, admin, auditor, service account roles, and custom permission profiles. Done for the current role set, per-user overrides, and OIDC-linked users; external identity lifecycle activation remains pending.
 3. Add tenant isolation middleware and database scoping. Session/user/market scoping and the primary operational write/read paths now enforce market scope through database-backed routes.
 4. Add audit logging for every write action. Started, with auth, market-selection, access-denied, setup, ticketing, connector, worker, automation, and outbound events now durable.
-5. Add attachment metadata model and malware scanning integration point. Metadata plus local storage/download gate are done; production object storage and malware scanning provider remain pending dependencies.
+5. Add attachment metadata model and malware scanning integration point. Metadata, local storage/download gate, lifecycle status, delete/purge, retention policy, worker pruning, S3-compatible storage, and external HTTP scanner boundary are done; managed bucket and scanning provider credentials remain pending dependencies.
 
 ## Phase 3: Ticket And Conversation APIs
 
@@ -85,7 +113,7 @@ Known production dependencies:
 2. Implement conversation timeline append/read APIs. Database-first local path done.
 3. Implement reply, note, and handoff endpoints. Database-first local path done.
 4. Implement customer lookup and Customer 360 APIs. Database-backed customer/company list, create, detail, and update paths done.
-5. Implement status, priority, assignee, tags, task, and SLA update APIs. Started with database-backed ticket field and task updates plus frontend-compatible channel/agent/settings mutation routes.
+5. Implement status, priority, assignee, tags, task, and SLA update APIs. Started with database-backed ticket field and task updates plus frontend-compatible channel/agent/settings mutation routes. Ticket and customer list APIs now also support market-scoped search, filters, sorting, optional pagination, and count headers. Core company, customer, and ticket updates now support optional `If-Match` conflict protection.
 
 ## Phase 4: AI Work Queue Automation
 
@@ -105,17 +133,17 @@ Known production dependencies:
 1. Model business hours and priority-based response targets. Started.
 2. Calculate first response and resolution promises. Done.
 3. Add background job to update risk and breach states. Done with `python -m app.worker`; deployment scheduler pending.
-4. Add escalation policies by channel, priority, customer tier, and queue.
-5. Add supervisor notification events.
+4. Add escalation policies by channel, priority, customer tier, and queue. Started with worker-side notification targeting for high-priority, public-social, and VIP-impact risk states.
+5. Add supervisor notification events. Done for local worker-driven timeline and audit events.
 
 ## Phase 6: Omnichannel Connectors
 
-1. Email connector: inbound mailbox sync, outbound send, thread mapping, attachments. Database-first simulated intake, account metadata, outbound queue, local-dev send adapter, and binary attachment storage/download path done; real provider adapter pending.
-2. WhatsApp connector: webhook intake, template messages, media, delivery receipts. Database-first simulated intake, account metadata, outbound queue, and local-dev send adapter done; real provider adapter pending.
-3. Facebook Messenger connector: page webhook intake, replies, private reply flow, delivery state. Database-first simulated intake, account metadata, outbound queue, and local-dev send adapter done; real provider adapter pending.
-4. Instagram DM connector: DM intake, comment-to-DM handoff, media, reply state. Database-first simulated intake, account metadata, outbound queue, and local-dev send adapter done; real provider adapter pending.
-5. SMS connector: inbound/outbound texts and delivery receipts. Database-first simulated intake, account metadata, outbound queue, and local-dev send adapter done; real provider adapter pending.
-6. Phone/voice connector: call logs, callback requests, voicemail summaries. Account metadata done; real provider adapter pending.
+1. Email connector: inbound mailbox sync, outbound send, thread mapping, attachments. IMAP inbound and SMTP outbound adapters are built; mailbox/provider credentials remain pending.
+2. WhatsApp connector: webhook intake, template messages, media, delivery receipts. Cloud API outbound plus signed inbound/status callbacks are built; Meta credentials, templates, and media support remain pending.
+3. Facebook Messenger connector: page webhook intake, replies, private reply flow, delivery state. Graph API outbound plus signed inbound/postback/delivery callbacks are built; Meta page credentials and private-reply specifics remain pending.
+4. Instagram DM connector: DM intake, comment-to-DM handoff, media, reply state. Graph API outbound plus signed inbound/postback/read callbacks are built; Meta Instagram credentials and comment-to-DM/media specifics remain pending.
+5. SMS connector: inbound/outbound texts and delivery receipts. HTTP outbound plus signed inbound/receipt callbacks are built; provider endpoint/token/sender ID and webhook secret remain pending.
+6. Phone/voice connector: call logs, callback requests, voicemail summaries. HTTP callback outbound plus signed call-log/voicemail/status callbacks are built; provider endpoint/token/caller ID, webhook secret, and recording policy remain pending.
 7. Portal connector: authenticated customer updates and article deflection.
 8. Partner/API connector: webhook intake, idempotency, replay protection.
 
@@ -128,16 +156,17 @@ Known production dependencies:
 
 ## Phase 8: Knowledge And Automation Rules
 
-1. Implement knowledge article CRUD and approval state. Started.
-2. Add article suggestion index by intent, channel, language, and tags.
-3. Implement automation rules engine for routing, SLA, escalation, tagging, and notifications. Started with ticket-creation execution for social and payment rules.
-4. Add rule health, last fired, failure count, and safe rollback. Started with `last_fired_at` and `failure_count` updates during rule execution.
+1. Implement knowledge article CRUD and approval state. Done.
+2. Add article suggestion index by intent, channel, language, and tags. Done for ticket contexts with channel, tag, title/body term overlap, priority, and recovery-fit scoring.
+3. Add market-scoped response macros/canned replies with ticket-aware ranking and usage history. Done.
+4. Implement automation rules engine for routing, SLA, escalation, tagging, and notifications. Started with ticket-creation execution for social and payment rules.
+5. Add rule health, last fired, failure count, and safe rollback. Started with `last_fired_at` and `failure_count` updates during rule execution.
 
 ## Phase 9: Analytics And Workforce
 
 1. Build analytics rollups for volume, SLA, CSAT, queue pressure, response time, resolution time, and backlog age. Database-first summary read and worker-triggered rollup are done; historical rollup tables still pending.
 2. Build workforce APIs for availability, occupancy, capacity, load, and skills. Started through agents API and database-first analytics occupancy reads.
-3. Add supervisor recommendations for reassignment and channel pressure.
+3. Add supervisor recommendations for reassignment and channel pressure. Done.
 
 ## Phase 10: Production Hardening
 
@@ -145,7 +174,7 @@ Known production dependencies:
 2. Add idempotency keys for all inbound webhooks and outbound sends. Started with delivery-id replay protection and existing provider/external-id deduplication.
 3. Add retry policies and dead-letter queues. Done locally with the durable outbound message queue and worker execution; provider-specific retry policies and deployment alerting pending.
 4. Add observability dashboards and alerting. Started with request IDs, processing-time headers, and structured JSON access logs.
-5. Add backup, retention, export, and deletion workflows.
+5. Add backup, retention, export, and deletion workflows. Started with durable audit export/retention, attachment lifecycle retention/delete/purge, and admin/worker prune; broader backup and legal-hold workflows remain pending.
 6. Add load tests for queue recompute, webhook ingestion, and ticket timeline reads.
 
 ## Phase 11: Frontend Auth And Market UX
@@ -162,15 +191,23 @@ Known production dependencies:
 
 - Added a frontend-oriented snapshot endpoint at `GET /api/v1/frontend/snapshot` so the PWA can hydrate against one backend payload while the writable frontend workspace remains separate.
 - Added compatibility aliases for `GET /api/v1/analytics/overview`, `PATCH /api/v1/settings/ai-work-queue-automation`, `PATCH /api/v1/channels/{channel_id}`, and `PATCH /api/v1/agents/{agent_id}/status`.
-- The frontend repository now hydrates the primary operational views from authenticated market snapshots and writes key ticket, reply, note, handoff, settings, connector, and user-management mutations back through the backend bridge.
+- The frontend repository now hydrates the primary operational views from authenticated market snapshots and writes key ticket, reply, note, handoff, macro usage, support group, settings, connector, and user-management mutations back through the backend bridge.
 - Added production-readiness endpoint at `GET /api/v1/platform/readiness` to verify database connectivity and required table presence.
+- Added production launch readiness checklist at `GET /api/v1/production/readiness-checklist`, surfaced in Setup -> Connectors, to summarize live launch gates without exposing secrets.
+- Handoff-forward SMTP messages now include Omni thread headers, and inbound email replies can match outbound `Message-ID` references or Omni ticket headers to append to an existing linked team ticket instead of creating a duplicate ticket.
 - Added `docs/PRODUCTION_BUILD_PLAN.md` as the long-running execution plan toward production readiness.
 - Auth login now creates durable `sessions` rows and protected endpoints validate user and market access through the database.
 - Auth and access-denied paths now write durable audit records with request IDs for login success, failed login, rate limiting, missing authentication, invalid sessions, explicit market selection, and market-scope denial.
+- Local TOTP MFA is available through `POST /api/v1/auth/mfa/enroll`, `POST /api/v1/auth/mfa/confirm`, and `POST /api/v1/auth/mfa/disable`; enabled users must pass `mfa_code` to `POST /api/v1/auth/login`.
+- User management now supports `permission_profile` plus `permission_overrides.allow` and `permission_overrides.deny`; route guards evaluate effective permissions instead of raw role names.
+- Audit readers can use filtered `GET /api/v1/audit`, `GET /api/v1/audit/export`, and `GET /api/v1/audit/retention`; admins can run `POST /api/v1/audit/retention/prune`, and the worker runs the same retention policy during each cycle.
+- Attachment governance now exposes `DELETE /api/v1/tickets/{ticket_id}/attachments/{attachment_id}`, `GET /api/v1/attachments/retention`, and `POST /api/v1/attachments/retention/prune`; downloads and signed links only serve active, clean attachments, signed link audits correlate creation and download through token IDs, and the worker runs the same retention prune policy.
+- Attachment provider readiness now exposes `GET /api/v1/attachments/provider-config`; `OMNI_ATTACHMENT_STORAGE_BACKEND=s3` enables S3-compatible storage and `OMNI_ATTACHMENT_SCANNER_ADAPTER=http` enables external malware scanning before binary bytes are persisted.
 - Settings reads/writes now use `workspace_settings`; ticket creation and connector intake honor the persisted AI automation switch.
 - Customer and company endpoints now use database records directly and can rehydrate a customer/company into the runtime ticket service after API restart.
 - Ticket, timeline, reply/note, handoff, AI decision, and outbound connector-event endpoints now write database records directly.
-- Channel, agent status, knowledge article, and automation-rule endpoints now write database records directly.
+- Channel, agent status, support group, knowledge article, and automation-rule endpoints now write database records directly.
+- Knowledge article status changes now persist submitted-for-review and approval metadata, including approver identity.
 - Enabled automation rules now execute during ticket creation and write routing, priority, tag, task, timeline, last-fired, failure-count, and audit changes back to the database.
 - Simulated inbound connector intake now writes customer, ticket, connector event, connector receipt timeline, and audit records directly.
 - Signed provider webhooks can now call `POST /api/v1/webhooks/{provider}/{market_code}` with HMAC signature headers, timestamp freshness, and delivery-id replay protection before using the same database-first connector intake path.

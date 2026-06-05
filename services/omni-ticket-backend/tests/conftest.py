@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.store import store
 from app.db.bootstrap import seed_reference_data
 from app.db.models import Base
@@ -29,6 +30,13 @@ def reset_store() -> Generator[None]:
     reset_local_state()
     yield
     reset_local_state()
+
+
+@pytest.fixture(autouse=True)
+def use_rules_ai_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "ai_provider", "rules")
+    monkeypatch.setattr(settings, "anthropic_api_key", None)
+    monkeypatch.setattr(settings, "anthropic_api_key_file", None)
 
 
 def reset_local_state() -> None:
