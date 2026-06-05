@@ -2394,6 +2394,113 @@ button:disabled {
   margin-top: 12px;
 }
 
+.canned-response-form {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.canned-form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.canned-form-row label {
+  flex: 1 1 200px;
+  min-width: 180px;
+  display: grid;
+  gap: 5px;
+}
+
+.canned-response-form label,
+.canned-edit label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #506a82;
+}
+
+.canned-response-form input,
+.canned-response-form textarea,
+.canned-edit input,
+.canned-edit textarea {
+  width: 100%;
+  border: 1px solid #d5e0ec;
+  border-radius: 7px;
+  padding: 8px 10px;
+  font: inherit;
+}
+
+.canned-response-form input {
+  height: 38px;
+}
+
+.canned-response-list {
+  display: grid;
+  gap: 10px;
+}
+
+.canned-response-card {
+  border: 1px solid #dce4ee;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 12px 14px;
+  display: grid;
+  gap: 8px;
+}
+
+.canned-response-card.inactive {
+  opacity: 0.7;
+}
+
+.canned-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.canned-card-head strong {
+  color: #17314b;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.canned-card-head code {
+  margin-left: 8px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: #eef2f7;
+  color: #2f6fed;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.canned-card-head span {
+  color: #6b8195;
+  font-size: 12px;
+  font-weight: 600;
+  flex: none;
+}
+
+.canned-card-body {
+  margin: 0;
+  color: #506a82;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.canned-card-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.canned-edit {
+  display: grid;
+  gap: 10px;
+}
+
 .freshworks-dashboard-grid > article,
 .report-card-grid > article,
 .freshchat-module-grid > article,

@@ -77,6 +77,8 @@ import {
   type BackendOidcCallbackInput,
   type BackendOperationalAlertStatus,
   type BackendResponseMacro,
+  type BackendCreateResponseMacroInput,
+  type BackendUpdateResponseMacroInput,
   type BackendResponseMacroSuggestion,
   type BackendSession,
   type BackendSlaPolicy,
@@ -94,6 +96,8 @@ import {
   type BackendSnapshot,
   postBackendReply,
   recordBackendResponseMacroUse,
+  createBackendResponseMacro,
+  patchBackendResponseMacro,
   retryBackendOutboundMessage,
   startOidcLoginBackend,
   uploadBackendAttachment,
@@ -2148,6 +2152,14 @@ export function useOmniStore() {
     return syncBackendMutation((session) => recordBackendResponseMacroUse(macroId, ticketId, session))
   }
 
+  function createResponseMacro(input: BackendCreateResponseMacroInput) {
+    return syncBackendMutation((session) => createBackendResponseMacro(input, session))
+  }
+
+  function updateResponseMacro(macroId: string, patch: BackendUpdateResponseMacroInput) {
+    return syncBackendMutation((session) => patchBackendResponseMacro(macroId, patch, session))
+  }
+
   function resetDemo() {
     updateRoute({ screen: 'command', channel: null, conversation: null, customer: null })
     patchState(() => initialOmniState)
@@ -2194,6 +2206,8 @@ export function useOmniStore() {
     updateHandoffStatus,
     toggleHandoffChecklist,
     recordResponseMacroUse,
+    createResponseMacro,
+    updateResponseMacro,
     resetDemo,
     backendSession,
     login,

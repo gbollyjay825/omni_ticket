@@ -63,6 +63,7 @@ import type {
   NewTicketInput,
   OmniConversation,
   Priority,
+  ResponseMacro,
   ResponseMacroSuggestion,
   ScreenId,
   Sentiment,
@@ -438,6 +439,7 @@ const setupBuiltModules = new Set<string>([
   'Production account pack',
   'SLA policies',
   'Automations',
+  'Canned responses',
 ])
 const analyticsReportCatalog: Record<AnalyticsReportGroup, { title: string; detail: string; badge: string }[]> = {
   catalog: [
@@ -858,6 +860,8 @@ function OmniApp() {
     updateSlaPolicy,
     createBusinessHours,
     updateBusinessHours,
+    createResponseMacro,
+    updateResponseMacro,
     createTicketField,
     updateTicketField,
     changePassword,
@@ -975,6 +979,10 @@ function OmniApp() {
   const [businessHoursName, setBusinessHoursName] = useState('')
   const [businessHoursTimezone, setBusinessHoursTimezone] = useState('Africa/Lagos')
   const [businessHoursDrafts, setBusinessHoursDrafts] = useState<Record<string, BusinessHoursDay[]>>({})
+  const [cannedDraft, setCannedDraft] = useState({ name: '', shortcut: '', body: '' })
+  const [cannedEditId, setCannedEditId] = useState('')
+  const [cannedEditDraft, setCannedEditDraft] = useState({ name: '', shortcut: '', body: '' })
+  const [cannedBusy, setCannedBusy] = useState(false)
   const [addUserOpen, setAddUserOpen] = useState(false)
   const [addGroupOpen, setAddGroupOpen] = useState(false)
   const [addSlaPolicyOpen, setAddSlaPolicyOpen] = useState(false)
@@ -3031,6 +3039,63 @@ function OmniApp() {
         return next
       })
       setPrototypeNotice('Business hours schedule saved.')
+    }
+  }
+
+  async function handleCreateCannedResponse(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const name = cannedDraft.name.trim()
+    const body = cannedDraft.body.trim()
+    if (name.length < 2 || body.length < 2 || cannedBusy) return
+    setCannedBusy(true)
+    try {
+      const saved = await createResponseMacro({
+        name,
+        body,
+        shortcut: cannedDraft.shortcut.trim() || null,
+      })
+      if (saved) {
+        setCannedDraft({ name: '', shortcut: '', body: '' })
+        setPrototypeNotice('Canned response saved.')
+      }
+    } finally {
+      setCannedBusy(false)
+    }
+  }
+
+  async function toggleCannedResponse(macro: ResponseMacro) {
+    if (cannedBusy) return
+    setCannedBusy(true)
+    try {
+      const saved = await updateResponseMacro(macro.id, { active: !macro.active })
+      if (saved) setPrototypeNotice(`Canned response ${macro.active ? 'paused' : 'activated'}.`)
+    } finally {
+      setCannedBusy(false)
+    }
+  }
+
+  function startEditCanned(macro: ResponseMacro) {
+    setCannedEditId(macro.id)
+    setCannedEditDraft({ name: macro.name, shortcut: macro.shortcut ?? '', body: macro.body })
+  }
+
+  async function saveCannedEdit(macroId: string) {
+    const name = cannedEditDraft.name.trim()
+    const body = cannedEditDraft.body.trim()
+    if (name.length < 2 || body.length < 2 || cannedBusy) return
+    setCannedBusy(true)
+    try {
+      const saved = await updateResponseMacro(macroId, {
+        name,
+        body,
+        shortcut: cannedEditDraft.shortcut.trim() || null,
+      })
+      if (saved) {
+        setCannedEditId('')
+        setPrototypeNotice('Canned response updated.')
+      }
+    } finally {
+      setCannedBusy(false)
     }
   }
 
@@ -9771,9 +9836,153 @@ function OmniApp() {
 	              ))}
 	            </div>
 	          </div>
-	          <button className="secondary-action" type="button" onClick={resetDemo}>
-	            <RotateCcw size={16} />
-	            Reset review data
+          <div className="automation-settings-panel canned-responses-panel">
+            <div className="panel-head compact">
+              <div>
+                <span>Canned responses</span>
+                <h2>Reusable replies agents can insert</h2>
+              </div>
+              <ClipboardList size={18} />
+            </div>
+            <form className="user-create-form canned-response-form" onSubmit={handleCreateCannedResponse}>
+              <div className="canned-form-row">
+                <label>
+                  <span>Name</span>
+                  <input
+                    required
+                    value={cannedDraft.name}
+                    onChange={(event) => setCannedDraft((current) => ({ ...current, name: event.target.value }))}
+                    placeholder="Refund acknowledged"
+                    disabled={!canManageUsers || cannedBusy}
+                  />
+                </label>
+                <label>
+                  <span>Shortcut</span>
+                  <input
+                    value={cannedDraft.shortcut}
+                    onChange={(event) => setCannedDraft((current) => ({ ...current, shortcut: event.target.value }))}
+                    placeholder="/refund"
+                    disabled={!canManageUsers || cannedBusy}
+                  />
+                </label>
+              </div>
+              <label>
+                <span>Reply body</span>
+                <textarea
+                  required
+                  rows={3}
+                  value={cannedDraft.body}
+                  onChange={(event) => setCannedDraft((current) => ({ ...current, body: event.target.value }))}
+                  placeholder="Hi there, thanks for reaching out. We've started your refund…"
+                  disabled={!canManageUsers || cannedBusy}
+                />
+              </label>
+              <button
+                type="submit"
+                className="primary-action"
+                disabled={!canManageUsers || cannedBusy || cannedDraft.name.trim().length < 2 || cannedDraft.body.trim().length < 2}
+              >
+                <Plus size={16} />
+                Add canned response
+              </button>
+            </form>
+            <div className="canned-response-list">
+              {state.responseMacros.length === 0 ? (
+                <p className="setup-module-hint">No canned responses yet. Add one agents can reuse.</p>
+              ) : (
+                state.responseMacros.map((macro) => (
+                  <article className={`canned-response-card ${macro.active ? '' : 'inactive'}`} key={macro.id}>
+                    {cannedEditId === macro.id ? (
+                      <div className="canned-edit">
+                        <div className="canned-form-row">
+                          <label>
+                            <span>Name</span>
+                            <input
+                              value={cannedEditDraft.name}
+                              onChange={(event) =>
+                                setCannedEditDraft((current) => ({ ...current, name: event.target.value }))
+                              }
+                              disabled={cannedBusy}
+                            />
+                          </label>
+                          <label>
+                            <span>Shortcut</span>
+                            <input
+                              value={cannedEditDraft.shortcut}
+                              onChange={(event) =>
+                                setCannedEditDraft((current) => ({ ...current, shortcut: event.target.value }))
+                              }
+                              disabled={cannedBusy}
+                            />
+                          </label>
+                        </div>
+                        <textarea
+                          rows={3}
+                          value={cannedEditDraft.body}
+                          onChange={(event) =>
+                            setCannedEditDraft((current) => ({ ...current, body: event.target.value }))
+                          }
+                          disabled={cannedBusy}
+                        />
+                        <div className="canned-card-actions">
+                          <button
+                            type="button"
+                            className="primary-action"
+                            disabled={cannedBusy}
+                            onClick={() => void saveCannedEdit(macro.id)}
+                          >
+                            Save
+                          </button>
+                          <button type="button" className="secondary-action" onClick={() => setCannedEditId('')}>
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="canned-card-head">
+                          <div>
+                            <strong>{macro.name}</strong>
+                            {macro.shortcut ? <code>{macro.shortcut}</code> : null}
+                          </div>
+                          <span>Used {macro.usageCount}×</span>
+                        </div>
+                        <p className="canned-card-body">{macro.body}</p>
+                        {macro.channels.length > 0 ? (
+                          <div className="tag-list compact-tags">
+                            {macro.channels.slice(0, 5).map((channel) => (
+                              <span key={channel}>{titleCase(channel)}</span>
+                            ))}
+                          </div>
+                        ) : null}
+                        <div className="canned-card-actions">
+                          <button
+                            type="button"
+                            className="secondary-action"
+                            disabled={!canManageUsers}
+                            onClick={() => startEditCanned(macro)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-action"
+                            disabled={!canManageUsers || cannedBusy}
+                            onClick={() => void toggleCannedResponse(macro)}
+                          >
+                            {macro.active ? 'Pause' : 'Activate'}
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </article>
+                ))
+              )}
+            </div>
+          </div>
+          <button className="secondary-action" type="button" onClick={resetDemo}>
+            <RotateCcw size={16} />
+            Reset review data
           </button>
           </>
           ) : null}

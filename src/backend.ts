@@ -1124,6 +1124,26 @@ export interface BackendResponseMacro {
   updated_at: string
 }
 
+export interface BackendCreateResponseMacroInput {
+  name: string
+  body: string
+  language?: string
+  channels?: string[]
+  tags?: string[]
+  shortcut?: string | null
+  active?: boolean
+}
+
+export interface BackendUpdateResponseMacroInput {
+  name?: string
+  body?: string
+  language?: string
+  channels?: string[]
+  tags?: string[]
+  shortcut?: string | null
+  active?: boolean
+}
+
 export interface BackendResponseMacroSuggestion {
   macro: BackendResponseMacro
   score: number
@@ -2095,6 +2115,35 @@ export async function recordBackendResponseMacroUse(
     `/macros/${macroId}/use?${params.toString()}`,
     {
       method: 'POST',
+    },
+    session,
+  )
+}
+
+export async function createBackendResponseMacro(
+  input: BackendCreateResponseMacroInput,
+  session: BackendSession,
+): Promise<BackendResponseMacro> {
+  return fetchJson<BackendResponseMacro>(
+    '/macros',
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+    session,
+  )
+}
+
+export async function patchBackendResponseMacro(
+  macroId: string,
+  patch: BackendUpdateResponseMacroInput,
+  session: BackendSession,
+): Promise<BackendResponseMacro> {
+  return fetchJson<BackendResponseMacro>(
+    `/macros/${macroId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
     },
     session,
   )
