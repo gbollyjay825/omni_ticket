@@ -4657,6 +4657,22 @@ button:disabled {
   padding: 12px;
 }
 
+.customer-card > div:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.customer-card > div:first-child strong {
+  display: block;
+  font-weight: 800;
+}
+
+.customer-card > div:first-child span {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .customer-card b {
   color: var(--heading);
   font-size: 28px;
