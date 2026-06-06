@@ -269,6 +269,19 @@ export interface BusinessHours {
   updatedAt: string
 }
 
+export interface TicketTemplate {
+  id: string
+  name: string
+  subject: string
+  description: string
+  priority: Priority
+  channelId: ChannelId
+  group: string
+  tags: string[]
+  active: boolean
+  updatedAt: string
+}
+
 export interface OutboxItem {
   id: string
   conversationId: string
@@ -365,6 +378,7 @@ export interface OmniState {
   rules: AutomationRule[]
   slaPolicies: SlaPolicy[]
   businessHours: BusinessHours[]
+  ticketTemplates: TicketTemplate[]
   handoffs: HandoffRecord[]
   outbox: OutboxItem[]
   settings: WorkspaceSettings

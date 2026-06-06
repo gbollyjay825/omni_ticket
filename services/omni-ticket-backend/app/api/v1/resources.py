@@ -92,6 +92,7 @@ from app.models.domain import (
     CreateSupportGroupRequest,
     CreateTicketFieldRequest,
     CreateTicketRequest,
+    CreateTicketTemplateRequest,
     Customer,
     DeleteAttachmentRequest,
     DuplicateTicketSuggestion,
@@ -133,6 +134,7 @@ from app.models.domain import (
     SupportGroup,
     Ticket,
     TicketField,
+    TicketTemplate,
     TimelineEvent,
     TimelineEventType,
     CreatePortalTicketRequest,
@@ -154,6 +156,7 @@ from app.models.domain import (
     UpdateSupportGroupRequest,
     UpdateTicketFieldRequest,
     UpdateTicketRequest,
+    UpdateTicketTemplateRequest,
     WorkQueueItem,
     WorkQueueOverrideRequest,
     utc_now,
@@ -1208,6 +1211,51 @@ def update_business_hours(
         db,
         state,
         business_hours_id,
+        request,
+        context.market_id,
+        context.user.email,
+    )
+
+
+@router.get("/ticket-templates", response_model=list[TicketTemplate])
+def list_ticket_templates(
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> list[TicketTemplate]:
+    return management_repository.list_ticket_templates(db, state, context.market_id)
+
+
+@router.post("/ticket-templates", response_model=TicketTemplate, status_code=status.HTTP_201_CREATED)
+def create_ticket_template(
+    request: CreateTicketTemplateRequest,
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> TicketTemplate:
+    require_admin(context)
+    return management_repository.create_ticket_template(
+        db,
+        state,
+        request,
+        context.market_id,
+        context.user.email,
+    )
+
+
+@router.patch("/ticket-templates/{template_id}", response_model=TicketTemplate)
+def update_ticket_template(
+    template_id: str,
+    request: UpdateTicketTemplateRequest,
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> TicketTemplate:
+    require_admin(context)
+    return management_repository.update_ticket_template(
+        db,
+        state,
+        template_id,
         request,
         context.market_id,
         context.user.email,
@@ -3007,6 +3055,7 @@ def read_frontend_snapshot(
         "support_groups": management_repository.list_support_groups(db, state, context.market_id),
         "sla_policies": management_repository.list_sla_policies(db, state, context.market_id),
         "business_hours": management_repository.list_business_hours(db, state, context.market_id),
+        "ticket_templates": management_repository.list_ticket_templates(db, state, context.market_id),
         "companies": companies,
         "customers": customers,
         "tickets": [

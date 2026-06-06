@@ -11,6 +11,7 @@ from app.models.domain import (
     AutomationRule,
     BusinessHours,
     BusinessHoursDay,
+    TicketTemplate,
     Channel,
     ChannelHealth,
     ChannelType,
@@ -75,6 +76,7 @@ class InMemoryStore:
         self.ticket_fields: dict[str, TicketField] = {}
         self.sla_policies: dict[str, SlaPolicy] = {}
         self.business_hours: dict[str, BusinessHours] = {}
+        self.ticket_templates: dict[str, TicketTemplate] = {}
         self.rules: dict[str, AutomationRule] = {}
         self.connector_events: dict[str, ConnectorEvent] = {}
         self.outbound_messages: dict[str, OutboundMessage] = {}
@@ -482,6 +484,37 @@ class InMemoryStore:
                     name="UK business hours",
                     timezone="Europe/London",
                     days=_standard_business_week(),
+                ),
+            }
+
+            self.ticket_templates = {
+                "tpl-refund-ng": TicketTemplate(
+                    id="tpl-refund-ng",
+                    market_id="market-ng",
+                    name="Refund request",
+                    subject="Refund request for booking",
+                    description=(
+                        "Customer is requesting a refund. Confirm booking reference, refund "
+                        "reason, and payment method before processing."
+                    ),
+                    priority=Priority.high,
+                    channel=ChannelType.email,
+                    group="Refund Desk",
+                    tags=["refund"],
+                ),
+                "tpl-flight-change-ng": TicketTemplate(
+                    id="tpl-flight-change-ng",
+                    market_id="market-ng",
+                    name="Flight change",
+                    subject="Flight change / reschedule",
+                    description=(
+                        "Customer wants to change or reschedule a flight. Capture current "
+                        "itinerary, requested dates, and fare-difference acknowledgement."
+                    ),
+                    priority=Priority.normal,
+                    channel=ChannelType.email,
+                    group="Fulfillment",
+                    tags=["flight", "change"],
                 ),
             }
 

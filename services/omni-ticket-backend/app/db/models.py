@@ -228,6 +228,25 @@ class BusinessHoursRecord(TimestampMixin, Base):
     )
 
 
+class TicketTemplateRecord(TimestampMixin, Base):
+    __tablename__ = "ticket_templates"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    market_id: Mapped[str] = mapped_column(ForeignKey("markets.id"), index=True)
+    name: Mapped[str] = mapped_column(String(180), nullable=False)
+    subject: Mapped[str] = mapped_column(String(300), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    priority: Mapped[str] = mapped_column(String(32), default="normal")
+    channel: Mapped[str] = mapped_column(String(32), default="email")
+    group: Mapped[str] = mapped_column(String(180), default="")
+    tags: Mapped[list] = mapped_column(JSON, default=list)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+
+    __table_args__ = (
+        UniqueConstraint("market_id", "name", name="uq_ticket_template_market_name"),
+    )
+
+
 class ChannelRecord(TimestampMixin, Base):
     __tablename__ = "channels"
 

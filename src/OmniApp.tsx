@@ -70,6 +70,7 @@ import type {
   SlaState,
   TicketField,
   TicketFieldType,
+  TicketTemplate,
   TimelineType,
 } from './domain'
 import type {
@@ -440,6 +441,7 @@ const setupBuiltModules = new Set<string>([
   'SLA policies',
   'Automations',
   'Canned responses',
+  'Ticket templates',
 ])
 const analyticsReportCatalog: Record<AnalyticsReportGroup, { title: string; detail: string; badge: string }[]> = {
   catalog: [
@@ -862,6 +864,8 @@ function OmniApp() {
     updateBusinessHours,
     createResponseMacro,
     updateResponseMacro,
+    createTicketTemplate,
+    updateTicketTemplate,
     createTicketField,
     updateTicketField,
     changePassword,
@@ -983,6 +987,15 @@ function OmniApp() {
   const [cannedEditId, setCannedEditId] = useState('')
   const [cannedEditDraft, setCannedEditDraft] = useState({ name: '', shortcut: '', body: '' })
   const [cannedBusy, setCannedBusy] = useState(false)
+  const [templateDraft, setTemplateDraft] = useState<{
+    name: string
+    subject: string
+    description: string
+    priority: Priority
+    group: string
+    tags: string
+  }>({ name: '', subject: '', description: '', priority: 'medium', group: '', tags: '' })
+  const [templateBusy, setTemplateBusy] = useState(false)
   const [addUserOpen, setAddUserOpen] = useState(false)
   const [addGroupOpen, setAddGroupOpen] = useState(false)
   const [addSlaPolicyOpen, setAddSlaPolicyOpen] = useState(false)
@@ -3096,6 +3109,45 @@ function OmniApp() {
       }
     } finally {
       setCannedBusy(false)
+    }
+  }
+
+  async function handleCreateTicketTemplate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const name = templateDraft.name.trim()
+    const subject = templateDraft.subject.trim()
+    if (name.length < 2 || subject.length < 1 || templateBusy) return
+    setTemplateBusy(true)
+    try {
+      const tags = templateDraft.tags
+        .split(',')
+        .map((tag) => tag.trim())
+        .filter(Boolean)
+      const saved = await createTicketTemplate({
+        name,
+        subject,
+        description: templateDraft.description.trim(),
+        priority: backendPriorityId(templateDraft.priority),
+        group: templateDraft.group.trim(),
+        tags,
+      })
+      if (saved) {
+        setTemplateDraft({ name: '', subject: '', description: '', priority: 'medium', group: '', tags: '' })
+        setPrototypeNotice('Ticket template saved.')
+      }
+    } finally {
+      setTemplateBusy(false)
+    }
+  }
+
+  async function toggleTicketTemplate(template: TicketTemplate) {
+    if (templateBusy) return
+    setTemplateBusy(true)
+    try {
+      const saved = await updateTicketTemplate(template.id, { active: !template.active })
+      if (saved) setPrototypeNotice(`Ticket template ${template.active ? 'paused' : 'activated'}.`)
+    } finally {
+      setTemplateBusy(false)
     }
   }
 
@@ -9975,6 +10027,137 @@ function OmniApp() {
                         </div>
                       </>
                     )}
+                  </article>
+                ))
+              )}
+            </div>
+          </div>
+          <div className="automation-settings-panel ticket-templates-panel">
+            <div className="panel-head compact">
+              <div>
+                <span>Ticket templates</span>
+                <h2>Pre-filled tickets agents can start from</h2>
+              </div>
+              <ClipboardList size={18} />
+            </div>
+            <form className="user-create-form canned-response-form" onSubmit={handleCreateTicketTemplate}>
+              <div className="canned-form-row">
+                <label>
+                  <span>Name</span>
+                  <input
+                    required
+                    value={templateDraft.name}
+                    onChange={(event) => setTemplateDraft((current) => ({ ...current, name: event.target.value }))}
+                    placeholder="Refund request"
+                    disabled={!canManageUsers || templateBusy}
+                  />
+                </label>
+                <label>
+                  <span>Priority</span>
+                  <select
+                    value={templateDraft.priority}
+                    onChange={(event) =>
+                      setTemplateDraft((current) => ({ ...current, priority: event.target.value as Priority }))
+                    }
+                    disabled={!canManageUsers || templateBusy}
+                  >
+                    {priorityOptions
+                      .filter((option): option is Priority => option !== 'all')
+                      .map((priority) => (
+                        <option key={priority} value={priority}>{titleCase(priority)}</option>
+                      ))}
+                  </select>
+                </label>
+              </div>
+              <div className="canned-form-row">
+                <label>
+                  <span>Subject</span>
+                  <input
+                    required
+                    value={templateDraft.subject}
+                    onChange={(event) => setTemplateDraft((current) => ({ ...current, subject: event.target.value }))}
+                    placeholder="Refund request for booking"
+                    disabled={!canManageUsers || templateBusy}
+                  />
+                </label>
+                <label>
+                  <span>Group</span>
+                  <select
+                    value={templateDraft.group}
+                    onChange={(event) => setTemplateDraft((current) => ({ ...current, group: event.target.value }))}
+                    disabled={!canManageUsers || templateBusy}
+                  >
+                    <option value="">Unassigned</option>
+                    {state.supportGroups.map((group) => (
+                      <option key={group.id} value={group.name}>{group.name}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <label>
+                <span>Tags (comma separated)</span>
+                <input
+                  value={templateDraft.tags}
+                  onChange={(event) => setTemplateDraft((current) => ({ ...current, tags: event.target.value }))}
+                  placeholder="refund, billing"
+                  disabled={!canManageUsers || templateBusy}
+                />
+              </label>
+              <label>
+                <span>Description</span>
+                <textarea
+                  rows={3}
+                  value={templateDraft.description}
+                  onChange={(event) => setTemplateDraft((current) => ({ ...current, description: event.target.value }))}
+                  placeholder="Steps the agent should confirm before sending…"
+                  disabled={!canManageUsers || templateBusy}
+                />
+              </label>
+              <button
+                type="submit"
+                className="primary-action"
+                disabled={!canManageUsers || templateBusy || templateDraft.name.trim().length < 2 || templateDraft.subject.trim().length < 1}
+              >
+                <Plus size={16} />
+                Add template
+              </button>
+            </form>
+            <div className="canned-response-list">
+              {state.ticketTemplates.length === 0 ? (
+                <p className="setup-module-hint">No ticket templates yet. Add one agents can start from.</p>
+              ) : (
+                state.ticketTemplates.map((template) => (
+                  <article className={`canned-response-card ${template.active ? '' : 'inactive'}`} key={template.id}>
+                    <div className="canned-card-head">
+                      <div>
+                        <strong>{template.name}</strong>
+                        <span className={`template-priority priority-${template.priority}`}>
+                          {titleCase(template.priority)}
+                        </span>
+                      </div>
+                      <span>{template.group || 'Unassigned'}</span>
+                    </div>
+                    <p className="canned-card-body">
+                      <b>{template.subject}</b>
+                      {template.description ? ` — ${template.description}` : ''}
+                    </p>
+                    {template.tags.length > 0 ? (
+                      <div className="tag-list compact-tags">
+                        {template.tags.slice(0, 6).map((tag) => (
+                          <span key={tag}>{tag}</span>
+                        ))}
+                      </div>
+                    ) : null}
+                    <div className="canned-card-actions">
+                      <button
+                        type="button"
+                        className="secondary-action"
+                        disabled={!canManageUsers || templateBusy}
+                        onClick={() => void toggleTicketTemplate(template)}
+                      >
+                        {template.active ? 'Pause' : 'Activate'}
+                      </button>
+                    </div>
                   </article>
                 ))
               )}

@@ -520,6 +520,7 @@ export interface BackendSnapshot {
   supportGroups: BackendSupportGroup[]
   slaPolicies: BackendSlaPolicy[]
   businessHours: BackendBusinessHours[]
+  ticketTemplates: BackendTicketTemplate[]
   companies: BackendCompany[]
   customers: BackendCustomer[]
   tickets: BackendTicketContext[]
@@ -541,6 +542,7 @@ export interface BackendSnapshot {
   support_groups: BackendSupportGroup[]
   sla_policies: BackendSlaPolicy[]
   business_hours: BackendBusinessHours[]
+  ticket_templates: BackendTicketTemplate[]
   knowledge: BackendKnowledgeArticle[]
   macros: BackendResponseMacro[]
   rules: BackendAutomationRule[]
@@ -926,6 +928,43 @@ export interface BackendUpdateBusinessHoursInput {
   days?: BackendBusinessHoursDay[]
 }
 
+export interface BackendTicketTemplate {
+  id: string
+  market_id: string
+  name: string
+  subject: string
+  description: string
+  priority: 'low' | 'normal' | 'high' | 'urgent'
+  channel: string
+  group: string
+  tags: string[]
+  active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface BackendCreateTicketTemplateInput {
+  name: string
+  subject: string
+  description?: string
+  priority?: BackendTicketTemplate['priority']
+  channel?: string
+  group?: string
+  tags?: string[]
+  active?: boolean
+}
+
+export interface BackendUpdateTicketTemplateInput {
+  name?: string
+  subject?: string
+  description?: string
+  priority?: BackendTicketTemplate['priority']
+  channel?: string
+  group?: string
+  tags?: string[]
+  active?: boolean
+}
+
 export interface BackendCompany {
   id: string
   market_id: string
@@ -1309,6 +1348,7 @@ interface BackendFrontendSnapshot {
   support_groups: BackendSupportGroup[]
   sla_policies: BackendSlaPolicy[]
   business_hours: BackendBusinessHours[]
+  ticket_templates: BackendTicketTemplate[]
   companies: BackendCompany[]
   customers: BackendCustomer[]
   tickets: BackendTicketContext[]
@@ -1470,6 +1510,7 @@ export async function fetchBackendSnapshot(
     supportGroups: frontendSnapshot.support_groups ?? [],
     slaPolicies: frontendSnapshot.sla_policies ?? [],
     businessHours: frontendSnapshot.business_hours ?? [],
+    ticketTemplates: frontendSnapshot.ticket_templates ?? [],
     connectorAccounts: frontendSnapshot.connector_accounts,
     outboundMessages: frontendSnapshot.outbound_messages,
     outboundProviderConfig: frontendSnapshot.outbound_provider_config ?? [],
@@ -1750,6 +1791,35 @@ export async function patchBackendBusinessHours(
 ): Promise<BackendBusinessHours> {
   return fetchJson<BackendBusinessHours>(
     `/business-hours/${businessHoursId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    },
+    session,
+  )
+}
+
+export async function createBackendTicketTemplate(
+  input: BackendCreateTicketTemplateInput,
+  session: BackendSession,
+): Promise<BackendTicketTemplate> {
+  return fetchJson<BackendTicketTemplate>(
+    '/ticket-templates',
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+    session,
+  )
+}
+
+export async function patchBackendTicketTemplate(
+  templateId: string,
+  patch: BackendUpdateTicketTemplateInput,
+  session: BackendSession,
+): Promise<BackendTicketTemplate> {
+  return fetchJson<BackendTicketTemplate>(
+    `/ticket-templates/${templateId}`,
     {
       method: 'PATCH',
       body: JSON.stringify(patch),

@@ -26,6 +26,7 @@ from app.db.models import (
     SupportGroupRecord,
     TicketFieldRecord,
     TicketRecord,
+    TicketTemplateRecord,
     TimelineEventRecord,
     UserRecord,
     WorkspaceSettingsRecord,
@@ -472,6 +473,20 @@ def seed_business_hours(session: Session, source: InMemoryStore = store) -> None
     session.commit()
 
 
+def seed_ticket_templates(session: Session, source: InMemoryStore = store) -> None:
+    for template in source.ticket_templates.values():
+        existing = session.get(TicketTemplateRecord, template.id) or session.scalar(
+            select(TicketTemplateRecord).where(
+                TicketTemplateRecord.market_id == template.market_id,
+                TicketTemplateRecord.name == template.name,
+            )
+        )
+        if existing is not None:
+            continue
+        session.add(TicketTemplateRecord(**_payload(template)))
+    session.commit()
+
+
 def seed_reference_data(session: Session, source: InMemoryStore = store) -> None:
     if session.scalar(select(MarketRecord.id).limit(1)):
         seed_connector_accounts(session)
@@ -480,6 +495,7 @@ def seed_reference_data(session: Session, source: InMemoryStore = store) -> None
         seed_support_groups(session, source)
         seed_sla_policies(session, source)
         seed_business_hours(session, source)
+        seed_ticket_templates(session, source)
         return
 
     session.add_all(
@@ -542,6 +558,12 @@ def seed_reference_data(session: Session, source: InMemoryStore = store) -> None
         [
             BusinessHoursRecord(**_payload(calendar))
             for calendar in source.business_hours.values()
+        ]
+    )
+    session.add_all(
+        [
+            TicketTemplateRecord(**_payload(template))
+            for template in source.ticket_templates.values()
         ]
     )
     session.add_all(

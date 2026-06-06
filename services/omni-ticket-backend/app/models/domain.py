@@ -556,6 +556,21 @@ class BusinessHours(BaseModel):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class TicketTemplate(BaseModel):
+    id: str
+    market_id: str = "market-ng"
+    name: str
+    subject: str
+    description: str = ""
+    priority: Priority = Priority.normal
+    channel: ChannelType = ChannelType.email
+    group: str = ""
+    tags: list[str] = Field(default_factory=list)
+    active: bool = True
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 class TicketTask(BaseModel):
     id: str
     label: str
@@ -1304,6 +1319,28 @@ class UpdateBusinessHoursRequest(BaseModel):
     timezone: str | None = Field(default=None, max_length=64)
     active: bool | None = None
     days: list[BusinessHoursDay] | None = None
+
+
+class CreateTicketTemplateRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=180)
+    subject: str = Field(min_length=1, max_length=300)
+    description: str = Field(default="", max_length=5000)
+    priority: Priority = Priority.normal
+    channel: ChannelType = ChannelType.email
+    group: str = Field(default="", max_length=180)
+    tags: list[str] = Field(default_factory=list)
+    active: bool = True
+
+
+class UpdateTicketTemplateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=180)
+    subject: str | None = Field(default=None, min_length=1, max_length=300)
+    description: str | None = Field(default=None, max_length=5000)
+    priority: Priority | None = None
+    channel: ChannelType | None = None
+    group: str | None = Field(default=None, max_length=180)
+    tags: list[str] | None = None
+    active: bool | None = None
 
 
 class UpdateTicketRequest(BaseModel):

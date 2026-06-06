@@ -1482,6 +1482,46 @@ def test_admin_manages_business_hours(client: TestClient) -> None:
     assert any(event["action"] == "business_hours.update" for event in audit)
 
 
+def test_admin_manages_ticket_templates(client: TestClient) -> None:
+    suffix = uuid4().hex[:8]
+    created = client.post(
+        "/api/v1/ticket-templates",
+        json={
+            "name": f"Refund template {suffix}",
+            "subject": "Refund request",
+            "description": "Confirm booking reference and refund reason.",
+            "priority": "high",
+            "channel": "email",
+            "group": "Refund Desk",
+            "tags": ["refund", "refund"],
+        },
+    )
+    assert created.status_code == 201
+    template = created.json()
+    assert template["priority"] == "high"
+    assert template["tags"] == ["refund"]  # de-duplicated
+
+    listing = client.get("/api/v1/ticket-templates")
+    assert listing.status_code == 200
+    assert any(item["id"] == template["id"] for item in listing.json())
+
+    updated = client.patch(
+        f"/api/v1/ticket-templates/{template['id']}",
+        json={"active": False, "subject": "Updated refund subject"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["active"] is False
+    assert updated.json()["subject"] == "Updated refund subject"
+
+    snapshot = client.get("/api/v1/frontend/snapshot")
+    assert snapshot.status_code == 200
+    assert any(item["id"] == template["id"] for item in snapshot.json()["ticket_templates"])
+
+    audit = client.get("/api/v1/audit").json()
+    assert any(event["action"] == "ticket_template.create" for event in audit)
+    assert any(event["action"] == "ticket_template.update" for event in audit)
+
+
 def test_role_policy_blocks_agent_from_admin_and_supervisor_controls(
     client: TestClient,
     login_as: Callable[..., dict[str, str]],

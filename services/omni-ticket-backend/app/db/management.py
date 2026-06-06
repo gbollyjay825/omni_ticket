@@ -17,6 +17,7 @@ from app.db.mappers import (
     sla_policy_from_record,
     support_group_from_record,
     ticket_field_from_record,
+    ticket_template_from_record,
 )
 from app.db.models import (
     AgentRecord,
@@ -31,6 +32,7 @@ from app.db.models import (
     SupportGroupRecord,
     TicketFieldRecord,
     TicketRecord,
+    TicketTemplateRecord,
 )
 from app.models.domain import (
     Agent,
@@ -44,6 +46,7 @@ from app.models.domain import (
     CreateSlaPolicyRequest,
     CreateSupportGroupRequest,
     CreateTicketFieldRequest,
+    CreateTicketTemplateRequest,
     KnowledgeArticle,
     KnowledgeSuggestion,
     KnowledgeArticleStatus,
@@ -53,6 +56,7 @@ from app.models.domain import (
     SupportGroup,
     TicketField,
     TicketFieldType,
+    TicketTemplate,
     UpdateAgentStatusRequest,
     UpdateAutomationRuleRequest,
     UpdateBusinessHoursRequest,
@@ -62,6 +66,7 @@ from app.models.domain import (
     UpdateSlaPolicyRequest,
     UpdateSupportGroupRequest,
     UpdateTicketFieldRequest,
+    UpdateTicketTemplateRequest,
     utc_now,
 )
 
@@ -425,6 +430,36 @@ def _default_business_days() -> list[dict]:
     return [
         {"day": day, "enabled": True, "open": "09:00", "close": "17:00"} for day in weekdays
     ] + [{"day": day, "enabled": False, "open": "09:00", "close": "17:00"} for day in weekend]
+
+
+def _ticket_template_payload(
+    request: CreateTicketTemplateRequest | UpdateTicketTemplateRequest,
+) -> dict:
+    payload = request.model_dump(exclude_unset=True, mode="json")
+    if "name" in payload and payload["name"] is not None:
+        payload["name"] = _clean_group_name(payload["name"])
+        if not payload["name"]:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Ticket template name is required",
+            )
+    if "subject" in payload and payload["subject"] is not None:
+        payload["subject"] = payload["subject"].strip()
+        if not payload["subject"]:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Ticket template subject is required",
+            )
+    if "tags" in payload and payload["tags"] is not None:
+        seen: set[str] = set()
+        tags: list[str] = []
+        for tag in payload["tags"]:
+            cleaned = str(tag).strip()
+            if cleaned and cleaned.lower() not in seen:
+                seen.add(cleaned.lower())
+                tags.append(cleaned)
+        payload["tags"] = tags
+    return payload
 
 
 def _apply_knowledge_status(
@@ -911,6 +946,105 @@ class ManagementRepository:
         calendar = business_hours_from_record(record)
         state.business_hours[calendar.id] = calendar
         return calendar
+
+    def list_ticket_templates(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        market_id: str,
+    ) -> list[TicketTemplate]:
+        records = db.scalars(
+            select(TicketTemplateRecord).where(TicketTemplateRecord.market_id == market_id)
+        ).all()
+        templates = [ticket_template_from_record(record) for record in records]
+        templates.sort(key=lambda template: (not template.active, template.name.lower()))
+        state.ticket_templates = {
+            **{
+                key: value
+                for key, value in state.ticket_templates.items()
+                if value.market_id != market_id
+            },
+            **{template.id: template for template in templates},
+        }
+        return templates
+
+    def create_ticket_template(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        request: CreateTicketTemplateRequest,
+        market_id: str,
+        actor: str,
+    ) -> TicketTemplate:
+        payload = _ticket_template_payload(request)
+        name = payload["name"]
+        duplicate = db.scalar(
+            select(TicketTemplateRecord).where(
+                TicketTemplateRecord.market_id == market_id,
+                TicketTemplateRecord.name == name,
+            )
+        )
+        if duplicate is not None:
+            raise HTTPException(status.HTTP_409_CONFLICT, detail="Ticket template already exists")
+        record = TicketTemplateRecord(id=_new_id("tpl"), market_id=market_id, **payload)
+        db.add(record)
+        db.flush()
+        _audit(
+            db,
+            state,
+            actor=actor,
+            action="ticket_template.create",
+            entity_type="ticket_template",
+            entity_id=record.id,
+            market_id=market_id,
+            details={"name": record.name, "priority": record.priority, "active": record.active},
+        )
+        db.commit()
+        db.refresh(record)
+        template = ticket_template_from_record(record)
+        state.ticket_templates[template.id] = template
+        return template
+
+    def update_ticket_template(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        template_id: str,
+        request: UpdateTicketTemplateRequest,
+        market_id: str,
+        actor: str,
+    ) -> TicketTemplate:
+        record = db.get(TicketTemplateRecord, template_id)
+        if record is None or record.market_id != market_id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Ticket template not found")
+        patch = _ticket_template_payload(request)
+        if "name" in patch and patch["name"] != record.name:
+            duplicate = db.scalar(
+                select(TicketTemplateRecord).where(
+                    TicketTemplateRecord.market_id == market_id,
+                    TicketTemplateRecord.name == patch["name"],
+                    TicketTemplateRecord.id != template_id,
+                )
+            )
+            if duplicate is not None:
+                raise HTTPException(status.HTTP_409_CONFLICT, detail="Ticket template already exists")
+        for key, value in patch.items():
+            setattr(record, key, value)
+        _audit(
+            db,
+            state,
+            actor=actor,
+            action="ticket_template.update",
+            entity_type="ticket_template",
+            entity_id=template_id,
+            market_id=market_id,
+            details=patch,
+        )
+        db.commit()
+        db.refresh(record)
+        template = ticket_template_from_record(record)
+        state.ticket_templates[template.id] = template
+        return template
 
     def list_knowledge(
         self,

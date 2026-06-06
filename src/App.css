@@ -2501,6 +2501,32 @@ button:disabled {
   gap: 10px;
 }
 
+.template-priority {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  background: #eef2f7;
+  color: #506a82;
+}
+
+.template-priority.priority-urgent,
+.template-priority.priority-high {
+  background: #fdecec;
+  color: #c0392b;
+}
+
+.template-priority.priority-medium {
+  background: #fff4e3;
+  color: #b9770e;
+}
+
+.template-priority.priority-low {
+  background: #edf7ee;
+  color: #2f7d34;
+}
+
 .freshworks-dashboard-grid > article,
 .report-card-grid > article,
 .freshchat-module-grid > article,

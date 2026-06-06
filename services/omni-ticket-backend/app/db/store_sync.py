@@ -21,6 +21,7 @@ from app.db.mappers import (
     sla_policy_from_record,
     support_group_from_record,
     ticket_field_from_record,
+    ticket_template_from_record,
     ticket_from_record,
     timeline_event_from_record,
     user_from_record,
@@ -45,6 +46,7 @@ from app.db.models import (
     SlaPolicyRecord,
     SupportGroupRecord,
     TicketFieldRecord,
+    TicketTemplateRecord,
     TicketRecord,
     TimelineEventRecord,
     UserRecord,
@@ -199,6 +201,10 @@ def hydrate_store_state(db: Session, state: InMemoryStore) -> None:
     state.business_hours = {
         calendar.id: business_hours_from_record(calendar)
         for calendar in db.scalars(select(BusinessHoursRecord)).all()
+    }
+    state.ticket_templates = {
+        template.id: ticket_template_from_record(template)
+        for template in db.scalars(select(TicketTemplateRecord)).all()
     }
     state.companies = {
         company.id: company_from_record(company) for company in db.scalars(select(CompanyRecord)).all()

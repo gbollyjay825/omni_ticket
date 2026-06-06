@@ -22,6 +22,7 @@ import type {
   Sentiment,
   SlaPolicy,
   BusinessHours,
+  TicketTemplate,
   SlaState,
   SupportGroup,
   TicketField,
@@ -37,6 +38,7 @@ import {
   createBackendAttachment,
   createBackendSlaPolicy,
   createBackendBusinessHours,
+  createBackendTicketTemplate,
   createBackendSupportGroup,
   createBackendTicketField,
   createBackendUser,
@@ -49,6 +51,7 @@ import {
   type BackendCompany,
   type BackendCreateSlaPolicyInput,
   type BackendCreateBusinessHoursInput,
+  type BackendCreateTicketTemplateInput,
   type BackendCreateSupportGroupInput,
   type BackendCreateUserInput,
   type BackendCustomer,
@@ -68,6 +71,7 @@ import {
   patchBackendSettings,
   patchBackendSlaPolicy,
   patchBackendBusinessHours,
+  patchBackendTicketTemplate,
   patchBackendSupportGroup,
   patchBackendTicket,
   patchBackendTicketField,
@@ -83,9 +87,11 @@ import {
   type BackendSession,
   type BackendSlaPolicy,
   type BackendBusinessHours,
+  type BackendTicketTemplate,
   type BackendSyncState,
   type BackendUpdateSlaPolicyInput,
   type BackendUpdateBusinessHoursInput,
+  type BackendUpdateTicketTemplateInput,
   type BackendUpdateSupportGroupInput,
   type BackendUpdateUserInput,
   type BackendUpdateTicketFieldInput,
@@ -245,6 +251,7 @@ function mergeReferenceData(state: OmniState): OmniState {
     supportGroups: state.supportGroups ?? initialOmniState.supportGroups,
     slaPolicies: state.slaPolicies ?? initialOmniState.slaPolicies,
     businessHours: state.businessHours ?? initialOmniState.businessHours,
+    ticketTemplates: state.ticketTemplates ?? initialOmniState.ticketTemplates,
     responseMacros: state.responseMacros ?? initialOmniState.responseMacros,
     epics: initialOmniState.epics,
     backlog: initialOmniState.backlog,
@@ -466,6 +473,21 @@ function mapBusinessHours(calendar: BackendBusinessHours): BusinessHours {
       close: day.close,
     })),
     updatedAt: calendar.updated_at,
+  }
+}
+
+function mapTicketTemplate(template: BackendTicketTemplate): TicketTemplate {
+  return {
+    id: template.id,
+    name: template.name,
+    subject: template.subject,
+    description: template.description,
+    priority: mapPriority(template.priority),
+    channelId: normalizeChannelId(template.channel),
+    group: template.group,
+    tags: template.tags ?? [],
+    active: template.active,
+    updatedAt: template.updated_at,
   }
 }
 
@@ -761,6 +783,9 @@ function mergeBackendSnapshot(current: OmniState, snapshot: BackendSnapshot): Om
   const supportGroups = (snapshot.support_groups ?? snapshot.supportGroups ?? []).map(mapSupportGroup)
   const slaPolicies = (snapshot.sla_policies ?? snapshot.slaPolicies ?? []).map(mapSlaPolicy)
   const businessHours = (snapshot.business_hours ?? snapshot.businessHours ?? []).map(mapBusinessHours)
+  const ticketTemplates = (snapshot.ticket_templates ?? snapshot.ticketTemplates ?? []).map(
+    mapTicketTemplate,
+  )
   const selectedConversationId =
     conversations.find((conversation) => conversation.id === current.selectedConversationId)?.id ??
     conversations[0]?.id ??
@@ -795,6 +820,7 @@ function mergeBackendSnapshot(current: OmniState, snapshot: BackendSnapshot): Om
     supportGroups,
     slaPolicies,
     businessHours,
+    ticketTemplates,
     articles: snapshot.knowledge.map(mapKnowledgeArticle),
     ticketFields: (snapshot.ticket_fields ?? snapshot.ticketFields ?? []).map(mapTicketField),
     responseMacros: snapshot.macros.map(mapResponseMacro),
@@ -1936,6 +1962,14 @@ export function useOmniStore() {
     return syncBackendMutation((session) => patchBackendBusinessHours(businessHoursId, patch, session))
   }
 
+  function createTicketTemplate(input: BackendCreateTicketTemplateInput) {
+    return syncBackendMutation((session) => createBackendTicketTemplate(input, session))
+  }
+
+  function updateTicketTemplate(templateId: string, patch: BackendUpdateTicketTemplateInput) {
+    return syncBackendMutation((session) => patchBackendTicketTemplate(templateId, patch, session))
+  }
+
   function createTicketField(input: BackendCreateTicketFieldInput) {
     return syncBackendMutation((session) => createBackendTicketField(input, session))
   }
@@ -2194,6 +2228,8 @@ export function useOmniStore() {
     updateSlaPolicy,
     createBusinessHours,
     updateBusinessHours,
+    createTicketTemplate,
+    updateTicketTemplate,
     createTicketField,
     updateTicketField,
     changePassword,

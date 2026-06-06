@@ -24,6 +24,7 @@ from app.db.models import (
     SupportGroupRecord,
     TicketRecord,
     TicketFieldRecord,
+    TicketTemplateRecord,
     TimelineEventRecord,
     UserRecord,
     WorkspaceSettingsRecord,
@@ -66,6 +67,7 @@ from app.models.domain import (
     SlaPolicy,
     SupportGroup,
     TicketField,
+    TicketTemplate,
     Sentiment,
     Ticket,
     TimelineEvent,
@@ -216,6 +218,25 @@ def business_hours_from_record(record: BusinessHoursRecord) -> BusinessHours:
             "timezone": record.timezone,
             "active": record.active,
             "days": record.days or [],
+            "created_at": record.created_at,
+            "updated_at": record.updated_at,
+        }
+    )
+
+
+def ticket_template_from_record(record: TicketTemplateRecord) -> TicketTemplate:
+    return TicketTemplate.model_validate(
+        {
+            "id": record.id,
+            "market_id": record.market_id,
+            "name": record.name,
+            "subject": record.subject,
+            "description": record.description,
+            "priority": record.priority,
+            "channel": record.channel,
+            "group": record.group,
+            "tags": record.tags or [],
+            "active": record.active,
             "created_at": record.created_at,
             "updated_at": record.updated_at,
         }
