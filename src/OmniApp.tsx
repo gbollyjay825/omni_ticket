@@ -888,6 +888,9 @@ function OmniApp() {
   const [liveChatDraft, setLiveChatDraft] = useState('')
   const [translationOn, setTranslationOn] = useState(false)
   const [prototypeNotice, setPrototypeNotice] = useState('')
+  const [announcementDismissed, setAnnouncementDismissed] = useState(false)
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const [directChatFilter, setDirectChatFilter] = useState<'all' | 'open' | 'resolved'>('all')
   const [quickCreateOpen, setQuickCreateOpen] = useState(false)
   const [notificationOpen, setNotificationOpen] = useState(false)
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false)
@@ -4526,10 +4529,6 @@ function OmniApp() {
         <div className="freshdesk-view-rail" aria-label="Ticket views">
           <div className="view-rail-head">
             <strong>Ticket views</strong>
-            <button type="button" onClick={() => announcePrototype('Custom ticket view builder opened.')}>
-              <Plus size={14} />
-              New
-            </button>
           </div>
           {inboxViewGroups.map((group) => (
             <div className="view-group" key={group.title}>
@@ -6557,8 +6556,17 @@ function OmniApp() {
       state.channels.find((channel) => channel.id === 'whatsapp') ??
       state.channels[0]
     const ActiveIcon = channelIcons[activeDirectChannelId]
-    const channelConversations = state.conversations
-      .filter((conversation) => conversation.channelId === activeDirectChannelId)
+    const channelChatBaseConversations = state.conversations.filter(
+      (conversation) => conversation.channelId === activeDirectChannelId,
+    )
+    const channelConversations = channelChatBaseConversations
+      .filter((conversation) =>
+        directChatFilter === 'all'
+          ? true
+          : directChatFilter === 'resolved'
+            ? conversation.status === 'resolved'
+            : conversation.status !== 'resolved',
+      )
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
     const liveConversation =
       channelConversations.find((conversation) => conversation.id === selectedConversation.id) ??
@@ -6611,42 +6619,35 @@ function OmniApp() {
           <div className="direct-thread-list" aria-label={`${activeChannel.label} conversations`}>
             <div className="freshchat-view-stack" aria-label="Omnichat views">
               <div className="view-rail-head">
-                <strong>All views</strong>
-                <button type="button" onClick={() => announcePrototype('Omnichat custom view builder opened.')}>
-                  <Plus size={14} />
-                  New
-                </button>
+                <strong>{activeChannel.label} views</strong>
               </div>
-              {[
-                ['Default Views', 'All open/unassigned', 'My open conversations', 'All resolved'],
-                ['Shared Views', 'Assigned not replied', 'AI agent conversations', 'Channel queues'],
-                ['Custom Views', 'Market queues', 'VIP travellers', 'Campaign replies'],
-              ].map(([title, ...views]) => (
-                <div className="view-group" key={title}>
-                  <span>{title}</span>
-                  {views.map((view) => (
+              <div className="view-group">
+                {(
+                  [
+                    ['all', 'All conversations'],
+                    ['open', 'Open & unresolved'],
+                    ['resolved', 'Resolved'],
+                  ] as const
+                ).map(([value, label]) => {
+                  const count =
+                    value === 'all'
+                      ? channelChatBaseConversations.length
+                      : value === 'resolved'
+                        ? channelChatBaseConversations.filter((c) => c.status === 'resolved').length
+                        : channelChatBaseConversations.filter((c) => c.status !== 'resolved').length
+                  return (
                     <button
                       type="button"
-                      key={view}
-                      onClick={() => announcePrototype(`${view} view applied to ${activeChannel.label}.`)}
+                      key={value}
+                      className={directChatFilter === value ? 'active' : ''}
+                      aria-pressed={directChatFilter === value}
+                      onClick={() => setDirectChatFilter(value)}
                     >
-                      <small>{view}</small>
-                      <strong>
-                        {view.includes('resolved')
-                          ? channelConversations.filter((conversation) => conversation.status === 'resolved').length
-                          : channelConversations.filter((conversation) => conversation.status !== 'resolved').length}
-                      </strong>
+                      <small>{label}</small>
+                      <strong>{count}</strong>
                     </button>
-                  ))}
-                </div>
-              ))}
-              <div className="freshchat-inbox-actions">
-                <button type="button" onClick={() => announcePrototype('All visible conversations selected.')}>
-                  Select all
-                </button>
-                <button type="button" onClick={() => announcePrototype('More conversations requested from the backend cursor.')}>
-                  Load more
-                </button>
+                  )
+                })}
               </div>
             </div>
             {channelConversations.map((conversation) => {
@@ -12605,16 +12606,22 @@ function OmniApp() {
       </aside>
 
       <main className="main-shell">
-        <div className="omni-ai-announcement" aria-label="Omni AI announcement">
-          <Sparkles size={16} />
-          <span>Introducing Omni AI Agents: Your intelligent support representative</span>
-          <button type="button" onClick={() => setSetupSection('automation')}>Explore AI Agent</button>
-          <i />
-          <button type="button" onClick={() => announcePrototype('More Omni AI updates opened.')}>4 more</button>
-          <button type="button" aria-label="Dismiss announcement" onClick={() => announcePrototype('Announcement dismissed.')}>
-            <X size={14} />
-          </button>
-        </div>
+        {!announcementDismissed ? (
+          <div className="omni-ai-announcement" aria-label="Omni AI announcement">
+            <Sparkles size={16} />
+            <span>Introducing Omni AI Agents: Your intelligent support representative</span>
+            <button type="button" onClick={() => selectScreen('automation')}>Explore AI Agent</button>
+            <i />
+            <button type="button" onClick={() => selectScreen('analytics')}>AI analytics</button>
+            <button
+              type="button"
+              aria-label="Dismiss announcement"
+              onClick={() => setAnnouncementDismissed(true)}
+            >
+              <X size={14} />
+            </button>
+          </div>
+        ) : null}
         <header className="topbar omni-desk-topbar" aria-label={pageSubtitle}>
           <div className="omni-page-title">
             <button className="desk-product-icon" type="button" aria-label={pageTitle}>
@@ -12668,15 +12675,53 @@ function OmniApp() {
             >
               <Bell size={18} />
             </button>
-            <button className="desk-top-action" type="button" onClick={() => announcePrototype('Support resources panel opened.')}>
+            <button className="desk-top-action" type="button" onClick={() => selectScreen('knowledge')}>
               Help
             </button>
             <button className="desk-top-action" type="button" onClick={() => setSetupSection('connectors')}>
               Apps
             </button>
-            <button className="desk-user-pill" type="button" onClick={() => announcePrototype('User menu opened.')}>
-              {initials(backendSession.user.name)}
-            </button>
+            <div className="desk-user-menu">
+              <button
+                className="desk-user-pill"
+                type="button"
+                aria-expanded={userMenuOpen}
+                aria-haspopup="menu"
+                onClick={() => setUserMenuOpen((open) => !open)}
+              >
+                {initials(backendSession.user.name)}
+              </button>
+              {userMenuOpen ? (
+                <div className="desk-user-dropdown" role="menu">
+                  <div className="desk-user-dropdown-head">
+                    <strong>{backendSession.user.name}</strong>
+                    <span>{backendSession.user.email}</span>
+                  </div>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setUserMenuOpen(false)
+                      selectScreen('admin')
+                    }}
+                  >
+                    <Settings size={14} />
+                    Settings
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setUserMenuOpen(false)
+                      void logout()
+                    }}
+                  >
+                    <X size={14} />
+                    Sign out
+                  </button>
+                </div>
+              ) : null}
+            </div>
           </div>
         </header>
 
