@@ -11,6 +11,7 @@ from app.db.models import (
     CompanyRecord,
     ConnectorEventRecord,
     CsatFeedbackRecord,
+    CsatSurveyRecord,
     CustomerRecord,
     HandoffRecord,
     KnowledgeArticleRecord,
@@ -52,6 +53,7 @@ from app.models.domain import (
     ContactPoint,
     CsatFeedback,
     CsatSource,
+    CsatSurvey,
     Customer,
     Handoff,
     KnowledgeArticle,
@@ -220,6 +222,22 @@ def business_hours_from_record(record: BusinessHoursRecord) -> BusinessHours:
             "timezone": record.timezone,
             "active": record.active,
             "days": record.days or [],
+            "created_at": record.created_at,
+            "updated_at": record.updated_at,
+        }
+    )
+
+
+def csat_survey_from_record(record: CsatSurveyRecord) -> CsatSurvey:
+    return CsatSurvey.model_validate(
+        {
+            "id": record.id,
+            "market_id": record.market_id,
+            "name": record.name,
+            "question": record.question,
+            "scale": record.scale,
+            "channels": record.channels or [],
+            "active": record.active,
             "created_at": record.created_at,
             "updated_at": record.updated_at,
         }

@@ -69,6 +69,7 @@ import type {
   Sentiment,
   SlaState,
   Tag,
+  CsatSurvey,
   TicketField,
   TicketFieldType,
   TicketTemplate,
@@ -444,6 +445,7 @@ const setupBuiltModules = new Set<string>([
   'Canned responses',
   'Ticket templates',
   'Tags',
+  'CSAT surveys',
 ])
 const analyticsReportCatalog: Record<AnalyticsReportGroup, { title: string; detail: string; badge: string }[]> = {
   catalog: [
@@ -870,6 +872,8 @@ function OmniApp() {
     updateTicketTemplate,
     createTag,
     updateTag,
+    createCsatSurvey,
+    updateCsatSurvey,
     createTicketField,
     updateTicketField,
     changePassword,
@@ -1002,6 +1006,8 @@ function OmniApp() {
   const [templateBusy, setTemplateBusy] = useState(false)
   const [tagDraft, setTagDraft] = useState({ name: '', color: '#2f6fed', description: '' })
   const [tagBusy, setTagBusy] = useState(false)
+  const [surveyDraft, setSurveyDraft] = useState({ name: '', question: '', scale: 5 })
+  const [surveyBusy, setSurveyBusy] = useState(false)
   const [addUserOpen, setAddUserOpen] = useState(false)
   const [addGroupOpen, setAddGroupOpen] = useState(false)
   const [addSlaPolicyOpen, setAddSlaPolicyOpen] = useState(false)
@@ -3185,6 +3191,34 @@ function OmniApp() {
       if (saved) setPrototypeNotice(`Tag ${tag.active ? 'paused' : 'activated'}.`)
     } finally {
       setTagBusy(false)
+    }
+  }
+
+  async function handleCreateCsatSurvey(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const name = surveyDraft.name.trim()
+    const question = surveyDraft.question.trim()
+    if (name.length < 2 || question.length < 2 || surveyBusy) return
+    setSurveyBusy(true)
+    try {
+      const saved = await createCsatSurvey({ name, question, scale: surveyDraft.scale })
+      if (saved) {
+        setSurveyDraft({ name: '', question: '', scale: 5 })
+        setPrototypeNotice('CSAT survey saved.')
+      }
+    } finally {
+      setSurveyBusy(false)
+    }
+  }
+
+  async function toggleCsatSurvey(survey: CsatSurvey) {
+    if (surveyBusy) return
+    setSurveyBusy(true)
+    try {
+      const saved = await updateCsatSurvey(survey.id, { active: !survey.active })
+      if (saved) setPrototypeNotice(`CSAT survey ${survey.active ? 'paused' : 'activated'}.`)
+    } finally {
+      setSurveyBusy(false)
     }
   }
 
@@ -10266,6 +10300,91 @@ function OmniApp() {
                     >
                       {tag.active ? 'Pause' : 'Activate'}
                     </button>
+                  </article>
+                ))
+              )}
+            </div>
+          </div>
+          <div className="automation-settings-panel csat-surveys-panel">
+            <div className="panel-head compact">
+              <div>
+                <span>CSAT surveys</span>
+                <h2>Satisfaction surveys sent after resolution</h2>
+              </div>
+              <Star size={18} />
+            </div>
+            <form className="user-create-form canned-response-form" onSubmit={handleCreateCsatSurvey}>
+              <div className="canned-form-row">
+                <label>
+                  <span>Name</span>
+                  <input
+                    required
+                    value={surveyDraft.name}
+                    onChange={(event) => setSurveyDraft((current) => ({ ...current, name: event.target.value }))}
+                    placeholder="Ticket resolution survey"
+                    disabled={!canManageUsers || surveyBusy}
+                  />
+                </label>
+                <label>
+                  <span>Scale (max rating)</span>
+                  <select
+                    value={surveyDraft.scale}
+                    onChange={(event) => setSurveyDraft((current) => ({ ...current, scale: Number(event.target.value) }))}
+                    disabled={!canManageUsers || surveyBusy}
+                  >
+                    {[3, 4, 5, 7, 10].map((scale) => (
+                      <option key={scale} value={scale}>{scale}-point</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <label>
+                <span>Question</span>
+                <input
+                  required
+                  value={surveyDraft.question}
+                  onChange={(event) => setSurveyDraft((current) => ({ ...current, question: event.target.value }))}
+                  placeholder="How satisfied were you with our support?"
+                  disabled={!canManageUsers || surveyBusy}
+                />
+              </label>
+              <button
+                type="submit"
+                className="primary-action"
+                disabled={!canManageUsers || surveyBusy || surveyDraft.name.trim().length < 2 || surveyDraft.question.trim().length < 2}
+              >
+                <Plus size={16} />
+                Add survey
+              </button>
+            </form>
+            <div className="canned-response-list">
+              {state.csatSurveys.length === 0 ? (
+                <p className="setup-module-hint">No CSAT surveys yet. Add one to collect satisfaction ratings.</p>
+              ) : (
+                state.csatSurveys.map((survey) => (
+                  <article className={`canned-response-card ${survey.active ? '' : 'inactive'}`} key={survey.id}>
+                    <div className="canned-card-head">
+                      <div>
+                        <strong>{survey.name}</strong>
+                        <span className="template-priority">{survey.scale}-point</span>
+                      </div>
+                      <span>
+                        {survey.channels.length > 0
+                          ? survey.channels.map((channel) => titleCase(channel)).join(', ')
+                          : 'All channels'}
+                      </span>
+                    </div>
+                    <p className="canned-card-body">{survey.question}</p>
+                    <div className="canned-card-actions">
+                      <button
+                        type="button"
+                        className="secondary-action"
+                        disabled={!canManageUsers || surveyBusy}
+                        onClick={() => void toggleCsatSurvey(survey)}
+                      >
+                        {survey.active ? 'Pause' : 'Activate'}
+                      </button>
+                    </div>
                   </article>
                 ))
               )}

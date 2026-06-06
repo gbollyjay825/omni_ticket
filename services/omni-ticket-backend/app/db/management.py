@@ -12,6 +12,7 @@ from app.db.mappers import (
     automation_rule_from_record,
     business_hours_from_record,
     channel_from_record,
+    csat_survey_from_record,
     knowledge_article_from_record,
     response_macro_from_record,
     sla_policy_from_record,
@@ -26,6 +27,7 @@ from app.db.models import (
     AutomationRuleRecord,
     BusinessHoursRecord,
     ChannelRecord,
+    CsatSurveyRecord,
     HandoffRecord,
     KnowledgeArticleRecord,
     ResponseMacroRecord,
@@ -43,6 +45,7 @@ from app.models.domain import (
     Channel,
     CreateAutomationRuleRequest,
     CreateBusinessHoursRequest,
+    CreateCsatSurveyRequest,
     CreateKnowledgeArticleRequest,
     CreateResponseMacroRequest,
     CreateSlaPolicyRequest,
@@ -50,6 +53,7 @@ from app.models.domain import (
     CreateTagRequest,
     CreateTicketFieldRequest,
     CreateTicketTemplateRequest,
+    CsatSurvey,
     KnowledgeArticle,
     KnowledgeSuggestion,
     KnowledgeArticleStatus,
@@ -65,6 +69,7 @@ from app.models.domain import (
     UpdateAutomationRuleRequest,
     UpdateBusinessHoursRequest,
     UpdateChannelRequest,
+    UpdateCsatSurveyRequest,
     UpdateKnowledgeArticleRequest,
     UpdateResponseMacroRequest,
     UpdateSlaPolicyRequest,
@@ -478,6 +483,33 @@ def _tag_payload(request: CreateTagRequest | UpdateTagRequest) -> dict:
             )
     if "color" in payload and payload["color"] is not None:
         payload["color"] = payload["color"].strip() or "#2f6fed"
+    return payload
+
+
+def _csat_survey_payload(request: CreateCsatSurveyRequest | UpdateCsatSurveyRequest) -> dict:
+    payload = request.model_dump(exclude_unset=True, mode="json")
+    if "name" in payload and payload["name"] is not None:
+        payload["name"] = _clean_group_name(payload["name"])
+        if not payload["name"]:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="CSAT survey name is required",
+            )
+    if "question" in payload and payload["question"] is not None:
+        payload["question"] = payload["question"].strip()
+        if not payload["question"]:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="CSAT survey question is required",
+            )
+    if "channels" in payload and payload["channels"] is not None:
+        seen: set[str] = set()
+        channels: list[str] = []
+        for channel in payload["channels"]:
+            if channel not in seen:
+                seen.add(channel)
+                channels.append(channel)
+        payload["channels"] = channels
     return payload
 
 
@@ -1154,6 +1186,105 @@ class ManagementRepository:
         tag = tag_from_record(record)
         state.tags[tag.id] = tag
         return tag
+
+    def list_csat_surveys(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        market_id: str,
+    ) -> list[CsatSurvey]:
+        records = db.scalars(
+            select(CsatSurveyRecord).where(CsatSurveyRecord.market_id == market_id)
+        ).all()
+        surveys = [csat_survey_from_record(record) for record in records]
+        surveys.sort(key=lambda survey: (not survey.active, survey.name.lower()))
+        state.csat_surveys = {
+            **{
+                key: value
+                for key, value in state.csat_surveys.items()
+                if value.market_id != market_id
+            },
+            **{survey.id: survey for survey in surveys},
+        }
+        return surveys
+
+    def create_csat_survey(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        request: CreateCsatSurveyRequest,
+        market_id: str,
+        actor: str,
+    ) -> CsatSurvey:
+        payload = _csat_survey_payload(request)
+        name = payload["name"]
+        duplicate = db.scalar(
+            select(CsatSurveyRecord).where(
+                CsatSurveyRecord.market_id == market_id,
+                CsatSurveyRecord.name == name,
+            )
+        )
+        if duplicate is not None:
+            raise HTTPException(status.HTTP_409_CONFLICT, detail="CSAT survey already exists")
+        record = CsatSurveyRecord(id=_new_id("csat"), market_id=market_id, **payload)
+        db.add(record)
+        db.flush()
+        _audit(
+            db,
+            state,
+            actor=actor,
+            action="csat_survey.create",
+            entity_type="csat_survey",
+            entity_id=record.id,
+            market_id=market_id,
+            details={"name": record.name, "active": record.active},
+        )
+        db.commit()
+        db.refresh(record)
+        survey = csat_survey_from_record(record)
+        state.csat_surveys[survey.id] = survey
+        return survey
+
+    def update_csat_survey(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        survey_id: str,
+        request: UpdateCsatSurveyRequest,
+        market_id: str,
+        actor: str,
+    ) -> CsatSurvey:
+        record = db.get(CsatSurveyRecord, survey_id)
+        if record is None or record.market_id != market_id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="CSAT survey not found")
+        patch = _csat_survey_payload(request)
+        if "name" in patch and patch["name"] != record.name:
+            duplicate = db.scalar(
+                select(CsatSurveyRecord).where(
+                    CsatSurveyRecord.market_id == market_id,
+                    CsatSurveyRecord.name == patch["name"],
+                    CsatSurveyRecord.id != survey_id,
+                )
+            )
+            if duplicate is not None:
+                raise HTTPException(status.HTTP_409_CONFLICT, detail="CSAT survey already exists")
+        for key, value in patch.items():
+            setattr(record, key, value)
+        _audit(
+            db,
+            state,
+            actor=actor,
+            action="csat_survey.update",
+            entity_type="csat_survey",
+            entity_id=survey_id,
+            market_id=market_id,
+            details=patch,
+        )
+        db.commit()
+        db.refresh(record)
+        survey = csat_survey_from_record(record)
+        state.csat_surveys[survey.id] = survey
+        return survey
 
     def list_knowledge(
         self,

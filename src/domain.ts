@@ -291,6 +291,16 @@ export interface Tag {
   updatedAt: string
 }
 
+export interface CsatSurvey {
+  id: string
+  name: string
+  question: string
+  scale: number
+  channels: ChannelId[]
+  active: boolean
+  updatedAt: string
+}
+
 export interface OutboxItem {
   id: string
   conversationId: string
@@ -389,6 +399,7 @@ export interface OmniState {
   businessHours: BusinessHours[]
   ticketTemplates: TicketTemplate[]
   tags: Tag[]
+  csatSurveys: CsatSurvey[]
   handoffs: HandoffRecord[]
   outbox: OutboxItem[]
   settings: WorkspaceSettings

@@ -11,6 +11,7 @@ from app.models.domain import (
     AutomationRule,
     BusinessHours,
     BusinessHoursDay,
+    CsatSurvey,
     Tag,
     TicketTemplate,
     Channel,
@@ -79,6 +80,7 @@ class InMemoryStore:
         self.business_hours: dict[str, BusinessHours] = {}
         self.ticket_templates: dict[str, TicketTemplate] = {}
         self.tags: dict[str, Tag] = {}
+        self.csat_surveys: dict[str, CsatSurvey] = {}
         self.rules: dict[str, AutomationRule] = {}
         self.connector_events: dict[str, ConnectorEvent] = {}
         self.outbound_messages: dict[str, OutboundMessage] = {}
@@ -548,6 +550,25 @@ class InMemoryStore:
                     name="vip",
                     color="#b9770e",
                     description="Premium and VIP customers",
+                ),
+            }
+
+            self.csat_surveys = {
+                "csat-ticket-ng": CsatSurvey(
+                    id="csat-ticket-ng",
+                    market_id="market-ng",
+                    name="Ticket resolution survey",
+                    question="How satisfied were you with how we resolved your request?",
+                    scale=5,
+                    channels=[ChannelType.email, ChannelType.portal],
+                ),
+                "csat-chat-ng": CsatSurvey(
+                    id="csat-chat-ng",
+                    market_id="market-ng",
+                    name="Chat satisfaction survey",
+                    question="How would you rate this conversation?",
+                    scale=5,
+                    channels=[ChannelType.whatsapp, ChannelType.instagram],
                 ),
             }
 

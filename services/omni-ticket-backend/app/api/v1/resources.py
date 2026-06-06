@@ -77,6 +77,7 @@ from app.models.domain import (
     ConnectorEvent,
     ConnectorInboundRequest,
     CsatFeedback,
+    CsatSurvey,
     CreateAutomationRuleRequest,
     CreateAttachmentRequest,
     CreateBusinessHoursRequest,
@@ -91,6 +92,7 @@ from app.models.domain import (
     CreateSlaPolicyRequest,
     CreateSupportGroupRequest,
     CreateTagRequest,
+    CreateCsatSurveyRequest,
     CreateTicketFieldRequest,
     CreateTicketRequest,
     CreateTicketTemplateRequest,
@@ -157,6 +159,7 @@ from app.models.domain import (
     UpdateSlaPolicyRequest,
     UpdateSupportGroupRequest,
     UpdateTagRequest,
+    UpdateCsatSurveyRequest,
     UpdateTicketFieldRequest,
     UpdateTicketRequest,
     UpdateTicketTemplateRequest,
@@ -1304,6 +1307,51 @@ def update_tag(
         db,
         state,
         tag_id,
+        request,
+        context.market_id,
+        context.user.email,
+    )
+
+
+@router.get("/csat-surveys", response_model=list[CsatSurvey])
+def list_csat_surveys(
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> list[CsatSurvey]:
+    return management_repository.list_csat_surveys(db, state, context.market_id)
+
+
+@router.post("/csat-surveys", response_model=CsatSurvey, status_code=status.HTTP_201_CREATED)
+def create_csat_survey(
+    request: CreateCsatSurveyRequest,
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> CsatSurvey:
+    require_admin(context)
+    return management_repository.create_csat_survey(
+        db,
+        state,
+        request,
+        context.market_id,
+        context.user.email,
+    )
+
+
+@router.patch("/csat-surveys/{survey_id}", response_model=CsatSurvey)
+def update_csat_survey(
+    survey_id: str,
+    request: UpdateCsatSurveyRequest,
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> CsatSurvey:
+    require_admin(context)
+    return management_repository.update_csat_survey(
+        db,
+        state,
+        survey_id,
         request,
         context.market_id,
         context.user.email,
@@ -3105,6 +3153,7 @@ def read_frontend_snapshot(
         "business_hours": management_repository.list_business_hours(db, state, context.market_id),
         "ticket_templates": management_repository.list_ticket_templates(db, state, context.market_id),
         "tags": management_repository.list_tags(db, state, context.market_id),
+        "csat_surveys": management_repository.list_csat_surveys(db, state, context.market_id),
         "companies": companies,
         "customers": customers,
         "tickets": [

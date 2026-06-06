@@ -1781,6 +1781,7 @@ export const initialOmniState: OmniState = {
   businessHours: [],
   ticketTemplates: [],
   tags: [],
+  csatSurveys: [],
   handoffs: seedHandoffs,
   outbox: [],
   settings: {

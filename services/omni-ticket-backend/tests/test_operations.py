@@ -1553,6 +1553,42 @@ def test_admin_manages_tags(client: TestClient) -> None:
     assert any(event["action"] == "tag.update" for event in audit)
 
 
+def test_admin_manages_csat_surveys(client: TestClient) -> None:
+    suffix = uuid4().hex[:8]
+    created = client.post(
+        "/api/v1/csat-surveys",
+        json={
+            "name": f"Post-resolution {suffix}",
+            "question": "How did we do?",
+            "scale": 5,
+            "channels": ["email", "email", "portal"],
+        },
+    )
+    assert created.status_code == 201
+    survey = created.json()
+    assert survey["channels"] == ["email", "portal"]  # de-duplicated
+
+    listing = client.get("/api/v1/csat-surveys")
+    assert listing.status_code == 200
+    assert any(item["id"] == survey["id"] for item in listing.json())
+
+    updated = client.patch(
+        f"/api/v1/csat-surveys/{survey['id']}",
+        json={"active": False, "scale": 4},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["active"] is False
+    assert updated.json()["scale"] == 4
+
+    snapshot = client.get("/api/v1/frontend/snapshot")
+    assert snapshot.status_code == 200
+    assert any(item["id"] == survey["id"] for item in snapshot.json()["csat_surveys"])
+
+    audit = client.get("/api/v1/audit").json()
+    assert any(event["action"] == "csat_survey.create" for event in audit)
+    assert any(event["action"] == "csat_survey.update" for event in audit)
+
+
 def test_role_policy_blocks_agent_from_admin_and_supervisor_controls(
     client: TestClient,
     login_as: Callable[..., dict[str, str]],

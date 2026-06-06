@@ -24,6 +24,7 @@ import type {
   BusinessHours,
   TicketTemplate,
   Tag,
+  CsatSurvey,
   SlaState,
   SupportGroup,
   TicketField,
@@ -41,6 +42,7 @@ import {
   createBackendBusinessHours,
   createBackendTicketTemplate,
   createBackendTag,
+  createBackendCsatSurvey,
   createBackendSupportGroup,
   createBackendTicketField,
   createBackendUser,
@@ -55,6 +57,7 @@ import {
   type BackendCreateBusinessHoursInput,
   type BackendCreateTicketTemplateInput,
   type BackendCreateTagInput,
+  type BackendCreateCsatSurveyInput,
   type BackendCreateSupportGroupInput,
   type BackendCreateUserInput,
   type BackendCustomer,
@@ -76,6 +79,7 @@ import {
   patchBackendBusinessHours,
   patchBackendTicketTemplate,
   patchBackendTag,
+  patchBackendCsatSurvey,
   patchBackendSupportGroup,
   patchBackendTicket,
   patchBackendTicketField,
@@ -93,11 +97,13 @@ import {
   type BackendBusinessHours,
   type BackendTicketTemplate,
   type BackendTag,
+  type BackendCsatSurvey,
   type BackendSyncState,
   type BackendUpdateSlaPolicyInput,
   type BackendUpdateBusinessHoursInput,
   type BackendUpdateTicketTemplateInput,
   type BackendUpdateTagInput,
+  type BackendUpdateCsatSurveyInput,
   type BackendUpdateSupportGroupInput,
   type BackendUpdateUserInput,
   type BackendUpdateTicketFieldInput,
@@ -259,6 +265,7 @@ function mergeReferenceData(state: OmniState): OmniState {
     businessHours: state.businessHours ?? initialOmniState.businessHours,
     ticketTemplates: state.ticketTemplates ?? initialOmniState.ticketTemplates,
     tags: state.tags ?? initialOmniState.tags,
+    csatSurveys: state.csatSurveys ?? initialOmniState.csatSurveys,
     responseMacros: state.responseMacros ?? initialOmniState.responseMacros,
     epics: initialOmniState.epics,
     backlog: initialOmniState.backlog,
@@ -506,6 +513,18 @@ function mapTag(tag: BackendTag): Tag {
     description: tag.description,
     active: tag.active,
     updatedAt: tag.updated_at,
+  }
+}
+
+function mapCsatSurvey(survey: BackendCsatSurvey): CsatSurvey {
+  return {
+    id: survey.id,
+    name: survey.name,
+    question: survey.question,
+    scale: survey.scale,
+    channels: (survey.channels ?? []).map(normalizeChannelId),
+    active: survey.active,
+    updatedAt: survey.updated_at,
   }
 }
 
@@ -805,6 +824,7 @@ function mergeBackendSnapshot(current: OmniState, snapshot: BackendSnapshot): Om
     mapTicketTemplate,
   )
   const tags = (snapshot.tags ?? []).map(mapTag)
+  const csatSurveys = (snapshot.csat_surveys ?? snapshot.csatSurveys ?? []).map(mapCsatSurvey)
   const selectedConversationId =
     conversations.find((conversation) => conversation.id === current.selectedConversationId)?.id ??
     conversations[0]?.id ??
@@ -841,6 +861,7 @@ function mergeBackendSnapshot(current: OmniState, snapshot: BackendSnapshot): Om
     businessHours,
     ticketTemplates,
     tags,
+    csatSurveys,
     articles: snapshot.knowledge.map(mapKnowledgeArticle),
     ticketFields: (snapshot.ticket_fields ?? snapshot.ticketFields ?? []).map(mapTicketField),
     responseMacros: snapshot.macros.map(mapResponseMacro),
@@ -1998,6 +2019,14 @@ export function useOmniStore() {
     return syncBackendMutation((session) => patchBackendTag(tagId, patch, session))
   }
 
+  function createCsatSurvey(input: BackendCreateCsatSurveyInput) {
+    return syncBackendMutation((session) => createBackendCsatSurvey(input, session))
+  }
+
+  function updateCsatSurvey(surveyId: string, patch: BackendUpdateCsatSurveyInput) {
+    return syncBackendMutation((session) => patchBackendCsatSurvey(surveyId, patch, session))
+  }
+
   function createTicketField(input: BackendCreateTicketFieldInput) {
     return syncBackendMutation((session) => createBackendTicketField(input, session))
   }
@@ -2260,6 +2289,8 @@ export function useOmniStore() {
     updateTicketTemplate,
     createTag,
     updateTag,
+    createCsatSurvey,
+    updateCsatSurvey,
     createTicketField,
     updateTicketField,
     changePassword,

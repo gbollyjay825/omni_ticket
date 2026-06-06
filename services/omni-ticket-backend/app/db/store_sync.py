@@ -10,6 +10,7 @@ from app.db.mappers import (
     automation_rule_from_record,
     business_hours_from_record,
     channel_from_record,
+    csat_survey_from_record,
     company_from_record,
     connector_event_from_record,
     customer_from_record,
@@ -35,6 +36,7 @@ from app.db.models import (
     AutomationRuleRecord,
     BusinessHoursRecord,
     ChannelRecord,
+    CsatSurveyRecord,
     CompanyRecord,
     ConnectorEventRecord,
     CustomerRecord,
@@ -211,6 +213,10 @@ def hydrate_store_state(db: Session, state: InMemoryStore) -> None:
     state.tags = {
         tag.id: tag_from_record(tag)
         for tag in db.scalars(select(TagRecord)).all()
+    }
+    state.csat_surveys = {
+        survey.id: csat_survey_from_record(survey)
+        for survey in db.scalars(select(CsatSurveyRecord)).all()
     }
     state.companies = {
         company.id: company_from_record(company) for company in db.scalars(select(CompanyRecord)).all()

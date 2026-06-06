@@ -522,6 +522,7 @@ export interface BackendSnapshot {
   businessHours: BackendBusinessHours[]
   ticketTemplates: BackendTicketTemplate[]
   tags: BackendTag[]
+  csatSurveys: BackendCsatSurvey[]
   companies: BackendCompany[]
   customers: BackendCustomer[]
   tickets: BackendTicketContext[]
@@ -544,6 +545,7 @@ export interface BackendSnapshot {
   sla_policies: BackendSlaPolicy[]
   business_hours: BackendBusinessHours[]
   ticket_templates: BackendTicketTemplate[]
+  csat_surveys: BackendCsatSurvey[]
   knowledge: BackendKnowledgeArticle[]
   macros: BackendResponseMacro[]
   rules: BackendAutomationRule[]
@@ -991,6 +993,34 @@ export interface BackendUpdateTagInput {
   active?: boolean
 }
 
+export interface BackendCsatSurvey {
+  id: string
+  market_id: string
+  name: string
+  question: string
+  scale: number
+  channels: string[]
+  active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface BackendCreateCsatSurveyInput {
+  name: string
+  question: string
+  scale?: number
+  channels?: string[]
+  active?: boolean
+}
+
+export interface BackendUpdateCsatSurveyInput {
+  name?: string
+  question?: string
+  scale?: number
+  channels?: string[]
+  active?: boolean
+}
+
 export interface BackendCompany {
   id: string
   market_id: string
@@ -1376,6 +1406,7 @@ interface BackendFrontendSnapshot {
   business_hours: BackendBusinessHours[]
   ticket_templates: BackendTicketTemplate[]
   tags: BackendTag[]
+  csat_surveys: BackendCsatSurvey[]
   companies: BackendCompany[]
   customers: BackendCustomer[]
   tickets: BackendTicketContext[]
@@ -1538,6 +1569,7 @@ export async function fetchBackendSnapshot(
     slaPolicies: frontendSnapshot.sla_policies ?? [],
     businessHours: frontendSnapshot.business_hours ?? [],
     ticketTemplates: frontendSnapshot.ticket_templates ?? [],
+    csatSurveys: frontendSnapshot.csat_surveys ?? [],
     connectorAccounts: frontendSnapshot.connector_accounts,
     outboundMessages: frontendSnapshot.outbound_messages,
     outboundProviderConfig: frontendSnapshot.outbound_provider_config ?? [],
@@ -1876,6 +1908,35 @@ export async function patchBackendTag(
 ): Promise<BackendTag> {
   return fetchJson<BackendTag>(
     `/tags/${tagId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    },
+    session,
+  )
+}
+
+export async function createBackendCsatSurvey(
+  input: BackendCreateCsatSurveyInput,
+  session: BackendSession,
+): Promise<BackendCsatSurvey> {
+  return fetchJson<BackendCsatSurvey>(
+    '/csat-surveys',
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+    session,
+  )
+}
+
+export async function patchBackendCsatSurvey(
+  surveyId: string,
+  patch: BackendUpdateCsatSurveyInput,
+  session: BackendSession,
+): Promise<BackendCsatSurvey> {
+  return fetchJson<BackendCsatSurvey>(
+    `/csat-surveys/${surveyId}`,
     {
       method: 'PATCH',
       body: JSON.stringify(patch),

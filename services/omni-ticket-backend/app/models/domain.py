@@ -582,6 +582,18 @@ class Tag(BaseModel):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class CsatSurvey(BaseModel):
+    id: str
+    market_id: str = "market-ng"
+    name: str
+    question: str
+    scale: int = Field(default=5, ge=2, le=10)
+    channels: list[ChannelType] = Field(default_factory=list)
+    active: bool = True
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 class TicketTask(BaseModel):
     id: str
     label: str
@@ -1365,6 +1377,22 @@ class UpdateTagRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=80)
     color: str | None = Field(default=None, max_length=9)
     description: str | None = Field(default=None, max_length=300)
+    active: bool | None = None
+
+
+class CreateCsatSurveyRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=180)
+    question: str = Field(min_length=2, max_length=300)
+    scale: int = Field(default=5, ge=2, le=10)
+    channels: list[ChannelType] = Field(default_factory=list)
+    active: bool = True
+
+
+class UpdateCsatSurveyRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=180)
+    question: str | None = Field(default=None, min_length=2, max_length=300)
+    scale: int | None = Field(default=None, ge=2, le=10)
+    channels: list[ChannelType] | None = None
     active: bool | None = None
 
 
