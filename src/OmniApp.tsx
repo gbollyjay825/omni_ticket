@@ -424,6 +424,10 @@ const setupBuiltModules = new Set<string>([
   'Threads',
   'Portal branding',
   'Helpdesk settings',
+  'WhatsApp',
+  'Facebook',
+  'Feedback form',
+  'Omnichat',
 ])
 const analyticsReportCatalog: Record<AnalyticsReportGroup, { title: string; detail: string; badge: string }[]> = {
   catalog: [
@@ -3895,6 +3899,7 @@ function OmniApp() {
       'Field service scheduling': 'workforce',
       'Scheduled exports': 'analytics',
       Threads: 'inbox',
+      Omnichat: 'channels',
     }
     if (screenRoutes[moduleName]) {
       if (moduleName === 'Scheduled exports') setAnalyticsReportGroup('scheduled')
@@ -3906,6 +3911,7 @@ function OmniApp() {
       'Account exports': 'governance',
       'Security controls': 'people',
       'Helpdesk settings': 'forms',
+      'Feedback form': 'automation',
     }
     if (sectionRoutes[moduleName]) {
       setSetupSection(sectionRoutes[moduleName])
