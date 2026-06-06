@@ -88,6 +88,10 @@ import {
   type BackendCreateKnowledgeInput,
   type BackendUpdateKnowledgeInput,
   createBackendKnowledgeArticle,
+  type BackendCreateCustomerInput,
+  type BackendUpdateCustomerInput,
+  createBackendCustomer,
+  patchBackendCustomer,
   type BackendCreateTicketFieldInput,
   fetchBackendSnapshot,
   fetchOidcProviderConfig,
@@ -2160,6 +2164,17 @@ export function useOmniStore() {
     )
   }
 
+  function createCustomer(input: BackendCreateCustomerInput) {
+    return syncBackendMutation(
+      (session) => createBackendCustomer(input, session),
+      (customer) => ({ screen: 'customers', customerId: customer.id }),
+    )
+  }
+
+  function updateCustomer(customerId: string, patch: BackendUpdateCustomerInput) {
+    return syncBackendMutation((session) => patchBackendCustomer(customerId, patch, session))
+  }
+
   function createUser(input: BackendCreateUserInput) {
     return syncBackendMutation((session) => createBackendUser(input, session))
   }
@@ -2529,6 +2544,8 @@ export function useOmniStore() {
     publishArticle,
     createKnowledgeArticle,
     updateKnowledgeArticle,
+    createCustomer,
+    updateCustomer,
     createUser,
     updateUser,
     createSupportGroup,

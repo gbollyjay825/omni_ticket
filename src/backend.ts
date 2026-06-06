@@ -1291,6 +1291,29 @@ export interface BackendCustomer {
   notes: string
 }
 
+export interface BackendCreateCustomerInput {
+  name: string
+  email: string
+  company_id?: string | null
+  location?: string
+  preferred_channels?: string[]
+  contact_points?: BackendContactPoint[]
+  tags?: string[]
+  notes?: string
+}
+
+export interface BackendUpdateCustomerInput {
+  name?: string
+  email?: string
+  company_id?: string | null
+  location?: string
+  sentiment?: BackendCustomer['sentiment']
+  preferred_channels?: string[]
+  contact_points?: BackendContactPoint[]
+  tags?: string[]
+  notes?: string
+}
+
 export interface BackendTicketTask {
   id: string
   label: string
@@ -2772,6 +2795,35 @@ export async function createBackendKnowledgeArticle(
     {
       method: 'POST',
       body: JSON.stringify(input),
+    },
+    session,
+  )
+}
+
+export async function createBackendCustomer(
+  input: BackendCreateCustomerInput,
+  session: BackendSession,
+): Promise<BackendCustomer> {
+  return fetchJson<BackendCustomer>(
+    '/customers',
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+    session,
+  )
+}
+
+export async function patchBackendCustomer(
+  customerId: string,
+  patch: BackendUpdateCustomerInput,
+  session: BackendSession,
+): Promise<BackendCustomer> {
+  return fetchJson<BackendCustomer>(
+    `/customers/${customerId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
     },
     session,
   )

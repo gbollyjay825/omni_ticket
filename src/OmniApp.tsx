@@ -94,6 +94,7 @@ import type {
   BackendAuditRetentionPolicy,
   BackendCreateSlaPolicyInput,
   BackendCreatePortalTicketInput,
+  BackendCustomer,
   BackendEmailProviderSettings,
   BackendGlobalSearchResult,
   BackendIntegrationCredentialSettings,
@@ -852,6 +853,8 @@ function OmniApp() {
     updateServiceAppointment,
     createKnowledgeArticle,
     updateKnowledgeArticle,
+    createCustomer,
+    updateCustomer,
     createTicketField,
     updateTicketField,
     changePassword,
@@ -944,6 +947,25 @@ function OmniApp() {
     body: '',
   })
   const [articleBusy, setArticleBusy] = useState(false)
+  const [customerFormOpen, setCustomerFormOpen] = useState(false)
+  const [customerDraft, setCustomerDraft] = useState({
+    name: '',
+    email: '',
+    companyId: '',
+    location: '',
+    tags: '',
+    notes: '',
+  })
+  const [customerBusy, setCustomerBusy] = useState(false)
+  const [customerEditOpen, setCustomerEditOpen] = useState(false)
+  const [customerEdit, setCustomerEdit] = useState({
+    name: '',
+    email: '',
+    location: '',
+    sentiment: 'neutral' as BackendCustomer['sentiment'],
+    tags: '',
+    notes: '',
+  })
   const [loginEmail, setLoginEmail] = useState('gbolahan@omniticket.example.com')
   const [loginPassword, setLoginPassword] = useState('')
   const [loginMfaCode, setLoginMfaCode] = useState('')
@@ -3635,6 +3657,79 @@ function OmniApp() {
     }
   }
 
+  function parseTagList(value: string) {
+    return value
+      .split(',')
+      .map((tag) => tag.trim())
+      .filter((tag) => tag.length > 0)
+  }
+
+  async function handleCreateCustomer(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const name = customerDraft.name.trim()
+    const email = customerDraft.email.trim()
+    if (name.length < 1 || email.length < 3 || customerBusy) return
+    setCustomerBusy(true)
+    try {
+      const saved = await createCustomer({
+        name,
+        email,
+        company_id: customerDraft.companyId || null,
+        location: customerDraft.location.trim(),
+        tags: parseTagList(customerDraft.tags),
+        notes: customerDraft.notes.trim(),
+      })
+      if (saved) {
+        setCustomerDraft({ name: '', email: '', companyId: '', location: '', tags: '', notes: '' })
+        setCustomerFormOpen(false)
+        setPrototypeNotice('Customer created.')
+      }
+    } finally {
+      setCustomerBusy(false)
+    }
+  }
+
+  function openCustomerEditor() {
+    setCustomerEdit({
+      name: selectedCustomer.name,
+      email: selectedCustomer.email,
+      location: selectedCustomer.location === 'Market workspace' ? '' : selectedCustomer.location,
+      sentiment:
+        selectedCustomer.csat >= 4.5
+          ? 'positive'
+          : selectedCustomer.csat >= 4
+            ? 'neutral'
+            : 'frustrated',
+      tags: selectedCustomer.tags.join(', '),
+      notes: '',
+    })
+    setCustomerEditOpen(true)
+  }
+
+  async function handleUpdateCustomer(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const name = customerEdit.name.trim()
+    const email = customerEdit.email.trim()
+    if (name.length < 1 || email.length < 3 || customerBusy) return
+    setCustomerBusy(true)
+    try {
+      const saved = await updateCustomer(selectedCustomer.id, {
+        name,
+        email,
+        location: customerEdit.location.trim(),
+        sentiment: customerEdit.sentiment,
+        tags: parseTagList(customerEdit.tags),
+        ...(customerEdit.notes.trim() ? { notes: customerEdit.notes.trim() } : {}),
+      })
+      if (saved) {
+        setCustomerEditOpen(false)
+        setPrototypeNotice('Customer profile updated.')
+      }
+    } finally {
+      setCustomerBusy(false)
+    }
+  }
+
   function openSetupModule(moduleName: string) {
     // Route People modules to the right sub-view, then reveal the live settings panel.
     const peopleRoutes: Record<string, 'users' | 'groups' | 'security' | 'hours'> = {
@@ -4542,8 +4637,87 @@ function OmniApp() {
             <span>Customer 360</span>
             <h2>{selectedCustomer.name}</h2>
           </div>
-          <Building2 size={18} />
+          <button
+            type="button"
+            className="customer-edit-toggle"
+            aria-expanded={customerEditOpen}
+            onClick={() => (customerEditOpen ? setCustomerEditOpen(false) : openCustomerEditor())}
+          >
+            <Settings size={14} />
+            {customerEditOpen ? 'Close' : 'Edit'}
+          </button>
         </div>
+        {customerEditOpen ? (
+          <form className="customer-edit-form" onSubmit={handleUpdateCustomer}>
+            <label>
+              <span>Name</span>
+              <input
+                required
+                value={customerEdit.name}
+                onChange={(event) => setCustomerEdit((current) => ({ ...current, name: event.target.value }))}
+                disabled={customerBusy}
+              />
+            </label>
+            <label>
+              <span>Email</span>
+              <input
+                required
+                type="email"
+                value={customerEdit.email}
+                onChange={(event) => setCustomerEdit((current) => ({ ...current, email: event.target.value }))}
+                disabled={customerBusy}
+              />
+            </label>
+            <label>
+              <span>Location</span>
+              <input
+                value={customerEdit.location}
+                onChange={(event) => setCustomerEdit((current) => ({ ...current, location: event.target.value }))}
+                disabled={customerBusy}
+              />
+            </label>
+            <label>
+              <span>Sentiment</span>
+              <select
+                value={customerEdit.sentiment}
+                onChange={(event) =>
+                  setCustomerEdit((current) => ({
+                    ...current,
+                    sentiment: event.target.value as BackendCustomer['sentiment'],
+                  }))
+                }
+                disabled={customerBusy}
+              >
+                {(['positive', 'neutral', 'frustrated', 'angry'] as const).map((sentiment) => (
+                  <option key={sentiment} value={sentiment}>
+                    {titleCase(sentiment)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Tags (comma separated)</span>
+              <input
+                value={customerEdit.tags}
+                onChange={(event) => setCustomerEdit((current) => ({ ...current, tags: event.target.value }))}
+                disabled={customerBusy}
+              />
+            </label>
+            <label>
+              <span>Add note</span>
+              <textarea
+                rows={2}
+                value={customerEdit.notes}
+                onChange={(event) => setCustomerEdit((current) => ({ ...current, notes: event.target.value }))}
+                placeholder="Optional: replace the stored note."
+                disabled={customerBusy}
+              />
+            </label>
+            <button type="submit" className="primary-action" disabled={customerBusy}>
+              Save changes
+            </button>
+          </form>
+        ) : null}
         <div className="customer-score">
           <strong>{selectedCustomer.healthScore}</strong>
           <span>Health score</span>
@@ -6457,6 +6631,18 @@ function OmniApp() {
   }
 
   function renderCustomers() {
+    const query = state.filters.search.trim().toLowerCase()
+    const customers = query
+      ? state.customers.filter(
+          (customer) =>
+            customer.name.toLowerCase().includes(query) ||
+            customer.email.toLowerCase().includes(query) ||
+            customer.company.toLowerCase().includes(query) ||
+            customer.tags.some((tag) => tag.toLowerCase().includes(query)),
+        )
+      : state.customers
+    const companies = backendSnapshot?.companies ?? []
+
     return (
       <div className="management-grid">
         <section className="panel span-2">
@@ -6465,32 +6651,151 @@ function OmniApp() {
               <span>Customer 360</span>
               <h2>Profiles, value, and open work</h2>
             </div>
-            <Users size={20} />
+            <button
+              type="button"
+              className="primary-action"
+              aria-expanded={customerFormOpen}
+              onClick={() => setCustomerFormOpen((open) => !open)}
+            >
+              <Plus size={16} />
+              New customer
+            </button>
           </div>
-          <div className="customer-grid">
-            {state.customers.map((customer) => (
-              <a
-                key={customer.id}
-                className={`customer-card ${selectedCustomer.id === customer.id ? 'active' : ''}`}
-                href={routeHref({ screen: 'customers', customer: customer.id })}
-                onClick={(event) => handleAppLink(event, () => selectCustomer(customer.id))}
-                aria-current={selectedCustomer.id === customer.id ? 'true' : undefined}
-                aria-label={`Open customer profile for ${customer.name}`}
+          <label className="customer-search">
+            <Search size={15} />
+            <input
+              value={state.filters.search}
+              onChange={(event) => setFilters({ search: event.target.value })}
+              placeholder="Search customers by name, email, company, or tag"
+              aria-label="Search customers"
+            />
+          </label>
+          {customerFormOpen ? (
+            <form className="user-create-form canned-response-form" onSubmit={handleCreateCustomer}>
+              <div className="canned-form-row">
+                <label>
+                  <span>Name</span>
+                  <input
+                    required
+                    value={customerDraft.name}
+                    onChange={(event) =>
+                      setCustomerDraft((current) => ({ ...current, name: event.target.value }))
+                    }
+                    placeholder="Ada Obi"
+                    disabled={customerBusy}
+                  />
+                </label>
+                <label>
+                  <span>Email</span>
+                  <input
+                    required
+                    type="email"
+                    value={customerDraft.email}
+                    onChange={(event) =>
+                      setCustomerDraft((current) => ({ ...current, email: event.target.value }))
+                    }
+                    placeholder="ada@example.com"
+                    disabled={customerBusy}
+                  />
+                </label>
+                <label>
+                  <span>Company</span>
+                  <select
+                    value={customerDraft.companyId}
+                    onChange={(event) =>
+                      setCustomerDraft((current) => ({ ...current, companyId: event.target.value }))
+                    }
+                    disabled={customerBusy}
+                  >
+                    <option value="">Independent customer</option>
+                    {companies.map((company) => (
+                      <option key={company.id} value={company.id}>
+                        {company.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="canned-form-row">
+                <label>
+                  <span>Location</span>
+                  <input
+                    value={customerDraft.location}
+                    onChange={(event) =>
+                      setCustomerDraft((current) => ({ ...current, location: event.target.value }))
+                    }
+                    placeholder="Lagos, Nigeria"
+                    disabled={customerBusy}
+                  />
+                </label>
+                <label>
+                  <span>Tags (comma separated)</span>
+                  <input
+                    value={customerDraft.tags}
+                    onChange={(event) =>
+                      setCustomerDraft((current) => ({ ...current, tags: event.target.value }))
+                    }
+                    placeholder="vip, corporate"
+                    disabled={customerBusy}
+                  />
+                </label>
+              </div>
+              <label className="canned-form-full">
+                <span>Notes</span>
+                <textarea
+                  rows={2}
+                  value={customerDraft.notes}
+                  onChange={(event) =>
+                    setCustomerDraft((current) => ({ ...current, notes: event.target.value }))
+                  }
+                  placeholder="Account context, preferences, or escalation history."
+                  disabled={customerBusy}
+                />
+              </label>
+              <button
+                type="submit"
+                className="primary-action"
+                disabled={
+                  customerBusy ||
+                  customerDraft.name.trim().length < 1 ||
+                  customerDraft.email.trim().length < 3
+                }
               >
-                <div>
-                  <strong>{customer.name}</strong>
-                  <span>{customer.company}</span>
-                </div>
-                <b>{customer.healthScore}</b>
-                <small>{customer.recentActivity}</small>
-                <div className="tag-list">
-                  {customer.tags.slice(0, 2).map((tag) => (
-                    <span key={tag}>{tag}</span>
-                  ))}
-                </div>
-              </a>
-            ))}
-          </div>
+                <Plus size={16} />
+                Create customer
+              </button>
+            </form>
+          ) : null}
+          {customers.length === 0 ? (
+            <p className="setup-module-hint">
+              {query ? 'No customers match your search.' : 'No customers yet. Add one to get started.'}
+            </p>
+          ) : (
+            <div className="customer-grid">
+              {customers.map((customer) => (
+                <a
+                  key={customer.id}
+                  className={`customer-card ${selectedCustomer.id === customer.id ? 'active' : ''}`}
+                  href={routeHref({ screen: 'customers', customer: customer.id })}
+                  onClick={(event) => handleAppLink(event, () => selectCustomer(customer.id))}
+                  aria-current={selectedCustomer.id === customer.id ? 'true' : undefined}
+                  aria-label={`Open customer profile for ${customer.name}`}
+                >
+                  <div>
+                    <strong>{customer.name}</strong>
+                    <span>{customer.company}</span>
+                  </div>
+                  <b>{customer.healthScore}</b>
+                  <small>{customer.recentActivity}</small>
+                  <div className="tag-list">
+                    {customer.tags.slice(0, 2).map((tag) => (
+                      <span key={tag}>{tag}</span>
+                    ))}
+                  </div>
+                </a>
+              ))}
+            </div>
+          )}
         </section>
         {renderCustomer360()}
       </div>
