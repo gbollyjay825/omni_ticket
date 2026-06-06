@@ -1594,7 +1594,22 @@ export interface BackendUpdateChannelInput {
 }
 
 export interface BackendUpdateKnowledgeInput {
+  title?: string
   status?: BackendKnowledgeArticle['status']
+  language?: string
+  channels?: string[]
+  tags?: string[]
+  body?: string
+}
+
+export interface BackendCreateKnowledgeInput {
+  title: string
+  body: string
+  status?: BackendKnowledgeArticle['status']
+  language?: string
+  channels?: string[]
+  tags?: string[]
+  market_ids?: string[]
 }
 
 export interface BackendUpdateRuleInput {
@@ -2743,6 +2758,20 @@ export async function patchBackendKnowledgeArticle(
     {
       method: 'PATCH',
       body: JSON.stringify(patch),
+    },
+    session,
+  )
+}
+
+export async function createBackendKnowledgeArticle(
+  input: BackendCreateKnowledgeInput,
+  session: BackendSession,
+): Promise<BackendKnowledgeArticle> {
+  return fetchJson<BackendKnowledgeArticle>(
+    '/knowledge',
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
     },
     session,
   )

@@ -2596,6 +2596,137 @@ button:disabled {
   }
 }
 
+/* Knowledge base / solutions */
+.kb-stat-pills {
+  display: inline-flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.kb-article-form {
+  margin: 0 16px 14px;
+}
+
+.kb-article-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.kb-article-form-actions button:not(.primary-action) {
+  border: 1px solid #d5e0ec;
+  background: #fff;
+  border-radius: 7px;
+  padding: 8px 14px;
+  font: inherit;
+  font-weight: 600;
+  color: #506a82;
+  cursor: pointer;
+}
+
+.kb-category-stack {
+  display: grid;
+  gap: 16px;
+  padding: 0 16px 24px;
+}
+
+.kb-category-block {
+  border: 1px solid #e1eaf3;
+  border-radius: 14px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.kb-category-block > header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 16px;
+  background: #f5f8fb;
+  border-bottom: 1px solid #e1eaf3;
+}
+
+.kb-category-block > header h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  color: #16324a;
+  flex: 1;
+}
+
+.kb-category-block > header strong {
+  font-size: 12px;
+  font-weight: 700;
+  color: #5d748a;
+  background: #e7eef6;
+  border-radius: 999px;
+  padding: 2px 9px;
+}
+
+.kb-article-list {
+  display: grid;
+}
+
+.kb-article-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #eef3f8;
+}
+
+.kb-article-row:last-child {
+  border-bottom: 0;
+}
+
+.kb-article-main {
+  display: grid;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+
+.kb-article-main strong {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #1d3953;
+}
+
+.kb-article-main span {
+  font-size: 12px;
+  color: #6a809a;
+}
+
+.kb-article-status {
+  display: grid;
+  gap: 3px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #8298ac;
+}
+
+.kb-article-status select {
+  height: 34px;
+  border: 1px solid #d5e0ec;
+  border-radius: 7px;
+  padding: 5px 8px;
+  font: inherit;
+  background: #fff;
+}
+
+@media (max-width: 640px) {
+  .kb-article-row {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .kb-article-status {
+    flex: 1 1 100%;
+  }
+}
+
 .canned-response-list {
   display: grid;
   gap: 10px;

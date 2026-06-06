@@ -85,6 +85,9 @@ import {
   type BackendDuplicateTicketSuggestion,
   type BackendHandoff,
   type BackendKnowledgeArticle,
+  type BackendCreateKnowledgeInput,
+  type BackendUpdateKnowledgeInput,
+  createBackendKnowledgeArticle,
   type BackendCreateTicketFieldInput,
   fetchBackendSnapshot,
   fetchOidcProviderConfig,
@@ -2147,6 +2150,16 @@ export function useOmniStore() {
     }))
   }
 
+  function createKnowledgeArticle(input: BackendCreateKnowledgeInput) {
+    return syncBackendMutation((session) => createBackendKnowledgeArticle(input, session))
+  }
+
+  function updateKnowledgeArticle(articleId: string, patch: BackendUpdateKnowledgeInput) {
+    return syncBackendMutation((session) =>
+      patchBackendKnowledgeArticle(articleId, patch, session),
+    )
+  }
+
   function createUser(input: BackendCreateUserInput) {
     return syncBackendMutation((session) => createBackendUser(input, session))
   }
@@ -2514,6 +2527,8 @@ export function useOmniStore() {
     toggleChannelIntake,
     toggleRule,
     publishArticle,
+    createKnowledgeArticle,
+    updateKnowledgeArticle,
     createUser,
     updateUser,
     createSupportGroup,

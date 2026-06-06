@@ -62,6 +62,7 @@ import type {
   ConversationStatus,
   DuplicateTicketSuggestion,
   HandoffStatus,
+  KnowledgeArticle,
   NewTicketInput,
   OmniConversation,
   Priority,
@@ -271,74 +272,6 @@ const channelIcons: Record<ChannelId, LucideIcon> = {
 
 const priorityOptions: (Priority | 'all')[] = ['all', 'urgent', 'high', 'medium', 'low']
 const directMessageChannelIds: ChannelId[] = ['whatsapp', 'instagram', 'facebook']
-const solutionCategoryCatalog = [
-  {
-    title: 'Operations Team knowledge base',
-    folders: [
-      ['Cross Selling', '08'],
-      ['Refunds', '06'],
-      ['PSS', '00'],
-    ],
-    more: 'View all 17 folders',
-  },
-  {
-    title: 'Nigeria',
-    folders: [
-      ['Flight Reservations', '15'],
-      ['Cancellation and Changing of Flight Ticket', '08'],
-      ['HOTEL RESERVATION', '10'],
-    ],
-    more: 'View all 09 folders',
-  },
-  {
-    title: 'Ghana',
-    folders: [
-      ['Flight Reservations', '14'],
-      ['Cancellation and Changing of Flight Ticket', '07'],
-      ['Hotel Reservation', '10'],
-    ],
-    more: 'View all 06 folders',
-  },
-  {
-    title: 'Liberia',
-    folders: [
-      ['Visa', '01'],
-      ['Flight Reservation', '01'],
-    ],
-  },
-  { title: 'Sierra Leone', folders: [['Visa', '01']] },
-  { title: 'Gambia', folders: [['Visa', '01']] },
-  {
-    title: 'Getting started with us',
-    folders: [
-      ['Your account', '02'],
-      ['Your documents', '01'],
-    ],
-  },
-  {
-    title: 'Files and folders',
-    folders: [
-      ['Shared files', '02'],
-      ['Deleted files', '01'],
-    ],
-  },
-  {
-    title: 'Premium club',
-    folders: [
-      ['Premium features', '02'],
-      ['Premium subscription', '02'],
-    ],
-  },
-  {
-    title: 'AI Knowledge Base',
-    folders: [
-      ['Knowledge Base for AI', '03'],
-      ['Visa', '03'],
-      ['Lounge and Protocol', '04'],
-    ],
-    more: 'View all 05 folders',
-  },
-]
 const screenLead: Record<ScreenId, string> = {
   command: 'Omnichannel Dashboard with ticket trends, chat trends, CSAT, agents, to-do, and recent activity.',
   inbox: 'Familiar ticket views, filters, ticket details, reply, note, forward, linked work, and time logs.',
@@ -917,6 +850,8 @@ function OmniApp() {
     updateSavedReport,
     createServiceAppointment,
     updateServiceAppointment,
+    createKnowledgeArticle,
+    updateKnowledgeArticle,
     createTicketField,
     updateTicketField,
     changePassword,
@@ -1000,6 +935,15 @@ function OmniApp() {
     notes: '',
   })
   const [appointmentBusy, setAppointmentBusy] = useState(false)
+  const [articleFormOpen, setArticleFormOpen] = useState(false)
+  const [articleDraft, setArticleDraft] = useState({
+    title: '',
+    category: '',
+    status: 'draft' as KnowledgeArticle['status'],
+    language: 'en',
+    body: '',
+  })
+  const [articleBusy, setArticleBusy] = useState(false)
   const [loginEmail, setLoginEmail] = useState('gbolahan@omniticket.example.com')
   const [loginPassword, setLoginPassword] = useState('')
   const [loginMfaCode, setLoginMfaCode] = useState('')
@@ -3652,6 +3596,42 @@ function OmniApp() {
       if (saved) setPrototypeNotice('Appointment reassigned.')
     } finally {
       setAppointmentBusy(false)
+    }
+  }
+
+  async function handleCreateKnowledgeArticle(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const title = articleDraft.title.trim()
+    const body = articleDraft.body.trim()
+    if (title.length < 1 || body.length < 1 || articleBusy) return
+    const category = articleDraft.category.trim()
+    setArticleBusy(true)
+    try {
+      const saved = await createKnowledgeArticle({
+        title,
+        body,
+        status: articleDraft.status,
+        language: articleDraft.language,
+        tags: category ? [category] : [],
+      })
+      if (saved) {
+        setArticleDraft({ title: '', category: '', status: 'draft', language: 'en', body: '' })
+        setArticleFormOpen(false)
+        setPrototypeNotice('Knowledge article created.')
+      }
+    } finally {
+      setArticleBusy(false)
+    }
+  }
+
+  async function setArticleStatus(article: KnowledgeArticle, status: KnowledgeArticle['status']) {
+    if (articleBusy || article.status === status) return
+    setArticleBusy(true)
+    try {
+      const saved = await updateKnowledgeArticle(article.id, { status })
+      if (saved) setPrototypeNotice(`Article moved to ${status}.`)
+    } finally {
+      setArticleBusy(false)
     }
   }
 
@@ -6518,6 +6498,30 @@ function OmniApp() {
   }
 
   function renderKnowledge() {
+    const query = state.filters.search.trim().toLowerCase()
+    const articles = state.articles
+      .filter((article) => {
+        if (!query) return true
+        return (
+          article.title.toLowerCase().includes(query) ||
+          article.category.toLowerCase().includes(query) ||
+          article.language.toLowerCase().includes(query) ||
+          article.intents.some((intent) => intent.toLowerCase().includes(query))
+        )
+      })
+      .slice()
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+    const categories = Array.from(new Set(articles.map((article) => article.category))).sort()
+    const statusTone: Record<KnowledgeArticle['status'], string> = {
+      published: 'status-done',
+      review: 'status-progress',
+      draft: 'status-pending',
+    }
+    const statusOptions: KnowledgeArticle['status'][] = ['draft', 'review', 'published']
+    const publishedCount = state.articles.filter((article) => article.status === 'published').length
+    const reviewCount = state.articles.filter((article) => article.status === 'review').length
+    const draftCount = state.articles.filter((article) => article.status === 'draft').length
+
     return (
       <div className="desk-solutions-page">
         <section className="desk-solutions-toolbar" aria-label="Knowledge base controls">
@@ -6531,51 +6535,172 @@ function OmniApp() {
             />
           </label>
           <span className="desk-toolbar-spacer" />
-          <button type="button" onClick={() => announcePrototype('Knowledge base management opened.')}>
-            <Settings size={14} />
-            Manage
-          </button>
-          <button type="button" className="desk-blue-action" onClick={() => announcePrototype('New article editor opened.')}>
+          <span className="kb-stat-pills" aria-label="Article counts">
+            <em className="chip status-done">{publishedCount} published</em>
+            <em className="chip status-progress">{reviewCount} in review</em>
+            <em className="chip status-pending">{draftCount} draft</em>
+          </span>
+          <button
+            type="button"
+            className="desk-blue-action"
+            aria-expanded={articleFormOpen}
+            onClick={() => setArticleFormOpen((open) => !open)}
+          >
             <Plus size={14} />
             New article
-            <ChevronDown size={14} />
-          </button>
-          <button type="button" onClick={() => announcePrototype('Language selector opened.')}>
-            EN
-            <ChevronDown size={14} />
-          </button>
-          <button type="button" aria-label="Open portal preview" onClick={() => announcePrototype('Portal preview opened.')}>
-            <ArrowRight size={14} />
           </button>
         </section>
 
-        <section className="desk-category-grid" aria-label="Knowledge base categories">
-          {solutionCategoryCatalog.map((category) => (
-            <article className="desk-category-card" key={category.title}>
-              <header>
-                <BookOpen size={18} />
-                <h2>{category.title}</h2>
-              </header>
-              <div className="desk-folder-list">
-                {category.folders.map(([folder, count]) => (
-                  <button
-                    type="button"
-                    key={`${category.title}-${folder}`}
-                    onClick={() => announcePrototype(`${folder} folder opened.`)}
-                  >
-                    <span>{folder}</span>
-                    <strong>{count}</strong>
-                  </button>
-                ))}
-              </div>
-              {category.more && (
-                <button className="desk-folder-more" type="button" onClick={() => announcePrototype(`${category.title} folders opened.`)}>
-                  {category.more}
-                </button>
-              )}
-            </article>
-          ))}
-        </section>
+        {articleFormOpen ? (
+          <form className="user-create-form canned-response-form kb-article-form" onSubmit={handleCreateKnowledgeArticle}>
+            <div className="canned-form-row">
+              <label>
+                <span>Title</span>
+                <input
+                  required
+                  value={articleDraft.title}
+                  onChange={(event) =>
+                    setArticleDraft((current) => ({ ...current, title: event.target.value }))
+                  }
+                  placeholder="How to reschedule a flight booking"
+                  disabled={articleBusy}
+                />
+              </label>
+              <label>
+                <span>Category</span>
+                <input
+                  value={articleDraft.category}
+                  onChange={(event) =>
+                    setArticleDraft((current) => ({ ...current, category: event.target.value }))
+                  }
+                  placeholder="Operations"
+                  disabled={articleBusy}
+                />
+              </label>
+              <label>
+                <span>Status</span>
+                <select
+                  value={articleDraft.status}
+                  onChange={(event) =>
+                    setArticleDraft((current) => ({
+                      ...current,
+                      status: event.target.value as KnowledgeArticle['status'],
+                    }))
+                  }
+                  disabled={articleBusy}
+                >
+                  {statusOptions.map((status) => (
+                    <option key={status} value={status}>
+                      {titleCase(status)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Language</span>
+                <select
+                  value={articleDraft.language}
+                  onChange={(event) =>
+                    setArticleDraft((current) => ({ ...current, language: event.target.value }))
+                  }
+                  disabled={articleBusy}
+                >
+                  {['en', 'fr', 'pt', 'ar'].map((language) => (
+                    <option key={language} value={language}>
+                      {language.toUpperCase()}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <label className="canned-form-full">
+              <span>Body</span>
+              <textarea
+                required
+                rows={4}
+                value={articleDraft.body}
+                onChange={(event) =>
+                  setArticleDraft((current) => ({ ...current, body: event.target.value }))
+                }
+                placeholder="Write the answer agents and customers will see in the portal."
+                disabled={articleBusy}
+              />
+            </label>
+            <div className="kb-article-form-actions">
+              <button type="button" onClick={() => setArticleFormOpen(false)} disabled={articleBusy}>
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="primary-action"
+                disabled={
+                  articleBusy ||
+                  articleDraft.title.trim().length < 1 ||
+                  articleDraft.body.trim().length < 1
+                }
+              >
+                <Plus size={16} />
+                Create article
+              </button>
+            </div>
+          </form>
+        ) : null}
+
+        {articles.length === 0 ? (
+          <p className="setup-module-hint">
+            {query
+              ? 'No articles match your search.'
+              : 'No knowledge articles yet. Create one to start building your help center.'}
+          </p>
+        ) : (
+          <section className="kb-category-stack" aria-label="Knowledge base articles">
+            {categories.map((category) => {
+              const grouped = articles.filter((article) => article.category === category)
+              return (
+                <article className="kb-category-block" key={category}>
+                  <header>
+                    <BookOpen size={17} />
+                    <h2>{category}</h2>
+                    <strong>{grouped.length}</strong>
+                  </header>
+                  <div className="kb-article-list">
+                    {grouped.map((article) => {
+                      const extraTags = article.intents.filter((intent) => intent !== article.category)
+                      return (
+                      <div className="kb-article-row" key={article.id}>
+                        <div className="kb-article-main">
+                          <strong>{article.title}</strong>
+                          <span>
+                            {article.language.toUpperCase()} · Updated {formatTime(article.updatedAt)}
+                            {extraTags.length > 0 ? ` · ${extraTags.join(', ')}` : ''}
+                          </span>
+                        </div>
+                        <em className={`chip ${statusTone[article.status]}`}>{titleCase(article.status)}</em>
+                        <label className="kb-article-status">
+                          <span>Status</span>
+                          <select
+                            value={article.status}
+                            onChange={(event) =>
+                              void setArticleStatus(article, event.target.value as KnowledgeArticle['status'])
+                            }
+                            disabled={articleBusy}
+                          >
+                            {statusOptions.map((status) => (
+                              <option key={status} value={status}>
+                                {titleCase(status)}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                      )
+                    })}
+                  </div>
+                </article>
+              )
+            })}
+          </section>
+        )}
       </div>
     )
   }
