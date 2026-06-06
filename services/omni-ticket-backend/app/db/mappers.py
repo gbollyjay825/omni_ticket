@@ -22,6 +22,7 @@ from app.db.models import (
     ResponseMacroRecord,
     SlaPolicyRecord,
     SupportGroupRecord,
+    TagRecord,
     TicketRecord,
     TicketFieldRecord,
     TicketTemplateRecord,
@@ -66,6 +67,7 @@ from app.models.domain import (
     ResponseMacro,
     SlaPolicy,
     SupportGroup,
+    Tag,
     TicketField,
     TicketTemplate,
     Sentiment,
@@ -218,6 +220,21 @@ def business_hours_from_record(record: BusinessHoursRecord) -> BusinessHours:
             "timezone": record.timezone,
             "active": record.active,
             "days": record.days or [],
+            "created_at": record.created_at,
+            "updated_at": record.updated_at,
+        }
+    )
+
+
+def tag_from_record(record: TagRecord) -> Tag:
+    return Tag.model_validate(
+        {
+            "id": record.id,
+            "market_id": record.market_id,
+            "name": record.name,
+            "color": record.color,
+            "description": record.description,
+            "active": record.active,
             "created_at": record.created_at,
             "updated_at": record.updated_at,
         }

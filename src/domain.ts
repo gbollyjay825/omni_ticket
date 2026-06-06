@@ -282,6 +282,15 @@ export interface TicketTemplate {
   updatedAt: string
 }
 
+export interface Tag {
+  id: string
+  name: string
+  color: string
+  description: string
+  active: boolean
+  updatedAt: string
+}
+
 export interface OutboxItem {
   id: string
   conversationId: string
@@ -379,6 +388,7 @@ export interface OmniState {
   slaPolicies: SlaPolicy[]
   businessHours: BusinessHours[]
   ticketTemplates: TicketTemplate[]
+  tags: Tag[]
   handoffs: HandoffRecord[]
   outbox: OutboxItem[]
   settings: WorkspaceSettings

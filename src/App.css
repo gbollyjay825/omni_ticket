@@ -2527,6 +2527,88 @@ button:disabled {
   color: #2f7d34;
 }
 
+.tag-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.tag-form label {
+  display: grid;
+  gap: 5px;
+  flex: 1 1 160px;
+  min-width: 140px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #506a82;
+}
+
+.tag-form input {
+  height: 38px;
+  border: 1px solid #d5e0ec;
+  border-radius: 7px;
+  padding: 0 10px;
+  font: inherit;
+}
+
+.tag-color-field {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.tag-color-field input[type='color'] {
+  width: 44px;
+  padding: 2px;
+  cursor: pointer;
+}
+
+.tag-admin-list {
+  display: grid;
+  gap: 8px;
+}
+
+.tag-admin-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid #dce4ee;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 10px 14px;
+}
+
+.tag-admin-card.inactive {
+  opacity: 0.7;
+}
+
+.tag-swatch {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+.tag-admin-info {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.tag-admin-info strong {
+  color: #17314b;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.tag-admin-info span {
+  color: #6b8195;
+  font-size: 12px;
+}
+
 .freshworks-dashboard-grid > article,
 .report-card-grid > article,
 .freshchat-module-grid > article,

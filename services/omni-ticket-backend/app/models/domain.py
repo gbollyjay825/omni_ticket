@@ -571,6 +571,17 @@ class TicketTemplate(BaseModel):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class Tag(BaseModel):
+    id: str
+    market_id: str = "market-ng"
+    name: str
+    color: str = "#2f6fed"
+    description: str = ""
+    active: bool = True
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 class TicketTask(BaseModel):
     id: str
     label: str
@@ -1340,6 +1351,20 @@ class UpdateTicketTemplateRequest(BaseModel):
     channel: ChannelType | None = None
     group: str | None = Field(default=None, max_length=180)
     tags: list[str] | None = None
+    active: bool | None = None
+
+
+class CreateTagRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    color: str = Field(default="#2f6fed", max_length=9)
+    description: str = Field(default="", max_length=300)
+    active: bool = True
+
+
+class UpdateTagRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    color: str | None = Field(default=None, max_length=9)
+    description: str | None = Field(default=None, max_length=300)
     active: bool | None = None
 
 

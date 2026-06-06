@@ -90,6 +90,7 @@ from app.models.domain import (
     CreateResponseMacroRequest,
     CreateSlaPolicyRequest,
     CreateSupportGroupRequest,
+    CreateTagRequest,
     CreateTicketFieldRequest,
     CreateTicketRequest,
     CreateTicketTemplateRequest,
@@ -132,6 +133,7 @@ from app.models.domain import (
     SlaPolicy,
     SupervisorRecommendation,
     SupportGroup,
+    Tag,
     Ticket,
     TicketField,
     TicketTemplate,
@@ -154,6 +156,7 @@ from app.models.domain import (
     UpdateResponseMacroRequest,
     UpdateSlaPolicyRequest,
     UpdateSupportGroupRequest,
+    UpdateTagRequest,
     UpdateTicketFieldRequest,
     UpdateTicketRequest,
     UpdateTicketTemplateRequest,
@@ -1256,6 +1259,51 @@ def update_ticket_template(
         db,
         state,
         template_id,
+        request,
+        context.market_id,
+        context.user.email,
+    )
+
+
+@router.get("/tags", response_model=list[Tag])
+def list_tags(
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> list[Tag]:
+    return management_repository.list_tags(db, state, context.market_id)
+
+
+@router.post("/tags", response_model=Tag, status_code=status.HTTP_201_CREATED)
+def create_tag(
+    request: CreateTagRequest,
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> Tag:
+    require_admin(context)
+    return management_repository.create_tag(
+        db,
+        state,
+        request,
+        context.market_id,
+        context.user.email,
+    )
+
+
+@router.patch("/tags/{tag_id}", response_model=Tag)
+def update_tag(
+    tag_id: str,
+    request: UpdateTagRequest,
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> Tag:
+    require_admin(context)
+    return management_repository.update_tag(
+        db,
+        state,
+        tag_id,
         request,
         context.market_id,
         context.user.email,
@@ -3056,6 +3104,7 @@ def read_frontend_snapshot(
         "sla_policies": management_repository.list_sla_policies(db, state, context.market_id),
         "business_hours": management_repository.list_business_hours(db, state, context.market_id),
         "ticket_templates": management_repository.list_ticket_templates(db, state, context.market_id),
+        "tags": management_repository.list_tags(db, state, context.market_id),
         "companies": companies,
         "customers": customers,
         "tickets": [

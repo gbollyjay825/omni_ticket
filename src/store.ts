@@ -23,6 +23,7 @@ import type {
   SlaPolicy,
   BusinessHours,
   TicketTemplate,
+  Tag,
   SlaState,
   SupportGroup,
   TicketField,
@@ -39,6 +40,7 @@ import {
   createBackendSlaPolicy,
   createBackendBusinessHours,
   createBackendTicketTemplate,
+  createBackendTag,
   createBackendSupportGroup,
   createBackendTicketField,
   createBackendUser,
@@ -52,6 +54,7 @@ import {
   type BackendCreateSlaPolicyInput,
   type BackendCreateBusinessHoursInput,
   type BackendCreateTicketTemplateInput,
+  type BackendCreateTagInput,
   type BackendCreateSupportGroupInput,
   type BackendCreateUserInput,
   type BackendCustomer,
@@ -72,6 +75,7 @@ import {
   patchBackendSlaPolicy,
   patchBackendBusinessHours,
   patchBackendTicketTemplate,
+  patchBackendTag,
   patchBackendSupportGroup,
   patchBackendTicket,
   patchBackendTicketField,
@@ -88,10 +92,12 @@ import {
   type BackendSlaPolicy,
   type BackendBusinessHours,
   type BackendTicketTemplate,
+  type BackendTag,
   type BackendSyncState,
   type BackendUpdateSlaPolicyInput,
   type BackendUpdateBusinessHoursInput,
   type BackendUpdateTicketTemplateInput,
+  type BackendUpdateTagInput,
   type BackendUpdateSupportGroupInput,
   type BackendUpdateUserInput,
   type BackendUpdateTicketFieldInput,
@@ -252,6 +258,7 @@ function mergeReferenceData(state: OmniState): OmniState {
     slaPolicies: state.slaPolicies ?? initialOmniState.slaPolicies,
     businessHours: state.businessHours ?? initialOmniState.businessHours,
     ticketTemplates: state.ticketTemplates ?? initialOmniState.ticketTemplates,
+    tags: state.tags ?? initialOmniState.tags,
     responseMacros: state.responseMacros ?? initialOmniState.responseMacros,
     epics: initialOmniState.epics,
     backlog: initialOmniState.backlog,
@@ -488,6 +495,17 @@ function mapTicketTemplate(template: BackendTicketTemplate): TicketTemplate {
     tags: template.tags ?? [],
     active: template.active,
     updatedAt: template.updated_at,
+  }
+}
+
+function mapTag(tag: BackendTag): Tag {
+  return {
+    id: tag.id,
+    name: tag.name,
+    color: tag.color,
+    description: tag.description,
+    active: tag.active,
+    updatedAt: tag.updated_at,
   }
 }
 
@@ -786,6 +804,7 @@ function mergeBackendSnapshot(current: OmniState, snapshot: BackendSnapshot): Om
   const ticketTemplates = (snapshot.ticket_templates ?? snapshot.ticketTemplates ?? []).map(
     mapTicketTemplate,
   )
+  const tags = (snapshot.tags ?? []).map(mapTag)
   const selectedConversationId =
     conversations.find((conversation) => conversation.id === current.selectedConversationId)?.id ??
     conversations[0]?.id ??
@@ -821,6 +840,7 @@ function mergeBackendSnapshot(current: OmniState, snapshot: BackendSnapshot): Om
     slaPolicies,
     businessHours,
     ticketTemplates,
+    tags,
     articles: snapshot.knowledge.map(mapKnowledgeArticle),
     ticketFields: (snapshot.ticket_fields ?? snapshot.ticketFields ?? []).map(mapTicketField),
     responseMacros: snapshot.macros.map(mapResponseMacro),
@@ -1970,6 +1990,14 @@ export function useOmniStore() {
     return syncBackendMutation((session) => patchBackendTicketTemplate(templateId, patch, session))
   }
 
+  function createTag(input: BackendCreateTagInput) {
+    return syncBackendMutation((session) => createBackendTag(input, session))
+  }
+
+  function updateTag(tagId: string, patch: BackendUpdateTagInput) {
+    return syncBackendMutation((session) => patchBackendTag(tagId, patch, session))
+  }
+
   function createTicketField(input: BackendCreateTicketFieldInput) {
     return syncBackendMutation((session) => createBackendTicketField(input, session))
   }
@@ -2230,6 +2258,8 @@ export function useOmniStore() {
     updateBusinessHours,
     createTicketTemplate,
     updateTicketTemplate,
+    createTag,
+    updateTag,
     createTicketField,
     updateTicketField,
     changePassword,

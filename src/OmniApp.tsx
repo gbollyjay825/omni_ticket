@@ -68,6 +68,7 @@ import type {
   ScreenId,
   Sentiment,
   SlaState,
+  Tag,
   TicketField,
   TicketFieldType,
   TicketTemplate,
@@ -442,6 +443,7 @@ const setupBuiltModules = new Set<string>([
   'Automations',
   'Canned responses',
   'Ticket templates',
+  'Tags',
 ])
 const analyticsReportCatalog: Record<AnalyticsReportGroup, { title: string; detail: string; badge: string }[]> = {
   catalog: [
@@ -866,6 +868,8 @@ function OmniApp() {
     updateResponseMacro,
     createTicketTemplate,
     updateTicketTemplate,
+    createTag,
+    updateTag,
     createTicketField,
     updateTicketField,
     changePassword,
@@ -996,6 +1000,8 @@ function OmniApp() {
     tags: string
   }>({ name: '', subject: '', description: '', priority: 'medium', group: '', tags: '' })
   const [templateBusy, setTemplateBusy] = useState(false)
+  const [tagDraft, setTagDraft] = useState({ name: '', color: '#2f6fed', description: '' })
+  const [tagBusy, setTagBusy] = useState(false)
   const [addUserOpen, setAddUserOpen] = useState(false)
   const [addGroupOpen, setAddGroupOpen] = useState(false)
   const [addSlaPolicyOpen, setAddSlaPolicyOpen] = useState(false)
@@ -3148,6 +3154,37 @@ function OmniApp() {
       if (saved) setPrototypeNotice(`Ticket template ${template.active ? 'paused' : 'activated'}.`)
     } finally {
       setTemplateBusy(false)
+    }
+  }
+
+  async function handleCreateTag(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const name = tagDraft.name.trim()
+    if (name.length < 1 || tagBusy) return
+    setTagBusy(true)
+    try {
+      const saved = await createTag({
+        name,
+        color: tagDraft.color,
+        description: tagDraft.description.trim(),
+      })
+      if (saved) {
+        setTagDraft({ name: '', color: '#2f6fed', description: '' })
+        setPrototypeNotice('Tag saved.')
+      }
+    } finally {
+      setTagBusy(false)
+    }
+  }
+
+  async function toggleTag(tag: Tag) {
+    if (tagBusy) return
+    setTagBusy(true)
+    try {
+      const saved = await updateTag(tag.id, { active: !tag.active })
+      if (saved) setPrototypeNotice(`Tag ${tag.active ? 'paused' : 'activated'}.`)
+    } finally {
+      setTagBusy(false)
     }
   }
 
@@ -10158,6 +10195,77 @@ function OmniApp() {
                         {template.active ? 'Pause' : 'Activate'}
                       </button>
                     </div>
+                  </article>
+                ))
+              )}
+            </div>
+          </div>
+          <div className="automation-settings-panel tags-panel">
+            <div className="panel-head compact">
+              <div>
+                <span>Tags</span>
+                <h2>Canonical labels agents apply to tickets</h2>
+              </div>
+              <Filter size={18} />
+            </div>
+            <form className="user-create-form tag-form" onSubmit={handleCreateTag}>
+              <label className="tag-color-field">
+                <span>Color</span>
+                <input
+                  type="color"
+                  value={tagDraft.color}
+                  onChange={(event) => setTagDraft((current) => ({ ...current, color: event.target.value }))}
+                  disabled={!canManageUsers || tagBusy}
+                  aria-label="Tag color"
+                />
+              </label>
+              <label>
+                <span>Name</span>
+                <input
+                  required
+                  value={tagDraft.name}
+                  onChange={(event) => setTagDraft((current) => ({ ...current, name: event.target.value }))}
+                  placeholder="vip"
+                  disabled={!canManageUsers || tagBusy}
+                />
+              </label>
+              <label>
+                <span>Description</span>
+                <input
+                  value={tagDraft.description}
+                  onChange={(event) => setTagDraft((current) => ({ ...current, description: event.target.value }))}
+                  placeholder="Premium customers"
+                  disabled={!canManageUsers || tagBusy}
+                />
+              </label>
+              <button
+                type="submit"
+                className="primary-action"
+                disabled={!canManageUsers || tagBusy || tagDraft.name.trim().length < 1}
+              >
+                <Plus size={16} />
+                Add tag
+              </button>
+            </form>
+            <div className="tag-admin-list">
+              {state.tags.length === 0 ? (
+                <p className="setup-module-hint">No tags yet. Add labels agents can apply.</p>
+              ) : (
+                state.tags.map((tag) => (
+                  <article className={`tag-admin-card ${tag.active ? '' : 'inactive'}`} key={tag.id}>
+                    <span className="tag-swatch" style={{ background: tag.color }} />
+                    <div className="tag-admin-info">
+                      <strong>{tag.name}</strong>
+                      {tag.description ? <span>{tag.description}</span> : null}
+                    </div>
+                    <button
+                      type="button"
+                      className="secondary-action"
+                      disabled={!canManageUsers || tagBusy}
+                      onClick={() => void toggleTag(tag)}
+                    >
+                      {tag.active ? 'Pause' : 'Activate'}
+                    </button>
                   </article>
                 ))
               )}

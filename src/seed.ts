@@ -1780,6 +1780,7 @@ export const initialOmniState: OmniState = {
   slaPolicies: seedSlaPolicies,
   businessHours: [],
   ticketTemplates: [],
+  tags: [],
   handoffs: seedHandoffs,
   outbox: [],
   settings: {

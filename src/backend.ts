@@ -521,6 +521,7 @@ export interface BackendSnapshot {
   slaPolicies: BackendSlaPolicy[]
   businessHours: BackendBusinessHours[]
   ticketTemplates: BackendTicketTemplate[]
+  tags: BackendTag[]
   companies: BackendCompany[]
   customers: BackendCustomer[]
   tickets: BackendTicketContext[]
@@ -965,6 +966,31 @@ export interface BackendUpdateTicketTemplateInput {
   active?: boolean
 }
 
+export interface BackendTag {
+  id: string
+  market_id: string
+  name: string
+  color: string
+  description: string
+  active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface BackendCreateTagInput {
+  name: string
+  color?: string
+  description?: string
+  active?: boolean
+}
+
+export interface BackendUpdateTagInput {
+  name?: string
+  color?: string
+  description?: string
+  active?: boolean
+}
+
 export interface BackendCompany {
   id: string
   market_id: string
@@ -1349,6 +1375,7 @@ interface BackendFrontendSnapshot {
   sla_policies: BackendSlaPolicy[]
   business_hours: BackendBusinessHours[]
   ticket_templates: BackendTicketTemplate[]
+  tags: BackendTag[]
   companies: BackendCompany[]
   customers: BackendCustomer[]
   tickets: BackendTicketContext[]
@@ -1820,6 +1847,35 @@ export async function patchBackendTicketTemplate(
 ): Promise<BackendTicketTemplate> {
   return fetchJson<BackendTicketTemplate>(
     `/ticket-templates/${templateId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    },
+    session,
+  )
+}
+
+export async function createBackendTag(
+  input: BackendCreateTagInput,
+  session: BackendSession,
+): Promise<BackendTag> {
+  return fetchJson<BackendTag>(
+    '/tags',
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+    session,
+  )
+}
+
+export async function patchBackendTag(
+  tagId: string,
+  patch: BackendUpdateTagInput,
+  session: BackendSession,
+): Promise<BackendTag> {
+  return fetchJson<BackendTag>(
+    `/tags/${tagId}`,
     {
       method: 'PATCH',
       body: JSON.stringify(patch),

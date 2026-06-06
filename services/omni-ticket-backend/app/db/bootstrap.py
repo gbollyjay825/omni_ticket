@@ -24,6 +24,7 @@ from app.db.models import (
     ResponseMacroRecord,
     SlaPolicyRecord,
     SupportGroupRecord,
+    TagRecord,
     TicketFieldRecord,
     TicketRecord,
     TicketTemplateRecord,
@@ -487,6 +488,20 @@ def seed_ticket_templates(session: Session, source: InMemoryStore = store) -> No
     session.commit()
 
 
+def seed_tags(session: Session, source: InMemoryStore = store) -> None:
+    for tag in source.tags.values():
+        existing = session.get(TagRecord, tag.id) or session.scalar(
+            select(TagRecord).where(
+                TagRecord.market_id == tag.market_id,
+                TagRecord.name == tag.name,
+            )
+        )
+        if existing is not None:
+            continue
+        session.add(TagRecord(**_payload(tag)))
+    session.commit()
+
+
 def seed_reference_data(session: Session, source: InMemoryStore = store) -> None:
     if session.scalar(select(MarketRecord.id).limit(1)):
         seed_connector_accounts(session)
@@ -496,6 +511,7 @@ def seed_reference_data(session: Session, source: InMemoryStore = store) -> None
         seed_sla_policies(session, source)
         seed_business_hours(session, source)
         seed_ticket_templates(session, source)
+        seed_tags(session, source)
         return
 
     session.add_all(
@@ -565,6 +581,9 @@ def seed_reference_data(session: Session, source: InMemoryStore = store) -> None
             TicketTemplateRecord(**_payload(template))
             for template in source.ticket_templates.values()
         ]
+    )
+    session.add_all(
+        [TagRecord(**_payload(tag)) for tag in source.tags.values()]
     )
     session.add_all(
         [

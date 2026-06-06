@@ -11,6 +11,7 @@ from app.models.domain import (
     AutomationRule,
     BusinessHours,
     BusinessHoursDay,
+    Tag,
     TicketTemplate,
     Channel,
     ChannelHealth,
@@ -77,6 +78,7 @@ class InMemoryStore:
         self.sla_policies: dict[str, SlaPolicy] = {}
         self.business_hours: dict[str, BusinessHours] = {}
         self.ticket_templates: dict[str, TicketTemplate] = {}
+        self.tags: dict[str, Tag] = {}
         self.rules: dict[str, AutomationRule] = {}
         self.connector_events: dict[str, ConnectorEvent] = {}
         self.outbound_messages: dict[str, OutboundMessage] = {}
@@ -515,6 +517,37 @@ class InMemoryStore:
                     channel=ChannelType.email,
                     group="Fulfillment",
                     tags=["flight", "change"],
+                ),
+            }
+
+            self.tags = {
+                "tag-ng-refund": Tag(
+                    id="tag-ng-refund",
+                    market_id="market-ng",
+                    name="refund",
+                    color="#e25555",
+                    description="Refund and chargeback requests",
+                ),
+                "tag-ng-flight": Tag(
+                    id="tag-ng-flight",
+                    market_id="market-ng",
+                    name="flight",
+                    color="#2f6fed",
+                    description="Flight bookings and changes",
+                ),
+                "tag-ng-hotel": Tag(
+                    id="tag-ng-hotel",
+                    market_id="market-ng",
+                    name="hotel",
+                    color="#7c4dff",
+                    description="Hotel reservations",
+                ),
+                "tag-ng-vip": Tag(
+                    id="tag-ng-vip",
+                    market_id="market-ng",
+                    name="vip",
+                    color="#b9770e",
+                    description="Premium and VIP customers",
                 ),
             }
 

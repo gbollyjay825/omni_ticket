@@ -16,6 +16,7 @@ from app.db.mappers import (
     response_macro_from_record,
     sla_policy_from_record,
     support_group_from_record,
+    tag_from_record,
     ticket_field_from_record,
     ticket_template_from_record,
 )
@@ -30,6 +31,7 @@ from app.db.models import (
     ResponseMacroRecord,
     SlaPolicyRecord,
     SupportGroupRecord,
+    TagRecord,
     TicketFieldRecord,
     TicketRecord,
     TicketTemplateRecord,
@@ -45,6 +47,7 @@ from app.models.domain import (
     CreateResponseMacroRequest,
     CreateSlaPolicyRequest,
     CreateSupportGroupRequest,
+    CreateTagRequest,
     CreateTicketFieldRequest,
     CreateTicketTemplateRequest,
     KnowledgeArticle,
@@ -54,6 +57,7 @@ from app.models.domain import (
     ResponseMacroSuggestion,
     SlaPolicy,
     SupportGroup,
+    Tag,
     TicketField,
     TicketFieldType,
     TicketTemplate,
@@ -65,6 +69,7 @@ from app.models.domain import (
     UpdateResponseMacroRequest,
     UpdateSlaPolicyRequest,
     UpdateSupportGroupRequest,
+    UpdateTagRequest,
     UpdateTicketFieldRequest,
     UpdateTicketTemplateRequest,
     utc_now,
@@ -459,6 +464,20 @@ def _ticket_template_payload(
                 seen.add(cleaned.lower())
                 tags.append(cleaned)
         payload["tags"] = tags
+    return payload
+
+
+def _tag_payload(request: CreateTagRequest | UpdateTagRequest) -> dict:
+    payload = request.model_dump(exclude_unset=True, mode="json")
+    if "name" in payload and payload["name"] is not None:
+        payload["name"] = payload["name"].strip()
+        if not payload["name"]:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Tag name is required",
+            )
+    if "color" in payload and payload["color"] is not None:
+        payload["color"] = payload["color"].strip() or "#2f6fed"
     return payload
 
 
@@ -1045,6 +1064,96 @@ class ManagementRepository:
         template = ticket_template_from_record(record)
         state.ticket_templates[template.id] = template
         return template
+
+    def list_tags(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        market_id: str,
+    ) -> list[Tag]:
+        records = db.scalars(select(TagRecord).where(TagRecord.market_id == market_id)).all()
+        tags = [tag_from_record(record) for record in records]
+        tags.sort(key=lambda tag: (not tag.active, tag.name.lower()))
+        state.tags = {
+            **{key: value for key, value in state.tags.items() if value.market_id != market_id},
+            **{tag.id: tag for tag in tags},
+        }
+        return tags
+
+    def create_tag(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        request: CreateTagRequest,
+        market_id: str,
+        actor: str,
+    ) -> Tag:
+        payload = _tag_payload(request)
+        name = payload["name"]
+        duplicate = db.scalar(
+            select(TagRecord).where(TagRecord.market_id == market_id, TagRecord.name == name)
+        )
+        if duplicate is not None:
+            raise HTTPException(status.HTTP_409_CONFLICT, detail="Tag already exists")
+        record = TagRecord(id=_new_id("tag"), market_id=market_id, **payload)
+        db.add(record)
+        db.flush()
+        _audit(
+            db,
+            state,
+            actor=actor,
+            action="tag.create",
+            entity_type="tag",
+            entity_id=record.id,
+            market_id=market_id,
+            details={"name": record.name, "active": record.active},
+        )
+        db.commit()
+        db.refresh(record)
+        tag = tag_from_record(record)
+        state.tags[tag.id] = tag
+        return tag
+
+    def update_tag(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        tag_id: str,
+        request: UpdateTagRequest,
+        market_id: str,
+        actor: str,
+    ) -> Tag:
+        record = db.get(TagRecord, tag_id)
+        if record is None or record.market_id != market_id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Tag not found")
+        patch = _tag_payload(request)
+        if "name" in patch and patch["name"] != record.name:
+            duplicate = db.scalar(
+                select(TagRecord).where(
+                    TagRecord.market_id == market_id,
+                    TagRecord.name == patch["name"],
+                    TagRecord.id != tag_id,
+                )
+            )
+            if duplicate is not None:
+                raise HTTPException(status.HTTP_409_CONFLICT, detail="Tag already exists")
+        for key, value in patch.items():
+            setattr(record, key, value)
+        _audit(
+            db,
+            state,
+            actor=actor,
+            action="tag.update",
+            entity_type="tag",
+            entity_id=tag_id,
+            market_id=market_id,
+            details=patch,
+        )
+        db.commit()
+        db.refresh(record)
+        tag = tag_from_record(record)
+        state.tags[tag.id] = tag
+        return tag
 
     def list_knowledge(
         self,

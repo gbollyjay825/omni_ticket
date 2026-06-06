@@ -1522,6 +1522,37 @@ def test_admin_manages_ticket_templates(client: TestClient) -> None:
     assert any(event["action"] == "ticket_template.update" for event in audit)
 
 
+def test_admin_manages_tags(client: TestClient) -> None:
+    suffix = uuid4().hex[:8]
+    created = client.post(
+        "/api/v1/tags",
+        json={"name": f"escalated-{suffix}", "color": "#e25555", "description": "Escalated cases"},
+    )
+    assert created.status_code == 201
+    tag = created.json()
+    assert tag["color"] == "#e25555"
+
+    duplicate = client.post("/api/v1/tags", json={"name": f"escalated-{suffix}"})
+    assert duplicate.status_code == 409
+
+    listing = client.get("/api/v1/tags")
+    assert listing.status_code == 200
+    assert any(item["id"] == tag["id"] for item in listing.json())
+
+    updated = client.patch(f"/api/v1/tags/{tag['id']}", json={"active": False, "color": "#2f6fed"})
+    assert updated.status_code == 200
+    assert updated.json()["active"] is False
+    assert updated.json()["color"] == "#2f6fed"
+
+    snapshot = client.get("/api/v1/frontend/snapshot")
+    assert snapshot.status_code == 200
+    assert any(item["id"] == tag["id"] for item in snapshot.json()["tags"])
+
+    audit = client.get("/api/v1/audit").json()
+    assert any(event["action"] == "tag.create" for event in audit)
+    assert any(event["action"] == "tag.update" for event in audit)
+
+
 def test_role_policy_blocks_agent_from_admin_and_supervisor_controls(
     client: TestClient,
     login_as: Callable[..., dict[str, str]],
