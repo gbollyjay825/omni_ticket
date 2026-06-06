@@ -162,6 +162,26 @@ class IntegrationCredentialSettingsRecord(TimestampMixin, Base):
     instagram_access_token: Mapped[str | None] = mapped_column(Text)
 
 
+class SsoProviderSettingsRecord(TimestampMixin, Base):
+    __tablename__ = "sso_provider_settings"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default="global")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    provider_name: Mapped[str] = mapped_column(String(120), default="Enterprise SSO")
+    issuer_url: Mapped[str] = mapped_column(String(500), default="")
+    authorization_url: Mapped[str] = mapped_column(String(500), default="")
+    token_url: Mapped[str] = mapped_column(String(500), default="")
+    userinfo_url: Mapped[str] = mapped_column(String(500), default="")
+    client_id: Mapped[str] = mapped_column(String(255), default="")
+    client_secret: Mapped[str | None] = mapped_column(Text)
+    redirect_url: Mapped[str] = mapped_column(String(500), default="")
+    allowed_email_domains: Mapped[list[str]] = mapped_column(JSON, default=list)
+    auto_provision_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    default_role: Mapped[str] = mapped_column(String(32), default="agent")
+    default_market_id: Mapped[str | None] = mapped_column(String(64))
+    require_email_verified: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
 class AgentRecord(TimestampMixin, Base):
     __tablename__ = "agents"
 

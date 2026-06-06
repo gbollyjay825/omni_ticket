@@ -445,6 +445,43 @@ class UpdateIntegrationCredentialSettingsRequest(BaseModel):
     clear_instagram_access_token: bool = False
 
 
+class SsoProviderSettings(BaseModel):
+    enabled: bool = False
+    provider_name: str = "Enterprise SSO"
+    issuer_url: str = ""
+    authorization_url: str = ""
+    token_url: str = ""
+    userinfo_url: str = ""
+    client_id: str = ""
+    client_secret_configured: bool = False
+    redirect_url: str = ""
+    allowed_email_domains: list[str] = Field(default_factory=list)
+    auto_provision_enabled: bool = False
+    default_role: UserRole = UserRole.agent
+    default_market_id: str | None = None
+    require_email_verified: bool = True
+    managed_in_database: bool = False
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class UpdateSsoProviderSettingsRequest(BaseModel):
+    enabled: bool | None = None
+    provider_name: str | None = Field(default=None, max_length=120)
+    issuer_url: str | None = Field(default=None, max_length=500)
+    authorization_url: str | None = Field(default=None, max_length=500)
+    token_url: str | None = Field(default=None, max_length=500)
+    userinfo_url: str | None = Field(default=None, max_length=500)
+    client_id: str | None = Field(default=None, max_length=255)
+    client_secret: str | None = Field(default=None, max_length=1000)
+    clear_client_secret: bool = False
+    redirect_url: str | None = Field(default=None, max_length=500)
+    allowed_email_domains: list[str] | None = None
+    auto_provision_enabled: bool | None = None
+    default_role: UserRole | None = None
+    default_market_id: str | None = Field(default=None, max_length=64)
+    require_email_verified: bool | None = None
+
+
 class Channel(BaseModel):
     id: str
     market_id: str = "market-ng"

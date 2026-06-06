@@ -445,6 +445,43 @@ export interface BackendIntegrationCredentialSettings {
   updated_at: string
 }
 
+export interface BackendSsoProviderSettings {
+  enabled: boolean
+  provider_name: string
+  issuer_url: string
+  authorization_url: string
+  token_url: string
+  userinfo_url: string
+  client_id: string
+  client_secret_configured: boolean
+  redirect_url: string
+  allowed_email_domains: string[]
+  auto_provision_enabled: boolean
+  default_role: 'admin' | 'supervisor' | 'agent' | 'viewer' | 'owner'
+  default_market_id: string | null
+  require_email_verified: boolean
+  managed_in_database: boolean
+  updated_at: string
+}
+
+export interface BackendUpdateSsoProviderSettingsInput {
+  enabled?: boolean
+  provider_name?: string
+  issuer_url?: string
+  authorization_url?: string
+  token_url?: string
+  userinfo_url?: string
+  client_id?: string
+  client_secret?: string
+  clear_client_secret?: boolean
+  redirect_url?: string
+  allowed_email_domains?: string[]
+  auto_provision_enabled?: boolean
+  default_role?: BackendSsoProviderSettings['default_role']
+  default_market_id?: string
+  require_email_verified?: boolean
+}
+
 export interface BackendUpdateIntegrationCredentialSettingsInput {
   ai_provider?: string
   anthropic_api_key?: string
@@ -510,6 +547,7 @@ export interface BackendSnapshot {
   attachmentProviderConfig: BackendAttachmentProviderConfig | null
   emailProviderSettings: BackendEmailProviderSettings | null
   integrationCredentialSettings: BackendIntegrationCredentialSettings | null
+  ssoProviderSettings: BackendSsoProviderSettings | null
   operationalAlerts: BackendOperationalAlert[]
   alertDeliveries: BackendOperationalAlertDelivery[]
   alertDeliveryConfig: BackendOperationalAlertDeliveryConfig
@@ -541,6 +579,7 @@ export interface BackendSnapshot {
   attachment_provider_config: BackendAttachmentProviderConfig | null
   email_provider_settings: BackendEmailProviderSettings | null
   integration_credential_settings: BackendIntegrationCredentialSettings | null
+  sso_provider_settings: BackendSsoProviderSettings | null
   operational_alerts: BackendOperationalAlert[]
   alert_deliveries: BackendOperationalAlertDelivery[]
   alert_delivery_config: BackendOperationalAlertDeliveryConfig
@@ -1707,6 +1746,7 @@ interface BackendFrontendSnapshot {
   attachment_provider_config: BackendAttachmentProviderConfig | null
   email_provider_settings: BackendEmailProviderSettings | null
   integration_credential_settings: BackendIntegrationCredentialSettings | null
+  sso_provider_settings: BackendSsoProviderSettings | null
   operational_alerts: BackendOperationalAlert[]
   alert_deliveries: BackendOperationalAlertDelivery[]
   alert_delivery_config: BackendOperationalAlertDeliveryConfig
@@ -1869,6 +1909,7 @@ export async function fetchBackendSnapshot(
     attachmentProviderConfig: frontendSnapshot.attachment_provider_config ?? null,
     emailProviderSettings: frontendSnapshot.email_provider_settings ?? null,
     integrationCredentialSettings: frontendSnapshot.integration_credential_settings ?? null,
+    ssoProviderSettings: frontendSnapshot.sso_provider_settings ?? null,
     operationalAlerts: frontendSnapshot.operational_alerts,
     alertDeliveries: frontendSnapshot.alert_deliveries,
     alertDeliveryConfig: frontendSnapshot.alert_delivery_config,
@@ -1916,6 +1957,16 @@ export async function patchBackendIntegrationCredentialSettings(
   session: BackendSession,
 ): Promise<BackendIntegrationCredentialSettings> {
   return fetchJson<BackendIntegrationCredentialSettings>('/integration-credentials/settings', {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  }, session)
+}
+
+export async function patchBackendSsoSettings(
+  patch: BackendUpdateSsoProviderSettingsInput,
+  session: BackendSession,
+): Promise<BackendSsoProviderSettings> {
+  return fetchJson<BackendSsoProviderSettings>('/sso/settings', {
     method: 'PATCH',
     body: JSON.stringify(patch),
   }, session)

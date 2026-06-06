@@ -3301,6 +3301,52 @@ def test_integration_credentials_settings_mask_secrets_and_drive_sms_delivery(
     assert "anthropic_api_key" not in credential_audit["details"]
 
 
+def test_admin_manages_sso_provider_settings(client: TestClient) -> None:
+    initial = client.get("/api/v1/sso/settings")
+    assert initial.status_code == 200
+    body = initial.json()
+    assert body["managed_in_database"] is True
+    assert body["client_secret_configured"] is False
+    assert "client_secret" not in body
+
+    updated = client.patch(
+        "/api/v1/sso/settings",
+        json={
+            "enabled": True,
+            "provider_name": "Wakanow SSO",
+            "issuer_url": "https://sso.wakanow.example",
+            "authorization_url": "https://sso.wakanow.example/authorize",
+            "token_url": "https://sso.wakanow.example/token",
+            "userinfo_url": "https://sso.wakanow.example/userinfo",
+            "client_id": "omni-web",
+            "client_secret": "super-secret-value",
+            "redirect_url": "https://omni.wakanow.com/?auth=oidc",
+            "allowed_email_domains": ["Wakanow.com", "@omniticket.example.com"],
+            "auto_provision_enabled": True,
+            "default_role": "agent",
+            "default_market_id": "market-ng",
+            "require_email_verified": True,
+        },
+    )
+    assert updated.status_code == 200
+    saved = updated.json()
+    assert "client_secret" not in saved
+    assert saved["client_secret_configured"] is True
+    assert saved["provider_name"] == "Wakanow SSO"
+    assert saved["allowed_email_domains"] == ["wakanow.com", "omniticket.example.com"]
+
+    # The public OIDC config now reflects the database-managed settings.
+    config = client.get("/api/v1/auth/oidc/config").json()
+    assert config["login_available"] is True
+    assert config["provider_name"] == "Wakanow SSO"
+    assert config["auto_provision_enabled"] is True
+
+    audit = client.get("/api/v1/audit").json()
+    sso_audit = next(event for event in audit if event["action"] == "sso_provider_settings.update")
+    assert "client_secret" not in sso_audit["details"]
+    assert sso_audit["details"]["client_secret_configured"] is True
+
+
 def test_sms_outbound_uses_configured_http_adapter(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,

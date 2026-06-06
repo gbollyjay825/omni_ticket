@@ -22,6 +22,7 @@ from app.db.mappers import market_from_record, user_from_record
 from app.db.models import MarketRecord, OidcLoginStateRecord, SessionRecord, UserRecord
 from app.db.rate_limit import database_rate_limiter
 from app.db.session import get_db
+from app.db.sso_settings import sso_provider_settings_repository
 from app.models.domain import (
     AuthSession,
     ChangePasswordRequest,
@@ -128,8 +129,9 @@ def _auth_session_for_user(
     )
 
 
-def _oidc_provider_key() -> str:
-    return settings.oidc_issuer_url or settings.oidc_provider_name
+def _oidc_provider_key(config: identity_service.ResolvedOidcConfig | None = None) -> str:
+    cfg = config or identity_service.ResolvedOidcConfig.from_env()
+    return cfg.provider_key
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -138,14 +140,16 @@ def _as_utc(value: datetime) -> datetime:
     return value.replace(tzinfo=timezone.utc)
 
 
-def _require_oidc_login_available() -> OidcProviderConfig:
-    config = identity_service.oidc_provider_config()
-    if not config.login_available:
+def _require_oidc_login_available(
+    config: identity_service.ResolvedOidcConfig | None = None,
+) -> OidcProviderConfig:
+    provider_config = identity_service.oidc_provider_config(config)
+    if not provider_config.login_available:
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Enterprise SSO is not configured.",
         )
-    return config
+    return provider_config
 
 
 @router.post("/login", response_model=AuthSession)
@@ -280,8 +284,8 @@ def login(
 
 
 @router.get("/oidc/config", response_model=OidcProviderConfig)
-def read_oidc_provider_config() -> OidcProviderConfig:
-    return identity_service.oidc_provider_config()
+def read_oidc_provider_config(db: Session = Depends(get_db)) -> OidcProviderConfig:
+    return identity_service.oidc_provider_config(sso_provider_settings_repository.resolve(db))
 
 
 @router.get("/oidc/start", response_model=OidcStartResponse)
@@ -290,7 +294,8 @@ def start_oidc_login(
     return_to: str | None = Query(None, max_length=500),
     db: Session = Depends(get_db),
 ) -> OidcStartResponse:
-    _require_oidc_login_available()
+    oidc_config = sso_provider_settings_repository.resolve(db)
+    _require_oidc_login_available(oidc_config)
     market_record = db.get(MarketRecord, market_id)
     if market_record is None or not market_record.active:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Market not found")
@@ -318,7 +323,7 @@ def start_oidc_login(
         entity_id=market_id,
         market_id=market_id,
         details={
-            "provider": _oidc_provider_key(),
+            "provider": _oidc_provider_key(oidc_config),
             "return_to_configured": bool(return_to),
         },
     )
@@ -328,6 +333,7 @@ def start_oidc_login(
             state=state,
             code_challenge=code_challenge,
             nonce=nonce,
+            config=oidc_config,
         ),
         state=state,
         expires_at=expires_at,
@@ -339,7 +345,8 @@ def complete_oidc_login(
     request: OidcCallbackRequest,
     db: Session = Depends(get_db),
 ) -> AuthSession:
-    _require_oidc_login_available()
+    oidc_config = sso_provider_settings_repository.resolve(db)
+    _require_oidc_login_available(oidc_config)
     parsed_state = identity_service.parse_oidc_state_token(request.state)
     if parsed_state is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired SSO state")
@@ -361,6 +368,7 @@ def complete_oidc_login(
         userinfo = identity_service.exchange_code_for_userinfo(
             code=request.code,
             code_verifier=state_record.code_verifier,
+            config=oidc_config,
         )
     except Exception as exc:
         write_audit_event(
@@ -370,7 +378,7 @@ def complete_oidc_login(
             entity_type="market",
             entity_id=state_record.market_id,
             market_id=state_record.market_id,
-            details={"provider": _oidc_provider_key(), "reason": "provider_exchange_failed"},
+            details={"provider": _oidc_provider_key(oidc_config), "reason": "provider_exchange_failed"},
             commit=True,
         )
         raise HTTPException(
@@ -378,7 +386,7 @@ def complete_oidc_login(
             detail="Enterprise SSO provider exchange failed.",
         ) from exc
 
-    if settings.oidc_require_email_verified and userinfo.email_verified is not True:
+    if oidc_config.require_email_verified and userinfo.email_verified is not True:
         write_audit_event(
             db,
             actor=userinfo.email,
@@ -386,12 +394,12 @@ def complete_oidc_login(
             entity_type="user",
             entity_id=userinfo.email,
             market_id=state_record.market_id,
-            details={"provider": _oidc_provider_key(), "reason": "email_not_verified"},
+            details={"provider": _oidc_provider_key(oidc_config), "reason": "email_not_verified"},
             commit=True,
         )
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="SSO email is not verified")
 
-    allowed_domains = identity_service.normalized_allowed_domains()
+    allowed_domains = identity_service.normalized_allowed_domains(oidc_config)
     email_domain = userinfo.email.rsplit("@", 1)[-1]
     if allowed_domains and email_domain not in allowed_domains:
         write_audit_event(
@@ -402,7 +410,7 @@ def complete_oidc_login(
             entity_id=userinfo.email,
             market_id=state_record.market_id,
             details={
-                "provider": _oidc_provider_key(),
+                "provider": _oidc_provider_key(oidc_config),
                 "reason": "email_domain_not_allowed",
                 "email_domain": email_domain,
             },
@@ -410,7 +418,7 @@ def complete_oidc_login(
         )
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="SSO email domain is not allowed")
 
-    provider_key = _oidc_provider_key()
+    provider_key = _oidc_provider_key(oidc_config)
     user_record = db.scalar(
         select(UserRecord).where(
             UserRecord.external_identity_provider == provider_key,
@@ -421,7 +429,7 @@ def complete_oidc_login(
         user_record = db.scalar(select(UserRecord).where(UserRecord.email == userinfo.email))
 
     if user_record is None:
-        if not settings.oidc_auto_provision_enabled:
+        if not oidc_config.auto_provision_enabled:
             write_audit_event(
                 db,
                 actor=userinfo.email,
@@ -433,7 +441,7 @@ def complete_oidc_login(
                 commit=True,
             )
             raise HTTPException(status.HTTP_403_FORBIDDEN, detail="SSO user is not provisioned")
-        default_market_id = settings.oidc_default_market_id or state_record.market_id
+        default_market_id = oidc_config.default_market_id or state_record.market_id
         default_market = db.get(MarketRecord, default_market_id)
         if default_market is None or not default_market.active:
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail="SSO default market is not active")
@@ -444,7 +452,7 @@ def complete_oidc_login(
             email=userinfo.email,
             password_hash=None,
             password_reset_required=False,
-            role=UserRole(settings.oidc_default_role).value,
+            role=UserRole(oidc_config.default_role).value,
             default_market_id=default_market_id,
             market_ids=market_ids,
             active=True,

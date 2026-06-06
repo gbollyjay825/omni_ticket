@@ -19,6 +19,57 @@ STATE_PREFIX = "oidc2"
 
 
 @dataclass(frozen=True)
+class ResolvedOidcConfig:
+    """Effective OIDC configuration, resolved from the database with env fallback.
+
+    When no database override exists this mirrors the environment ``settings`` so
+    runtime behaviour is identical to the env-only configuration.
+    """
+
+    enabled: bool
+    provider_name: str
+    issuer_url: str | None
+    authorization_url: str | None
+    token_url: str | None
+    userinfo_url: str | None
+    client_id: str | None
+    client_secret: str | None
+    redirect_url: str | None
+    allowed_email_domains: list[str]
+    auto_provision_enabled: bool
+    default_role: str
+    default_market_id: str | None
+    require_email_verified: bool
+
+    @classmethod
+    def from_env(cls) -> "ResolvedOidcConfig":
+        return cls(
+            enabled=settings.oidc_enabled,
+            provider_name=settings.oidc_provider_name,
+            issuer_url=settings.oidc_issuer_url,
+            authorization_url=settings.oidc_authorization_url,
+            token_url=settings.oidc_token_url,
+            userinfo_url=settings.oidc_userinfo_url,
+            client_id=settings.oidc_client_id,
+            client_secret=settings.oidc_client_secret,
+            redirect_url=settings.oidc_redirect_url,
+            allowed_email_domains=list(settings.oidc_allowed_email_domains),
+            auto_provision_enabled=settings.oidc_auto_provision_enabled,
+            default_role=settings.oidc_default_role,
+            default_market_id=settings.oidc_default_market_id,
+            require_email_verified=settings.oidc_require_email_verified,
+        )
+
+    @property
+    def provider_key(self) -> str:
+        return self.issuer_url or self.provider_name
+
+
+def _resolved(config: ResolvedOidcConfig | None) -> ResolvedOidcConfig:
+    return config or ResolvedOidcConfig.from_env()
+
+
+@dataclass(frozen=True)
 class OidcStatePayload:
     state_id: str
     expires_at: datetime
@@ -75,47 +126,50 @@ def _signature(payload: str) -> str:
     return digest[:32]
 
 
-def _required_settings() -> dict[str, str | None]:
+def _required_settings(config: ResolvedOidcConfig | None = None) -> dict[str, str | None]:
+    cfg = _resolved(config)
     return {
-        "OMNI_OIDC_AUTHORIZATION_URL": settings.oidc_authorization_url,
-        "OMNI_OIDC_TOKEN_URL": settings.oidc_token_url,
-        "OMNI_OIDC_USERINFO_URL": settings.oidc_userinfo_url,
-        "OMNI_OIDC_CLIENT_ID": settings.oidc_client_id,
-        "OMNI_OIDC_CLIENT_SECRET": settings.oidc_client_secret,
-        "OMNI_OIDC_REDIRECT_URL": settings.oidc_redirect_url,
+        "OMNI_OIDC_AUTHORIZATION_URL": cfg.authorization_url,
+        "OMNI_OIDC_TOKEN_URL": cfg.token_url,
+        "OMNI_OIDC_USERINFO_URL": cfg.userinfo_url,
+        "OMNI_OIDC_CLIENT_ID": cfg.client_id,
+        "OMNI_OIDC_CLIENT_SECRET": cfg.client_secret,
+        "OMNI_OIDC_REDIRECT_URL": cfg.redirect_url,
     }
 
 
-def normalized_allowed_domains() -> list[str]:
+def normalized_allowed_domains(config: ResolvedOidcConfig | None = None) -> list[str]:
+    cfg = _resolved(config)
     return [
         value.strip().lower().removeprefix("@")
-        for value in settings.oidc_allowed_email_domains
+        for value in cfg.allowed_email_domains
         if value.strip()
     ]
 
 
-def oidc_provider_config() -> OidcProviderConfig:
-    required = _required_settings()
+def oidc_provider_config(config: ResolvedOidcConfig | None = None) -> OidcProviderConfig:
+    cfg = _resolved(config)
+    required = _required_settings(cfg)
     missing = [field_name for field_name, field_value in required.items() if not field_value]
-    configured = settings.oidc_enabled and not missing
+    configured = cfg.enabled and not missing
     return OidcProviderConfig(
-        provider_name=settings.oidc_provider_name,
-        enabled=settings.oidc_enabled,
+        provider_name=cfg.provider_name,
+        enabled=cfg.enabled,
         configured=configured,
         login_available=configured,
-        authorization_endpoint_configured=bool(settings.oidc_authorization_url),
-        token_endpoint_configured=bool(settings.oidc_token_url),
-        userinfo_endpoint_configured=bool(settings.oidc_userinfo_url),
-        redirect_url_configured=bool(settings.oidc_redirect_url),
-        client_configured=bool(settings.oidc_client_id and settings.oidc_client_secret),
-        auto_provision_enabled=settings.oidc_auto_provision_enabled,
-        default_role=UserRole(settings.oidc_default_role),
-        default_market_id=settings.oidc_default_market_id,
-        allowed_email_domains=normalized_allowed_domains(),
+        authorization_endpoint_configured=bool(cfg.authorization_url),
+        token_endpoint_configured=bool(cfg.token_url),
+        userinfo_endpoint_configured=bool(cfg.userinfo_url),
+        redirect_url_configured=bool(cfg.redirect_url),
+        client_configured=bool(cfg.client_id and cfg.client_secret),
+        auto_provision_enabled=cfg.auto_provision_enabled,
+        default_role=UserRole(cfg.default_role),
+        default_market_id=cfg.default_market_id,
+        allowed_email_domains=normalized_allowed_domains(cfg),
         required_settings=list(required),
-        missing_settings=missing if settings.oidc_enabled else ["OMNI_OIDC_ENABLED=true", *missing],
+        missing_settings=missing if cfg.enabled else ["OMNI_OIDC_ENABLED=true", *missing],
         notes=(
-            f"{settings.oidc_provider_name} login is available."
+            f"{cfg.provider_name} login is available."
             if configured
             else "Enterprise SSO remains pending until the OIDC provider, client, redirect, and secret are configured."
         ),
@@ -167,21 +221,23 @@ def build_authorization_url(
     state: str,
     code_challenge: str,
     nonce: str,
+    config: ResolvedOidcConfig | None = None,
 ) -> str:
-    if not settings.oidc_authorization_url or not settings.oidc_client_id or not settings.oidc_redirect_url:
+    cfg = _resolved(config)
+    if not cfg.authorization_url or not cfg.client_id or not cfg.redirect_url:
         raise ValueError("OIDC authorization settings are incomplete.")
     query = {
         "response_type": "code",
-        "client_id": settings.oidc_client_id,
-        "redirect_uri": settings.oidc_redirect_url,
+        "client_id": cfg.client_id,
+        "redirect_uri": cfg.redirect_url,
         "scope": "openid email profile",
         "state": state,
         "nonce": nonce,
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",
     }
-    separator = "&" if "?" in settings.oidc_authorization_url else "?"
-    return f"{settings.oidc_authorization_url}{separator}{parse.urlencode(query)}"
+    separator = "&" if "?" in cfg.authorization_url else "?"
+    return f"{cfg.authorization_url}{separator}{parse.urlencode(query)}"
 
 
 def _read_json_response(response: Any) -> dict[str, Any]:
@@ -194,31 +250,43 @@ def _read_json_response(response: Any) -> dict[str, Any]:
     return data
 
 
-def exchange_code_for_userinfo(*, code: str, code_verifier: str) -> OidcUserInfo:
-    token = _exchange_code_for_token(code=code, code_verifier=code_verifier)
-    return _fetch_userinfo(token.access_token)
+def exchange_code_for_userinfo(
+    *,
+    code: str,
+    code_verifier: str,
+    config: ResolvedOidcConfig | None = None,
+) -> OidcUserInfo:
+    cfg = _resolved(config)
+    token = _exchange_code_for_token(code=code, code_verifier=code_verifier, config=cfg)
+    return _fetch_userinfo(token.access_token, config=cfg)
 
 
-def _exchange_code_for_token(*, code: str, code_verifier: str) -> OidcTokenResponse:
+def _exchange_code_for_token(
+    *,
+    code: str,
+    code_verifier: str,
+    config: ResolvedOidcConfig | None = None,
+) -> OidcTokenResponse:
+    cfg = _resolved(config)
     if (
-        not settings.oidc_token_url
-        or not settings.oidc_client_id
-        or not settings.oidc_client_secret
-        or not settings.oidc_redirect_url
+        not cfg.token_url
+        or not cfg.client_id
+        or not cfg.client_secret
+        or not cfg.redirect_url
     ):
         raise ValueError("OIDC token settings are incomplete.")
     body = parse.urlencode(
         {
             "grant_type": "authorization_code",
             "code": code,
-            "redirect_uri": settings.oidc_redirect_url,
-            "client_id": settings.oidc_client_id,
-            "client_secret": settings.oidc_client_secret,
+            "redirect_uri": cfg.redirect_url,
+            "client_id": cfg.client_id,
+            "client_secret": cfg.client_secret,
             "code_verifier": code_verifier,
         }
     ).encode("utf-8")
     request = urlrequest.Request(
-        settings.oidc_token_url,
+        cfg.token_url,
         data=body,
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         method="POST",
@@ -236,11 +304,15 @@ def _exchange_code_for_token(*, code: str, code_verifier: str) -> OidcTokenRespo
     )
 
 
-def _fetch_userinfo(access_token: str) -> OidcUserInfo:
-    if not settings.oidc_userinfo_url:
+def _fetch_userinfo(
+    access_token: str,
+    config: ResolvedOidcConfig | None = None,
+) -> OidcUserInfo:
+    cfg = _resolved(config)
+    if not cfg.userinfo_url:
         raise ValueError("OIDC userinfo settings are incomplete.")
     request = urlrequest.Request(
-        settings.oidc_userinfo_url,
+        cfg.userinfo_url,
         headers={"Authorization": f"Bearer {access_token}"},
         method="GET",
     )

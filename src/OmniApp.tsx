@@ -111,10 +111,12 @@ import type {
   BackendProductionAccountRequestDelivery,
   BackendProductionAccountRequestPack,
   BackendProductionReadinessChecklist,
+  BackendSsoProviderSettings,
   BackendTicketField,
   BackendUser,
   BackendUpdateEmailProviderSettingsInput,
   BackendUpdateIntegrationCredentialSettingsInput,
+  BackendUpdateSsoProviderSettingsInput,
 } from './backend'
 import {
   createBackendPortalTicket,
@@ -133,6 +135,7 @@ import {
   mergeBackendTickets,
   patchBackendEmailSettings,
   patchBackendIntegrationCredentialSettings,
+  patchBackendSsoSettings,
   patchBackendProductionAccountReference,
   pruneBackendAttachmentRetention,
   pruneBackendAuditRetention,
@@ -1070,6 +1073,24 @@ function OmniApp() {
   const [integrationCredentialDraft, setIntegrationCredentialDraft] =
     useState<IntegrationCredentialDraft>(defaultIntegrationCredentialDraft)
   const [integrationCredentialBusy, setIntegrationCredentialBusy] = useState(false)
+  const [ssoSettingsDraft, setSsoSettingsDraft] = useState({
+    enabled: false,
+    providerName: 'Enterprise SSO',
+    issuerUrl: '',
+    authorizationUrl: '',
+    tokenUrl: '',
+    userinfoUrl: '',
+    clientId: '',
+    clientSecret: '',
+    clearClientSecret: false,
+    redirectUrl: '',
+    allowedEmailDomains: '',
+    autoProvisionEnabled: false,
+    defaultRole: 'agent' as BackendSsoProviderSettings['default_role'],
+    defaultMarketId: '',
+    requireEmailVerified: true,
+  })
+  const [ssoSettingsBusy, setSsoSettingsBusy] = useState(false)
   const [productionAccountPack, setProductionAccountPack] =
     useState<BackendProductionAccountRequestPack | null>(null)
   const [productionAccountBusy, setProductionAccountBusy] = useState(false)
@@ -1208,6 +1229,8 @@ function OmniApp() {
     backendSnapshot?.emailProviderSettings ?? backendSnapshot?.email_provider_settings ?? null
   const integrationCredentialSettings: BackendIntegrationCredentialSettings | null =
     backendSnapshot?.integrationCredentialSettings ?? backendSnapshot?.integration_credential_settings ?? null
+  const ssoProviderSettings: BackendSsoProviderSettings | null =
+    backendSnapshot?.ssoProviderSettings ?? backendSnapshot?.sso_provider_settings ?? null
   const availableMarkets = backendSession?.available_markets ?? []
   const operationalAlerts = backendSnapshot?.operationalAlerts ?? backendSnapshot?.operational_alerts ?? []
   const alertDeliveries = backendSnapshot?.alertDeliveries ?? backendSnapshot?.alert_deliveries ?? []
@@ -1362,6 +1385,31 @@ function OmniApp() {
     const timeoutId = window.setTimeout(syncDraft, 0)
     return () => window.clearTimeout(timeoutId)
   }, [integrationCredentialSettings])
+
+  useEffect(() => {
+    function syncDraft() {
+      if (!ssoProviderSettings) return
+      setSsoSettingsDraft({
+        enabled: ssoProviderSettings.enabled,
+        providerName: ssoProviderSettings.provider_name,
+        issuerUrl: ssoProviderSettings.issuer_url,
+        authorizationUrl: ssoProviderSettings.authorization_url,
+        tokenUrl: ssoProviderSettings.token_url,
+        userinfoUrl: ssoProviderSettings.userinfo_url,
+        clientId: ssoProviderSettings.client_id,
+        clientSecret: '',
+        clearClientSecret: false,
+        redirectUrl: ssoProviderSettings.redirect_url,
+        allowedEmailDomains: ssoProviderSettings.allowed_email_domains.join(', '),
+        autoProvisionEnabled: ssoProviderSettings.auto_provision_enabled,
+        defaultRole: ssoProviderSettings.default_role,
+        defaultMarketId: ssoProviderSettings.default_market_id ?? '',
+        requireEmailVerified: ssoProviderSettings.require_email_verified,
+      })
+    }
+    const timeoutId = window.setTimeout(syncDraft, 0)
+    return () => window.clearTimeout(timeoutId)
+  }, [ssoProviderSettings])
 
   const operationalNotifications = activeOperationalAlerts.slice(0, 3).map((alert) => ({
     id: alert.id,
@@ -1719,6 +1767,43 @@ function OmniApp() {
       setPrototypeNotice(error instanceof Error ? error.message : 'Email setup save failed.')
     } finally {
       setEmailSettingsBusy(false)
+    }
+  }
+
+  async function handleSsoSettingsSave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!backendSession || ssoSettingsBusy) return
+    setSsoSettingsBusy(true)
+    try {
+      const patch: BackendUpdateSsoProviderSettingsInput = {
+        enabled: ssoSettingsDraft.enabled,
+        provider_name: ssoSettingsDraft.providerName.trim() || 'Enterprise SSO',
+        issuer_url: ssoSettingsDraft.issuerUrl.trim(),
+        authorization_url: ssoSettingsDraft.authorizationUrl.trim(),
+        token_url: ssoSettingsDraft.tokenUrl.trim(),
+        userinfo_url: ssoSettingsDraft.userinfoUrl.trim(),
+        client_id: ssoSettingsDraft.clientId.trim(),
+        clear_client_secret: ssoSettingsDraft.clearClientSecret,
+        redirect_url: ssoSettingsDraft.redirectUrl.trim(),
+        allowed_email_domains: ssoSettingsDraft.allowedEmailDomains
+          .split(',')
+          .map((domain) => domain.trim())
+          .filter((domain) => domain.length > 0),
+        auto_provision_enabled: ssoSettingsDraft.autoProvisionEnabled,
+        default_role: ssoSettingsDraft.defaultRole,
+        default_market_id: ssoSettingsDraft.defaultMarketId.trim(),
+        require_email_verified: ssoSettingsDraft.requireEmailVerified,
+      }
+      if (!ssoSettingsDraft.clearClientSecret && ssoSettingsDraft.clientSecret.trim()) {
+        patch.client_secret = ssoSettingsDraft.clientSecret.trim()
+      }
+      await patchBackendSsoSettings(patch, backendSession)
+      setPrototypeNotice('Enterprise SSO settings saved.')
+      await refreshBackend()
+    } catch (error) {
+      setPrototypeNotice(error instanceof Error ? error.message : 'SSO settings save failed.')
+    } finally {
+      setSsoSettingsBusy(false)
     }
   }
 
@@ -9607,44 +9692,224 @@ function OmniApp() {
                     </div>
                     <ShieldCheck size={17} />
                   </div>
-                  <div className="automation-scope" aria-label="Enterprise SSO readiness">
-                    <article>
-                      <CheckCircle2 size={16} />
-                      <strong>Provider</strong>
-                      <span>{oidcProviderConfig?.provider_name ?? 'Enterprise SSO'}</span>
-                    </article>
-                    <article>
-                      <CheckCircle2 size={16} />
-                      <strong>Login</strong>
-                      <span>{oidcProviderConfig?.login_available ? 'Available' : 'Pending provider setup'}</span>
-                    </article>
-                    <article>
-                      <CheckCircle2 size={16} />
-                      <strong>Domains</strong>
-                      <span>
-                        {oidcProviderConfig?.allowed_email_domains.length
-                          ? oidcProviderConfig.allowed_email_domains.join(', ')
-                          : 'Not restricted yet'}
-                      </span>
-                    </article>
-                    <article>
-                      <CheckCircle2 size={16} />
-                      <strong>Provisioning</strong>
-                      <span>{oidcProviderConfig?.auto_provision_enabled ? 'Automatic' : 'Admin-approved users'}</span>
-                    </article>
-                    <article>
-                      <CheckCircle2 size={16} />
-                      <strong>Missing</strong>
-                      <span>{oidcProviderConfig?.missing_settings.length ?? 0}</span>
-                    </article>
-                  </div>
-                  {oidcProviderConfig?.missing_settings.length ? (
-                    <div className="readiness-note-list">
-                      {oidcProviderConfig.missing_settings.slice(0, 6).map((setting) => (
-                        <span key={setting}>{setting}</span>
-                      ))}
-                    </div>
-                  ) : null}
+                  {ssoProviderSettings ? (
+                    <form className="sso-settings-form" onSubmit={handleSsoSettingsSave}>
+                      <label className="toggle-row compact-toggle">
+                        <input
+                          type="checkbox"
+                          checked={ssoSettingsDraft.enabled}
+                          onChange={(event) =>
+                            setSsoSettingsDraft((current) => ({ ...current, enabled: event.target.checked }))
+                          }
+                          disabled={ssoSettingsBusy}
+                        />
+                        <span>Enable single sign-on login</span>
+                      </label>
+                      <div className="sso-settings-grid">
+                        <label>
+                          <span>Provider name</span>
+                          <input
+                            value={ssoSettingsDraft.providerName}
+                            onChange={(event) =>
+                              setSsoSettingsDraft((current) => ({ ...current, providerName: event.target.value }))
+                            }
+                            placeholder="Wakanow SSO"
+                            disabled={ssoSettingsBusy}
+                          />
+                        </label>
+                        <label>
+                          <span>Issuer URL</span>
+                          <input
+                            value={ssoSettingsDraft.issuerUrl}
+                            onChange={(event) =>
+                              setSsoSettingsDraft((current) => ({ ...current, issuerUrl: event.target.value }))
+                            }
+                            placeholder="https://id.example.com"
+                            disabled={ssoSettingsBusy}
+                          />
+                        </label>
+                        <label>
+                          <span>Authorization URL</span>
+                          <input
+                            value={ssoSettingsDraft.authorizationUrl}
+                            onChange={(event) =>
+                              setSsoSettingsDraft((current) => ({ ...current, authorizationUrl: event.target.value }))
+                            }
+                            placeholder="https://id.example.com/authorize"
+                            disabled={ssoSettingsBusy}
+                          />
+                        </label>
+                        <label>
+                          <span>Token URL</span>
+                          <input
+                            value={ssoSettingsDraft.tokenUrl}
+                            onChange={(event) =>
+                              setSsoSettingsDraft((current) => ({ ...current, tokenUrl: event.target.value }))
+                            }
+                            placeholder="https://id.example.com/token"
+                            disabled={ssoSettingsBusy}
+                          />
+                        </label>
+                        <label>
+                          <span>Userinfo URL</span>
+                          <input
+                            value={ssoSettingsDraft.userinfoUrl}
+                            onChange={(event) =>
+                              setSsoSettingsDraft((current) => ({ ...current, userinfoUrl: event.target.value }))
+                            }
+                            placeholder="https://id.example.com/userinfo"
+                            disabled={ssoSettingsBusy}
+                          />
+                        </label>
+                        <label>
+                          <span>Redirect URL</span>
+                          <input
+                            value={ssoSettingsDraft.redirectUrl}
+                            onChange={(event) =>
+                              setSsoSettingsDraft((current) => ({ ...current, redirectUrl: event.target.value }))
+                            }
+                            placeholder="https://app.example.com/?auth=oidc"
+                            disabled={ssoSettingsBusy}
+                          />
+                        </label>
+                        <label>
+                          <span>Client ID</span>
+                          <input
+                            value={ssoSettingsDraft.clientId}
+                            onChange={(event) =>
+                              setSsoSettingsDraft((current) => ({ ...current, clientId: event.target.value }))
+                            }
+                            placeholder="omni-web"
+                            disabled={ssoSettingsBusy}
+                          />
+                        </label>
+                        <label>
+                          <span>Client secret</span>
+                          <input
+                            type="password"
+                            value={ssoSettingsDraft.clientSecret}
+                            onChange={(event) =>
+                              setSsoSettingsDraft((current) => ({ ...current, clientSecret: event.target.value }))
+                            }
+                            placeholder={
+                              ssoProviderSettings.client_secret_configured ? 'Saved secret' : 'Client secret'
+                            }
+                            disabled={ssoSettingsBusy || ssoSettingsDraft.clearClientSecret}
+                            autoComplete="new-password"
+                          />
+                        </label>
+                        <label>
+                          <span>Default role</span>
+                          <select
+                            value={ssoSettingsDraft.defaultRole}
+                            onChange={(event) =>
+                              setSsoSettingsDraft((current) => ({
+                                ...current,
+                                defaultRole: event.target.value as BackendSsoProviderSettings['default_role'],
+                              }))
+                            }
+                            disabled={ssoSettingsBusy}
+                          >
+                            {(['agent', 'supervisor', 'admin', 'viewer', 'owner'] as const).map((role) => (
+                              <option key={role} value={role}>
+                                {titleCase(role)}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          <span>Default market</span>
+                          <select
+                            value={ssoSettingsDraft.defaultMarketId}
+                            onChange={(event) =>
+                              setSsoSettingsDraft((current) => ({ ...current, defaultMarketId: event.target.value }))
+                            }
+                            disabled={ssoSettingsBusy}
+                          >
+                            <option value="">Use login market</option>
+                            {availableMarkets.map((market) => (
+                              <option key={market.id} value={market.id}>
+                                {market.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                      <label className="sso-settings-full">
+                        <span>Allowed email domains (comma separated)</span>
+                        <input
+                          value={ssoSettingsDraft.allowedEmailDomains}
+                          onChange={(event) =>
+                            setSsoSettingsDraft((current) => ({ ...current, allowedEmailDomains: event.target.value }))
+                          }
+                          placeholder="wakanow.com, partner.com"
+                          disabled={ssoSettingsBusy}
+                        />
+                      </label>
+                      <div className="sso-settings-toggles">
+                        <label className="toggle-row compact-toggle">
+                          <input
+                            type="checkbox"
+                            checked={ssoSettingsDraft.autoProvisionEnabled}
+                            onChange={(event) =>
+                              setSsoSettingsDraft((current) => ({
+                                ...current,
+                                autoProvisionEnabled: event.target.checked,
+                              }))
+                            }
+                            disabled={ssoSettingsBusy}
+                          />
+                          <span>Auto-provision new SSO users</span>
+                        </label>
+                        <label className="toggle-row compact-toggle">
+                          <input
+                            type="checkbox"
+                            checked={ssoSettingsDraft.requireEmailVerified}
+                            onChange={(event) =>
+                              setSsoSettingsDraft((current) => ({
+                                ...current,
+                                requireEmailVerified: event.target.checked,
+                              }))
+                            }
+                            disabled={ssoSettingsBusy}
+                          />
+                          <span>Require verified email</span>
+                        </label>
+                        {ssoProviderSettings.client_secret_configured ? (
+                          <label className="toggle-row compact-toggle">
+                            <input
+                              type="checkbox"
+                              checked={ssoSettingsDraft.clearClientSecret}
+                              onChange={(event) =>
+                                setSsoSettingsDraft((current) => ({
+                                  ...current,
+                                  clearClientSecret: event.target.checked,
+                                  clientSecret: event.target.checked ? '' : current.clientSecret,
+                                }))
+                              }
+                              disabled={ssoSettingsBusy}
+                            />
+                            <span>Clear stored secret</span>
+                          </label>
+                        ) : null}
+                      </div>
+                      {oidcProviderConfig?.missing_settings.length ? (
+                        <div className="readiness-note-list">
+                          {oidcProviderConfig.missing_settings.slice(0, 6).map((setting) => (
+                            <span key={setting}>{setting}</span>
+                          ))}
+                        </div>
+                      ) : null}
+                      <button type="submit" className="primary-action" disabled={ssoSettingsBusy}>
+                        <ShieldCheck size={16} />
+                        Save SSO settings
+                      </button>
+                    </form>
+                  ) : (
+                    <p className="setup-module-hint">
+                      Sign in as an administrator to manage Enterprise SSO credentials.
+                    </p>
+                  )}
                 </section>
               </section>
             ) : null}

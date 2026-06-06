@@ -36,6 +36,7 @@ from app.db.alerts import operational_alert_repository
 from app.db.connectors import connector_account_repository
 from app.db.email_settings import email_provider_settings_repository
 from app.db.integration_credentials import integration_credential_settings_repository
+from app.db.sso_settings import sso_provider_settings_repository
 from app.db.management import management_repository
 from app.db.mappers import (
     audit_event_from_record,
@@ -147,6 +148,7 @@ from app.models.domain import (
     ResponseMacroSuggestion,
     RetryOutboundMessageRequest,
     SlaPolicy,
+    SsoProviderSettings,
     SupervisorRecommendation,
     SupportGroup,
     Tag,
@@ -181,6 +183,7 @@ from app.models.domain import (
     UpdateProductRequest,
     UpdateSavedReportRequest,
     UpdateServiceAppointmentRequest,
+    UpdateSsoProviderSettingsRequest,
     UpdateTicketFieldRequest,
     UpdateTicketRequest,
     UpdateTicketTemplateRequest,
@@ -2572,6 +2575,34 @@ def update_integration_credential_settings(
     )
 
 
+@router.get("/sso/settings", response_model=SsoProviderSettings)
+def read_sso_provider_settings(
+    context: RequestContext = Depends(require_context),
+    db: Session = Depends(get_db),
+) -> SsoProviderSettings:
+    require_admin(context)
+    result = sso_provider_settings_repository.read(db)
+    db.commit()
+    return result
+
+
+@router.patch("/sso/settings", response_model=SsoProviderSettings)
+def update_sso_provider_settings(
+    request: UpdateSsoProviderSettingsRequest,
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> SsoProviderSettings:
+    require_admin(context)
+    return sso_provider_settings_repository.update(
+        db,
+        state,
+        request,
+        actor=context.user.email,
+        market_id=context.market_id,
+    )
+
+
 @router.get("/attachments/provider-config", response_model=AttachmentProviderConfig)
 def read_attachment_provider_config(
     context: RequestContext = Depends(require_context),
@@ -3471,6 +3502,7 @@ def read_frontend_snapshot(
     attachment_provider_config = None
     email_provider_settings = None
     integration_credential_settings = None
+    sso_provider_settings = None
     if can_view_supervisor_controls:
         operational_alerts = operational_alert_repository.list_alerts(db, context.market_id)
         alert_deliveries = operational_alert_delivery_repository.list_deliveries(
@@ -3493,6 +3525,8 @@ def read_frontend_snapshot(
             db,
             market_id=context.market_id,
         )
+        if context.user.role == "admin":
+            sso_provider_settings = sso_provider_settings_repository.read(db)
     return {
         "session": {"user": context.user, "market": context.market},
         "users": users,
@@ -3539,6 +3573,7 @@ def read_frontend_snapshot(
         "supervisor_recommendations": supervisor_recommendations,
         "email_provider_settings": email_provider_settings,
         "integration_credential_settings": integration_credential_settings,
+        "sso_provider_settings": sso_provider_settings,
         "connector_accounts": connector_account_repository.list_accounts(db, context.market_id),
         "knowledge": management_repository.list_knowledge(db, state, context.market_id),
         "macros": management_repository.list_response_macros(db, state, context.market_id),
