@@ -684,6 +684,21 @@ class SavedReport(BaseModel):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class ServiceAppointment(BaseModel):
+    id: str
+    market_id: str = "market-ng"
+    title: str
+    customer_id: str = ""
+    technician_id: str = ""
+    scheduled_at: datetime
+    duration_minutes: int = Field(default=60, ge=5, le=1440)
+    status: str = "scheduled"
+    location: str = ""
+    notes: str = ""
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 class TicketTask(BaseModel):
     id: str
     label: str
@@ -1587,6 +1602,28 @@ class UpdateSavedReportRequest(BaseModel):
     cadence: str | None = Field(default=None, max_length=20)
     recipients: list[str] | None = None
     active: bool | None = None
+
+
+class CreateServiceAppointmentRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=180)
+    customer_id: str = Field(default="", max_length=64)
+    technician_id: str = Field(default="", max_length=64)
+    scheduled_at: datetime
+    duration_minutes: int = Field(default=60, ge=5, le=1440)
+    status: str = Field(default="scheduled", max_length=20)
+    location: str = Field(default="", max_length=300)
+    notes: str = Field(default="", max_length=1000)
+
+
+class UpdateServiceAppointmentRequest(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=180)
+    customer_id: str | None = Field(default=None, max_length=64)
+    technician_id: str | None = Field(default=None, max_length=64)
+    scheduled_at: datetime | None = None
+    duration_minutes: int | None = Field(default=None, ge=5, le=1440)
+    status: str | None = Field(default=None, max_length=20)
+    location: str | None = Field(default=None, max_length=300)
+    notes: str | None = Field(default=None, max_length=1000)
 
 
 class UpdateTicketRequest(BaseModel):

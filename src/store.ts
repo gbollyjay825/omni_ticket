@@ -31,6 +31,7 @@ import type {
   CustomObject,
   Product,
   SavedReport,
+  ServiceAppointment,
   SlaState,
   SupportGroup,
   TicketField,
@@ -55,6 +56,7 @@ import {
   createBackendCustomObject,
   createBackendProduct,
   createBackendSavedReport,
+  createBackendServiceAppointment,
   createBackendSupportGroup,
   createBackendTicketField,
   createBackendUser,
@@ -76,6 +78,7 @@ import {
   type BackendCreateCustomObjectInput,
   type BackendCreateProductInput,
   type BackendCreateSavedReportInput,
+  type BackendCreateServiceAppointmentInput,
   type BackendCreateSupportGroupInput,
   type BackendCreateUserInput,
   type BackendCustomer,
@@ -104,6 +107,7 @@ import {
   patchBackendCustomObject,
   patchBackendProduct,
   patchBackendSavedReport,
+  patchBackendServiceAppointment,
   patchBackendSupportGroup,
   patchBackendTicket,
   patchBackendTicketField,
@@ -128,6 +132,7 @@ import {
   type BackendCustomObject,
   type BackendProduct,
   type BackendSavedReport,
+  type BackendServiceAppointment,
   type BackendSyncState,
   type BackendUpdateSlaPolicyInput,
   type BackendUpdateBusinessHoursInput,
@@ -140,6 +145,7 @@ import {
   type BackendUpdateCustomObjectInput,
   type BackendUpdateProductInput,
   type BackendUpdateSavedReportInput,
+  type BackendUpdateServiceAppointmentInput,
   type BackendUpdateSupportGroupInput,
   type BackendUpdateUserInput,
   type BackendUpdateTicketFieldInput,
@@ -308,6 +314,7 @@ function mergeReferenceData(state: OmniState): OmniState {
     customObjects: state.customObjects ?? initialOmniState.customObjects,
     products: state.products ?? initialOmniState.products,
     savedReports: state.savedReports ?? initialOmniState.savedReports,
+    serviceAppointments: state.serviceAppointments ?? initialOmniState.serviceAppointments,
     responseMacros: state.responseMacros ?? initialOmniState.responseMacros,
     epics: initialOmniState.epics,
     backlog: initialOmniState.backlog,
@@ -656,6 +663,21 @@ function mapSavedReport(report: BackendSavedReport): SavedReport {
   }
 }
 
+function mapServiceAppointment(appointment: BackendServiceAppointment): ServiceAppointment {
+  return {
+    id: appointment.id,
+    title: appointment.title,
+    customerId: appointment.customer_id,
+    technicianId: appointment.technician_id,
+    scheduledAt: appointment.scheduled_at,
+    durationMinutes: appointment.duration_minutes,
+    status: appointment.status,
+    location: appointment.location,
+    notes: appointment.notes,
+    updatedAt: appointment.updated_at,
+  }
+}
+
 function mapAgent(agent: BackendAgent, ticketContexts: BackendTicketContext[]): AgentProfile {
   const assignedTickets = ticketContexts.filter((context) => context.ticket.assignee_id === agent.id)
   return {
@@ -971,6 +993,7 @@ function mergeBackendSnapshot(current: OmniState, snapshot: BackendSnapshot): Om
   const customObjects = (snapshot.custom_objects ?? snapshot.customObjects ?? []).map(mapCustomObject)
   const products = (snapshot.products ?? []).map(mapProduct)
   const savedReports = (snapshot.savedReports ?? []).map(mapSavedReport)
+  const serviceAppointments = (snapshot.serviceAppointments ?? []).map(mapServiceAppointment)
   const selectedConversationId =
     conversations.find((conversation) => conversation.id === current.selectedConversationId)?.id ??
     conversations[0]?.id ??
@@ -1014,6 +1037,7 @@ function mergeBackendSnapshot(current: OmniState, snapshot: BackendSnapshot): Om
     customObjects,
     products,
     savedReports,
+    serviceAppointments,
     articles: snapshot.knowledge.map(mapKnowledgeArticle),
     ticketFields: (snapshot.ticket_fields ?? snapshot.ticketFields ?? []).map(mapTicketField),
     responseMacros: snapshot.macros.map(mapResponseMacro),
@@ -2227,6 +2251,19 @@ export function useOmniStore() {
     return syncBackendMutation((session) => patchBackendSavedReport(reportId, patch, session))
   }
 
+  function createServiceAppointment(input: BackendCreateServiceAppointmentInput) {
+    return syncBackendMutation((session) => createBackendServiceAppointment(input, session))
+  }
+
+  function updateServiceAppointment(
+    appointmentId: string,
+    patch: BackendUpdateServiceAppointmentInput,
+  ) {
+    return syncBackendMutation((session) =>
+      patchBackendServiceAppointment(appointmentId, patch, session),
+    )
+  }
+
   function createTicketField(input: BackendCreateTicketFieldInput) {
     return syncBackendMutation((session) => createBackendTicketField(input, session))
   }
@@ -2503,6 +2540,8 @@ export function useOmniStore() {
     updateProduct,
     createSavedReport,
     updateSavedReport,
+    createServiceAppointment,
+    updateServiceAppointment,
     createTicketField,
     updateTicketField,
     changePassword,

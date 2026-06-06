@@ -8,6 +8,7 @@ import {
   BarChart3,
   Bell,
   BookOpen,
+  CalendarClock,
   Bot,
   Building2,
   Check,
@@ -48,6 +49,7 @@ import {
   Wifi,
   WifiOff,
   Workflow,
+  Wrench,
   X,
 } from 'lucide-react'
 import type {
@@ -78,6 +80,7 @@ import type {
   CustomObjectField,
   Product,
   SavedReport,
+  ServiceAppointment,
   TicketField,
   TicketFieldType,
   TicketTemplate,
@@ -912,6 +915,8 @@ function OmniApp() {
     updateProduct,
     createSavedReport,
     updateSavedReport,
+    createServiceAppointment,
+    updateServiceAppointment,
     createTicketField,
     updateTicketField,
     changePassword,
@@ -985,6 +990,16 @@ function OmniApp() {
   const [analyticsReportGroup, setAnalyticsReportGroup] = useState<AnalyticsReportGroup>('catalog')
   const [reportDraft, setReportDraft] = useState({ name: '', reportType: 'tickets' })
   const [reportBusy, setReportBusy] = useState(false)
+  const [appointmentDraft, setAppointmentDraft] = useState({
+    title: '',
+    customerId: '',
+    technicianId: '',
+    scheduledAt: '',
+    durationMinutes: 60,
+    location: '',
+    notes: '',
+  })
+  const [appointmentBusy, setAppointmentBusy] = useState(false)
   const [loginEmail, setLoginEmail] = useState('gbolahan@omniticket.example.com')
   const [loginPassword, setLoginPassword] = useState('')
   const [loginMfaCode, setLoginMfaCode] = useState('')
@@ -3583,6 +3598,60 @@ function OmniApp() {
       setPrototypeNotice(cadence === 'none' ? 'Report unscheduled.' : `Report scheduled ${cadence}.`)
     } finally {
       setReportBusy(false)
+    }
+  }
+
+  async function handleCreateServiceAppointment(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const title = appointmentDraft.title.trim()
+    if (title.length < 1 || !appointmentDraft.scheduledAt || appointmentBusy) return
+    setAppointmentBusy(true)
+    try {
+      const saved = await createServiceAppointment({
+        title,
+        customer_id: appointmentDraft.customerId || undefined,
+        technician_id: appointmentDraft.technicianId || undefined,
+        scheduled_at: new Date(appointmentDraft.scheduledAt).toISOString(),
+        duration_minutes: appointmentDraft.durationMinutes,
+        location: appointmentDraft.location.trim() || undefined,
+        notes: appointmentDraft.notes.trim() || undefined,
+      })
+      if (saved) {
+        setAppointmentDraft({
+          title: '',
+          customerId: '',
+          technicianId: '',
+          scheduledAt: '',
+          durationMinutes: 60,
+          location: '',
+          notes: '',
+        })
+        setPrototypeNotice('Service appointment scheduled.')
+      }
+    } finally {
+      setAppointmentBusy(false)
+    }
+  }
+
+  async function setAppointmentStatus(appointment: ServiceAppointment, status: string) {
+    if (appointmentBusy || appointment.status === status) return
+    setAppointmentBusy(true)
+    try {
+      const saved = await updateServiceAppointment(appointment.id, { status })
+      if (saved) setPrototypeNotice(`Appointment marked ${status.replace(/_/g, ' ')}.`)
+    } finally {
+      setAppointmentBusy(false)
+    }
+  }
+
+  async function reassignAppointmentTechnician(appointment: ServiceAppointment, technicianId: string) {
+    if (appointmentBusy || appointment.technicianId === technicianId) return
+    setAppointmentBusy(true)
+    try {
+      const saved = await updateServiceAppointment(appointment.id, { technician_id: technicianId })
+      if (saved) setPrototypeNotice('Appointment reassigned.')
+    } finally {
+      setAppointmentBusy(false)
     }
   }
 
@@ -6980,185 +7049,258 @@ function OmniApp() {
   }
 
   function renderWorkforce() {
-    const fallbackTasks = [
-      {
-        requester: 'Airport Services',
-        title: 'Meet and assist service follow-up',
-        ticketNumber: 'OMNI-2081',
-        location: 'Murtala Muhammed Terminal 2',
-        window: 'Today, 11:00 AM - 12:00 PM',
-      },
-      {
-        requester: 'Hotel Desk',
-        title: 'Hotel voucher verification visit',
-        ticketNumber: 'OMNI-2082',
-        location: 'Victoria Island service desk',
-        window: 'Today, 12:00 PM - 1:00 PM',
-      },
-      {
-        requester: 'Visa Team',
-        title: 'Document collection appointment',
-        ticketNumber: 'OMNI-2083',
-        location: 'Lekki Phase 1 office',
-        window: 'Today, 2:30 PM - 3:30 PM',
-      },
-      {
-        requester: 'Corporate Travel',
-        title: 'Executive itinerary handoff',
-        ticketNumber: 'OMNI-2084',
-        location: 'Ikoyi account office',
-        window: 'Today, 4:00 PM - 5:00 PM',
-      },
-    ]
-    const serviceTasks = [
-      ...state.conversations.slice(0, 4).map((conversation) => {
-        const customer = state.customers.find((item) => item.id === conversation.customerId)
-        return {
-          requester: customer?.name ?? 'Omni customer',
-          title: conversation.subject,
-          ticketNumber: conversation.ticketNumber,
-          location: customer?.location ?? 'Customer location pending',
-          window: `${formatTime(conversation.firstResponseDue)} - ${formatTime(conversation.resolutionDue)}`,
-        }
-      }),
-      ...fallbackTasks,
-    ].slice(0, 5)
-    const technicians = state.agents.slice(0, 6)
-    const hourLabels = ['02:00 PM', '03:00 PM', '04:00 PM', '05:00 PM', '06:00 PM', '07:00 PM', '08:00 PM']
-    const scheduleBlocks = [
-      { row: 0, start: 1, span: 1, tone: 'peach', label: 'Airport assist', ticket: serviceTasks[0]?.ticketNumber },
-      { row: 0, start: 4, span: 1, tone: 'peach', label: 'Voucher check', ticket: serviceTasks[1]?.ticketNumber },
-      { row: 1, start: 2, span: 1, tone: 'cyan', label: 'Quick response', ticket: serviceTasks[2]?.ticketNumber },
-      { row: 1, start: 5, span: 2, tone: 'cyan', label: 'Service desk callback', ticket: serviceTasks[3]?.ticketNumber },
-      { row: 2, start: 2, span: 2, tone: 'violet', label: 'Document review', ticket: serviceTasks[4]?.ticketNumber },
-      { row: 2, start: 4, span: 2, tone: 'violet', label: 'Group booking repair', ticket: serviceTasks[0]?.ticketNumber },
-      { row: 3, start: 1, span: 3, tone: 'rose', label: 'Maintenance issue', ticket: serviceTasks[1]?.ticketNumber },
-      { row: 3, start: 5, span: 2, tone: 'rose', label: 'Engine repair', ticket: serviceTasks[2]?.ticketNumber },
-      { row: 4, start: 1, span: 2, tone: 'blue', label: 'Laptop repair', ticket: serviceTasks[3]?.ticketNumber },
-      { row: 4, start: 4, span: 3, tone: 'blue', label: 'Standard first response', ticket: serviceTasks[4]?.ticketNumber },
-      { row: 5, start: 2, span: 1, tone: 'pink', label: 'Service visit', ticket: serviceTasks[0]?.ticketNumber },
-      { row: 5, start: 6, span: 1, tone: 'pink', label: 'Follow-up', ticket: serviceTasks[1]?.ticketNumber },
-    ].filter((block) => technicians[block.row])
+    const appointments = [...state.serviceAppointments].sort(
+      (a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime(),
+    )
+    const technicians = state.agents
+    const statusOptions = ['scheduled', 'en_route', 'in_progress', 'completed', 'cancelled']
+    const statusTone: Record<string, string> = {
+      scheduled: 'status-pending',
+      en_route: 'status-progress',
+      in_progress: 'status-progress',
+      completed: 'status-done',
+      cancelled: 'status-blocked',
+    }
+    const customerName = (id: string) =>
+      state.customers.find((customer) => customer.id === id)?.name ?? 'Unassigned customer'
+    const now = Date.now()
+    const upcomingCount = appointments.filter(
+      (appointment) =>
+        new Date(appointment.scheduledAt).getTime() >= now &&
+        appointment.status !== 'cancelled' &&
+        appointment.status !== 'completed',
+    ).length
+    const activeCount = appointments.filter(
+      (appointment) => appointment.status === 'in_progress' || appointment.status === 'en_route',
+    ).length
+    const completedCount = appointments.filter((appointment) => appointment.status === 'completed').length
 
     return (
-      <div className="desk-schedule-page">
-        <section className="desk-service-panel" aria-label="Service tasks">
-          <header>
-            <h2>Service tasks</h2>
-            <label>
-              <select defaultValue="unresolved">
-                <option value="unresolved">Unresolved service tasks</option>
-                <option value="scheduled">Scheduled service tasks</option>
-                <option value="all">All service tasks</option>
-              </select>
-            </label>
-            <button type="button" aria-label="Search service tasks" onClick={() => announcePrototype('Service task search opened.')}>
-              <Search size={16} />
-            </button>
-          </header>
-          <div className="desk-service-task-list">
-            {serviceTasks.map((task, index) => (
-              <article className="desk-service-task" key={`${task.ticketNumber}-${task.title}`}>
-                <div className={`desk-service-avatar tone-${index % 5}`}>{initials(task.requester || task.title).slice(0, 1)}</div>
-                <div>
-                  <span>{task.requester}</span>
-                  <strong>{task.title} <b>#{task.ticketNumber.replace(/\D/g, '') || task.ticketNumber}</b></strong>
-                  <small>{task.location}</small>
-                  <em>{task.window}</em>
-                </div>
-              </article>
-            ))}
+      <div className="management-grid">
+        <section className="panel span-2">
+          <div className="panel-head">
+            <div>
+              <span>Field service</span>
+              <h2>Appointment scheduling and dispatch</h2>
+            </div>
+            <CalendarClock size={20} />
           </div>
+          <div className="workforce-stat-row">
+            <article>
+              <strong>{appointments.length}</strong>
+              <span>Total appointments</span>
+            </article>
+            <article>
+              <strong>{upcomingCount}</strong>
+              <span>Upcoming</span>
+            </article>
+            <article>
+              <strong>{activeCount}</strong>
+              <span>Active now</span>
+            </article>
+            <article>
+              <strong>{completedCount}</strong>
+              <span>Completed</span>
+            </article>
+          </div>
+          <form className="user-create-form canned-response-form" onSubmit={handleCreateServiceAppointment}>
+            <div className="canned-form-row">
+              <label>
+                <span>Appointment title</span>
+                <input
+                  required
+                  value={appointmentDraft.title}
+                  onChange={(event) =>
+                    setAppointmentDraft((current) => ({ ...current, title: event.target.value }))
+                  }
+                  placeholder="On-site router replacement"
+                  disabled={appointmentBusy}
+                />
+              </label>
+              <label>
+                <span>Customer</span>
+                <select
+                  value={appointmentDraft.customerId}
+                  onChange={(event) =>
+                    setAppointmentDraft((current) => ({ ...current, customerId: event.target.value }))
+                  }
+                  disabled={appointmentBusy}
+                >
+                  <option value="">Select customer</option>
+                  {state.customers.map((customer) => (
+                    <option key={customer.id} value={customer.id}>
+                      {customer.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Technician</span>
+                <select
+                  value={appointmentDraft.technicianId}
+                  onChange={(event) =>
+                    setAppointmentDraft((current) => ({ ...current, technicianId: event.target.value }))
+                  }
+                  disabled={appointmentBusy}
+                >
+                  <option value="">Unassigned</option>
+                  {technicians.map((agent) => (
+                    <option key={agent.id} value={agent.id}>
+                      {agent.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="canned-form-row">
+              <label>
+                <span>Scheduled at</span>
+                <input
+                  type="datetime-local"
+                  required
+                  value={appointmentDraft.scheduledAt}
+                  onChange={(event) =>
+                    setAppointmentDraft((current) => ({ ...current, scheduledAt: event.target.value }))
+                  }
+                  disabled={appointmentBusy}
+                />
+              </label>
+              <label>
+                <span>Duration</span>
+                <select
+                  value={appointmentDraft.durationMinutes}
+                  onChange={(event) =>
+                    setAppointmentDraft((current) => ({
+                      ...current,
+                      durationMinutes: Number(event.target.value),
+                    }))
+                  }
+                  disabled={appointmentBusy}
+                >
+                  {[30, 60, 90, 120, 180, 240].map((minutes) => (
+                    <option key={minutes} value={minutes}>
+                      {minutes} minutes
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Location</span>
+                <input
+                  value={appointmentDraft.location}
+                  onChange={(event) =>
+                    setAppointmentDraft((current) => ({ ...current, location: event.target.value }))
+                  }
+                  placeholder="Customer site / address"
+                  disabled={appointmentBusy}
+                />
+              </label>
+            </div>
+            <label className="canned-form-full">
+              <span>Notes</span>
+              <textarea
+                rows={2}
+                value={appointmentDraft.notes}
+                onChange={(event) =>
+                  setAppointmentDraft((current) => ({ ...current, notes: event.target.value }))
+                }
+                placeholder="Access instructions, parts required, or context for the technician."
+                disabled={appointmentBusy}
+              />
+            </label>
+            <button
+              type="submit"
+              className="primary-action"
+              disabled={
+                appointmentBusy ||
+                appointmentDraft.title.trim().length < 1 ||
+                !appointmentDraft.scheduledAt
+              }
+            >
+              <Plus size={16} />
+              Schedule appointment
+            </button>
+          </form>
         </section>
 
-        <section className="desk-scheduler" aria-label="Scheduling board">
-          <header className="desk-scheduler-head">
-            <div className="desk-calendar-controls">
-              <button type="button" aria-label="Toggle task sidebar" onClick={() => announcePrototype('Task sidebar toggled.')}>
-                <UserCheck size={15} />
-              </button>
-              <button type="button" onClick={() => announcePrototype('Today selected.')}>Today</button>
-              <button type="button" aria-label="Previous day" onClick={() => announcePrototype('Previous day loaded.')}>
-                <ArrowRight className="flip-x" size={15} />
-              </button>
-              <button type="button" aria-label="Next day" onClick={() => announcePrototype('Next day loaded.')}>
-                <ArrowRight size={15} />
-              </button>
+        <section className="panel span-2">
+          <div className="panel-head">
+            <div>
+              <span>Dispatch board</span>
+              <h2>Scheduled service appointments</h2>
             </div>
-            <button className="desk-calendar-date" type="button" onClick={() => announcePrototype('Calendar picker opened.')}>
-              <Clock size={15} />
-              Tuesday 15, November 2019
-              <ChevronDown size={14} />
-            </button>
-            <label className="desk-duration-select">
-              <span>Default Duration</span>
-              <select defaultValue="60">
-                <option value="30">30 Minutes</option>
-                <option value="60">60 Minutes</option>
-                <option value="120">120 Minutes</option>
-              </select>
-            </label>
-          </header>
-
-          <div className="desk-schedule-toast" role="status">
-            <CheckCircle2 size={17} />
-            <strong>Service task updated</strong>
-            <button type="button" aria-label="Dismiss service task update">
-              <X size={13} />
-            </button>
+            <Wrench size={20} />
           </div>
-
-          <div className="desk-schedule-scroll">
-            <div className="desk-schedule-grid">
-              <div className="desk-tech-head">
-                <strong>Field Technicians</strong>
-                <select defaultValue="quick">
-                  <option value="quick">Quick Response</option>
-                  <option value="all">All groups</option>
-                </select>
-              </div>
-              {hourLabels.map((hour) => (
-                <div className="desk-hour-head" key={hour}>{hour}</div>
-              ))}
-              {technicians.map((agent, rowIndex) => (
-                <div
-                  className="desk-tech-cell"
-                  key={agent.id}
-                  style={{ gridRow: `${rowIndex + 2}` }}
-                >
-                  <div className="avatar">{agent.avatar}</div>
-                  <div>
-                    <strong>{agent.name}</strong>
-                    <span>{agent.role}</span>
-                  </div>
-                </div>
-              ))}
-              {technicians.map((agent, rowIndex) => (
-                <div
-                  className={`desk-slot-row row-${rowIndex % 2}`}
-                  key={`${agent.id}-slots`}
-                  style={{ gridColumn: '2 / -1', gridRow: `${rowIndex + 2}` }}
-                >
-                  {hourLabels.map((hour) => (
-                    <span aria-hidden="true" key={`${agent.id}-${hour}`} />
-                  ))}
-                  {scheduleBlocks
-                    .filter((block) => block.row === rowIndex)
-                    .map((block) => (
-                      <button
-                        type="button"
-                        className={`desk-schedule-block tone-${block.tone}`}
-                        key={`${agent.id}-${block.label}-${block.start}`}
-                        style={{ gridColumn: `${block.start} / span ${block.span}` }}
-                        onClick={() => announcePrototype(`${block.label} updated.`)}
+          <div className="workforce-appointment-list">
+            {appointments.length === 0 ? (
+              <p className="setup-module-hint">
+                No service appointments yet. Schedule one above to dispatch a technician.
+              </p>
+            ) : (
+              appointments.map((appointment) => (
+                <article className="workforce-appointment-card" key={appointment.id}>
+                  <header>
+                    <div>
+                      <strong>{appointment.title}</strong>
+                      <span>{customerName(appointment.customerId)}</span>
+                    </div>
+                    <em className={`chip ${statusTone[appointment.status] ?? 'status-pending'}`}>
+                      {titleCase(appointment.status.replace(/_/g, ' '))}
+                    </em>
+                  </header>
+                  <dl className="workforce-appointment-meta">
+                    <div>
+                      <dt>When</dt>
+                      <dd>{formatTime(appointment.scheduledAt)}</dd>
+                    </div>
+                    <div>
+                      <dt>Duration</dt>
+                      <dd>{appointment.durationMinutes} min</dd>
+                    </div>
+                    <div>
+                      <dt>Location</dt>
+                      <dd>{appointment.location || '—'}</dd>
+                    </div>
+                  </dl>
+                  {appointment.notes ? (
+                    <p className="workforce-appointment-notes">{appointment.notes}</p>
+                  ) : null}
+                  <div className="workforce-appointment-actions">
+                    <label>
+                      <span>Technician</span>
+                      <select
+                        value={appointment.technicianId}
+                        onChange={(event) =>
+                          void reassignAppointmentTechnician(appointment, event.target.value)
+                        }
+                        disabled={appointmentBusy}
                       >
-                        <span>{agent.name} · Duration: {block.span > 1 ? '2hr 30mins' : '30mins'}</span>
-                        <strong>#{block.ticket?.replace(/\D/g, '') || '2081'} {block.label}</strong>
-                      </button>
-                    ))}
-                </div>
-              ))}
-            </div>
+                        <option value="">Unassigned</option>
+                        {technicians.map((agent) => (
+                          <option key={agent.id} value={agent.id}>
+                            {agent.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span>Status</span>
+                      <select
+                        value={appointment.status}
+                        onChange={(event) => void setAppointmentStatus(appointment, event.target.value)}
+                        disabled={appointmentBusy}
+                      >
+                        {statusOptions.map((status) => (
+                          <option key={status} value={status}>
+                            {titleCase(status.replace(/_/g, ' '))}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                </article>
+              ))
+            )}
           </div>
         </section>
       </div>

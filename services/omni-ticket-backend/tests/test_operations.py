@@ -1835,6 +1835,49 @@ def test_admin_manages_saved_reports(client: TestClient) -> None:
     assert any(event["action"] == "saved_report.update" for event in audit)
 
 
+def test_admin_manages_service_appointments(client: TestClient) -> None:
+    suffix = uuid4().hex[:6]
+    created = client.post(
+        "/api/v1/service-appointments",
+        json={
+            "title": f"Onsite visit {suffix}",
+            "technician_id": "agent-amara",
+            "scheduled_at": "2026-06-10T09:00:00Z",
+            "duration_minutes": 90,
+            "location": "Ikoyi",
+        },
+    )
+    assert created.status_code == 201
+    appointment = created.json()
+    assert appointment["status"] == "scheduled"
+    assert appointment["duration_minutes"] == 90
+
+    bad = client.post(
+        "/api/v1/service-appointments",
+        json={"title": "Bad", "scheduled_at": "2026-06-10T09:00:00Z", "status": "teleport"},
+    )
+    assert bad.status_code == 422
+
+    listing = client.get("/api/v1/service-appointments")
+    assert listing.status_code == 200
+    assert any(item["id"] == appointment["id"] for item in listing.json())
+
+    updated = client.patch(
+        f"/api/v1/service-appointments/{appointment['id']}",
+        json={"status": "completed"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["status"] == "completed"
+
+    snapshot = client.get("/api/v1/frontend/snapshot")
+    assert snapshot.status_code == 200
+    assert any(item["id"] == appointment["id"] for item in snapshot.json()["service_appointments"])
+
+    audit = client.get("/api/v1/audit").json()
+    assert any(event["action"] == "service_appointment.create" for event in audit)
+    assert any(event["action"] == "service_appointment.update" for event in audit)
+
+
 def test_role_policy_blocks_agent_from_admin_and_supervisor_controls(
     client: TestClient,
     login_as: Callable[..., dict[str, str]],

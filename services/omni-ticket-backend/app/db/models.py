@@ -379,6 +379,21 @@ class SavedReportRecord(TimestampMixin, Base):
     )
 
 
+class ServiceAppointmentRecord(TimestampMixin, Base):
+    __tablename__ = "service_appointments"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    market_id: Mapped[str] = mapped_column(ForeignKey("markets.id"), index=True)
+    title: Mapped[str] = mapped_column(String(180), nullable=False)
+    customer_id: Mapped[str] = mapped_column(String(64), default="")
+    technician_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    duration_minutes: Mapped[int] = mapped_column(Integer, default=60)
+    status: Mapped[str] = mapped_column(String(20), default="scheduled", index=True)
+    location: Mapped[str] = mapped_column(String(300), default="")
+    notes: Mapped[str] = mapped_column(Text, default="")
+
+
 class ChannelRecord(TimestampMixin, Base):
     __tablename__ = "channels"
 

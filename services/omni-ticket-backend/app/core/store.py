@@ -18,6 +18,7 @@ from app.models.domain import (
     EmailNotification,
     Product,
     SavedReport,
+    ServiceAppointment,
     ScenarioAction,
     ScenarioAutomation,
     Tag,
@@ -95,6 +96,7 @@ class InMemoryStore:
         self.custom_objects: dict[str, CustomObject] = {}
         self.products: dict[str, Product] = {}
         self.saved_reports: dict[str, SavedReport] = {}
+        self.service_appointments: dict[str, ServiceAppointment] = {}
         self.rules: dict[str, AutomationRule] = {}
         self.connector_events: dict[str, ConnectorEvent] = {}
         self.outbound_messages: dict[str, OutboundMessage] = {}
@@ -783,6 +785,42 @@ class InMemoryStore:
                     filters={},
                     cadence="weekly",
                     recipients=["quality@wakanow.com"],
+                ),
+            }
+
+            self.service_appointments = {
+                "appt-lounge-setup": ServiceAppointment(
+                    id="appt-lounge-setup",
+                    market_id="market-ng",
+                    title="Airport lounge access setup",
+                    customer_id="cust-leo",
+                    technician_id="agent-amara",
+                    scheduled_at=utc_now() + timedelta(hours=3),
+                    duration_minutes=45,
+                    status="scheduled",
+                    location="Lagos MMA2 Terminal",
+                    notes="Confirm membership tier before arrival.",
+                ),
+                "appt-doc-pickup": ServiceAppointment(
+                    id="appt-doc-pickup",
+                    market_id="market-ng",
+                    title="Visa document pickup",
+                    customer_id="cust-mia",
+                    technician_id="agent-kofi",
+                    scheduled_at=utc_now() + timedelta(days=1, hours=2),
+                    duration_minutes=30,
+                    status="scheduled",
+                    location="Victoria Island office",
+                ),
+                "appt-onsite-support": ServiceAppointment(
+                    id="appt-onsite-support",
+                    market_id="market-ng",
+                    title="Corporate onsite travel desk",
+                    technician_id="agent-amara",
+                    scheduled_at=utc_now() + timedelta(days=2),
+                    duration_minutes=120,
+                    status="scheduled",
+                    location="Client HQ, Ikoyi",
                 ),
             }
 

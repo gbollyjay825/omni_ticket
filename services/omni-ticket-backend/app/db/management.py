@@ -18,6 +18,7 @@ from app.db.mappers import (
     email_notification_from_record,
     product_from_record,
     saved_report_from_record,
+    service_appointment_from_record,
     scenario_automation_from_record,
     knowledge_article_from_record,
     response_macro_from_record,
@@ -40,6 +41,7 @@ from app.db.models import (
     HandoffRecord,
     ProductRecord,
     SavedReportRecord,
+    ServiceAppointmentRecord,
     KnowledgeArticleRecord,
     ResponseMacroRecord,
     ScenarioAutomationRecord,
@@ -63,6 +65,7 @@ from app.models.domain import (
     CreateEmailNotificationRequest,
     CreateProductRequest,
     CreateSavedReportRequest,
+    CreateServiceAppointmentRequest,
     CreateKnowledgeArticleRequest,
     CreateResponseMacroRequest,
     CreateScenarioAutomationRequest,
@@ -83,6 +86,7 @@ from app.models.domain import (
     ResponseMacroSuggestion,
     SavedReport,
     ScenarioAutomation,
+    ServiceAppointment,
     SlaPolicy,
     SupportGroup,
     Tag,
@@ -102,6 +106,7 @@ from app.models.domain import (
     UpdateResponseMacroRequest,
     UpdateSavedReportRequest,
     UpdateScenarioAutomationRequest,
+    UpdateServiceAppointmentRequest,
     UpdateSlaPolicyRequest,
     UpdateSupportGroupRequest,
     UpdateTagRequest,
@@ -705,6 +710,37 @@ def _saved_report_payload(request: CreateSavedReportRequest | UpdateSavedReportR
                 seen.add(cleaned.lower())
                 recipients.append(cleaned)
         payload["recipients"] = recipients
+    return payload
+
+
+_SERVICE_APPOINTMENT_STATUSES = {
+    "scheduled",
+    "en_route",
+    "in_progress",
+    "completed",
+    "cancelled",
+}
+
+
+def _service_appointment_payload(
+    request: CreateServiceAppointmentRequest | UpdateServiceAppointmentRequest,
+) -> dict:
+    payload = request.model_dump(exclude_unset=True)
+    if "title" in payload and payload["title"] is not None:
+        payload["title"] = payload["title"].strip()
+        if not payload["title"]:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Appointment title is required",
+            )
+    if "status" in payload and payload["status"] is not None:
+        appointment_status = payload["status"].strip().lower() or "scheduled"
+        if appointment_status not in _SERVICE_APPOINTMENT_STATUSES:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Invalid appointment status",
+            )
+        payload["status"] = appointment_status
     return payload
 
 
@@ -2066,6 +2102,86 @@ class ManagementRepository:
         report = saved_report_from_record(record)
         state.saved_reports[report.id] = report
         return report
+
+    def list_service_appointments(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        market_id: str,
+    ) -> list[ServiceAppointment]:
+        records = db.scalars(
+            select(ServiceAppointmentRecord).where(ServiceAppointmentRecord.market_id == market_id)
+        ).all()
+        appointments = [service_appointment_from_record(record) for record in records]
+        appointments.sort(key=lambda appointment: appointment.scheduled_at)
+        state.service_appointments = {
+            **{
+                key: value
+                for key, value in state.service_appointments.items()
+                if value.market_id != market_id
+            },
+            **{appointment.id: appointment for appointment in appointments},
+        }
+        return appointments
+
+    def create_service_appointment(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        request: CreateServiceAppointmentRequest,
+        market_id: str,
+        actor: str,
+    ) -> ServiceAppointment:
+        payload = _service_appointment_payload(request)
+        record = ServiceAppointmentRecord(id=_new_id("appt"), market_id=market_id, **payload)
+        db.add(record)
+        db.flush()
+        _audit(
+            db,
+            state,
+            actor=actor,
+            action="service_appointment.create",
+            entity_type="service_appointment",
+            entity_id=record.id,
+            market_id=market_id,
+            details={"title": record.title, "status": record.status},
+        )
+        db.commit()
+        db.refresh(record)
+        appointment = service_appointment_from_record(record)
+        state.service_appointments[appointment.id] = appointment
+        return appointment
+
+    def update_service_appointment(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        appointment_id: str,
+        request: UpdateServiceAppointmentRequest,
+        market_id: str,
+        actor: str,
+    ) -> ServiceAppointment:
+        record = db.get(ServiceAppointmentRecord, appointment_id)
+        if record is None or record.market_id != market_id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Service appointment not found")
+        patch = _service_appointment_payload(request)
+        for key, value in patch.items():
+            setattr(record, key, value)
+        _audit(
+            db,
+            state,
+            actor=actor,
+            action="service_appointment.update",
+            entity_type="service_appointment",
+            entity_id=appointment_id,
+            market_id=market_id,
+            details={"title": record.title, "status": record.status},
+        )
+        db.commit()
+        db.refresh(record)
+        appointment = service_appointment_from_record(record)
+        state.service_appointments[appointment.id] = appointment
+        return appointment
 
     def list_knowledge(
         self,

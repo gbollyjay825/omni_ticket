@@ -529,6 +529,7 @@ export interface BackendSnapshot {
   customObjects: BackendCustomObject[]
   products: BackendProduct[]
   savedReports: BackendSavedReport[]
+  serviceAppointments: BackendServiceAppointment[]
   companies: BackendCompany[]
   customers: BackendCustomer[]
   tickets: BackendTicketContext[]
@@ -1224,6 +1225,43 @@ export interface BackendUpdateSavedReportInput {
   active?: boolean
 }
 
+export interface BackendServiceAppointment {
+  id: string
+  market_id: string
+  title: string
+  customer_id: string
+  technician_id: string
+  scheduled_at: string
+  duration_minutes: number
+  status: string
+  location: string
+  notes: string
+  created_at: string
+  updated_at: string
+}
+
+export interface BackendCreateServiceAppointmentInput {
+  title: string
+  customer_id?: string
+  technician_id?: string
+  scheduled_at: string
+  duration_minutes?: number
+  status?: string
+  location?: string
+  notes?: string
+}
+
+export interface BackendUpdateServiceAppointmentInput {
+  title?: string
+  customer_id?: string
+  technician_id?: string
+  scheduled_at?: string
+  duration_minutes?: number
+  status?: string
+  location?: string
+  notes?: string
+}
+
 export interface BackendCompany {
   id: string
   market_id: string
@@ -1616,6 +1654,7 @@ interface BackendFrontendSnapshot {
   custom_objects: BackendCustomObject[]
   products: BackendProduct[]
   saved_reports: BackendSavedReport[]
+  service_appointments: BackendServiceAppointment[]
   companies: BackendCompany[]
   customers: BackendCustomer[]
   tickets: BackendTicketContext[]
@@ -1784,6 +1823,7 @@ export async function fetchBackendSnapshot(
     customFieldDefinitions: frontendSnapshot.custom_field_definitions ?? [],
     customObjects: frontendSnapshot.custom_objects ?? [],
     savedReports: frontendSnapshot.saved_reports ?? [],
+    serviceAppointments: frontendSnapshot.service_appointments ?? [],
     connectorAccounts: frontendSnapshot.connector_accounts,
     outboundMessages: frontendSnapshot.outbound_messages,
     outboundProviderConfig: frontendSnapshot.outbound_provider_config ?? [],
@@ -2325,6 +2365,35 @@ export async function patchBackendSavedReport(
 ): Promise<BackendSavedReport> {
   return fetchJson<BackendSavedReport>(
     `/saved-reports/${reportId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    },
+    session,
+  )
+}
+
+export async function createBackendServiceAppointment(
+  input: BackendCreateServiceAppointmentInput,
+  session: BackendSession,
+): Promise<BackendServiceAppointment> {
+  return fetchJson<BackendServiceAppointment>(
+    '/service-appointments',
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+    session,
+  )
+}
+
+export async function patchBackendServiceAppointment(
+  appointmentId: string,
+  patch: BackendUpdateServiceAppointmentInput,
+  session: BackendSession,
+): Promise<BackendServiceAppointment> {
+  return fetchJson<BackendServiceAppointment>(
+    `/service-appointments/${appointmentId}`,
     {
       method: 'PATCH',
       body: JSON.stringify(patch),

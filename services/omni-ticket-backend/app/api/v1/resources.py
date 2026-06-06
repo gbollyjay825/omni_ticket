@@ -83,6 +83,7 @@ from app.models.domain import (
     EmailNotification,
     Product,
     SavedReport,
+    ServiceAppointment,
     ScenarioAutomation,
     CreateAutomationRuleRequest,
     CreateAttachmentRequest,
@@ -105,6 +106,7 @@ from app.models.domain import (
     CreateCustomObjectRequest,
     CreateProductRequest,
     CreateSavedReportRequest,
+    CreateServiceAppointmentRequest,
     CreateTicketFieldRequest,
     CreateTicketRequest,
     CreateTicketTemplateRequest,
@@ -178,6 +180,7 @@ from app.models.domain import (
     UpdateCustomObjectRequest,
     UpdateProductRequest,
     UpdateSavedReportRequest,
+    UpdateServiceAppointmentRequest,
     UpdateTicketFieldRequest,
     UpdateTicketRequest,
     UpdateTicketTemplateRequest,
@@ -1652,6 +1655,55 @@ def update_saved_report(
         db,
         state,
         report_id,
+        request,
+        context.market_id,
+        context.user.email,
+    )
+
+
+@router.get("/service-appointments", response_model=list[ServiceAppointment])
+def list_service_appointments(
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> list[ServiceAppointment]:
+    return management_repository.list_service_appointments(db, state, context.market_id)
+
+
+@router.post(
+    "/service-appointments",
+    response_model=ServiceAppointment,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_service_appointment(
+    request: CreateServiceAppointmentRequest,
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> ServiceAppointment:
+    require_admin(context)
+    return management_repository.create_service_appointment(
+        db,
+        state,
+        request,
+        context.market_id,
+        context.user.email,
+    )
+
+
+@router.patch("/service-appointments/{appointment_id}", response_model=ServiceAppointment)
+def update_service_appointment(
+    appointment_id: str,
+    request: UpdateServiceAppointmentRequest,
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> ServiceAppointment:
+    require_admin(context)
+    return management_repository.update_service_appointment(
+        db,
+        state,
+        appointment_id,
         request,
         context.market_id,
         context.user.email,
@@ -3466,6 +3518,9 @@ def read_frontend_snapshot(
         "custom_objects": management_repository.list_custom_objects(db, state, context.market_id),
         "products": management_repository.list_products(db, state, context.market_id),
         "saved_reports": management_repository.list_saved_reports(db, state, context.market_id),
+        "service_appointments": management_repository.list_service_appointments(
+            db, state, context.market_id
+        ),
         "companies": companies,
         "customers": customers,
         "tickets": [

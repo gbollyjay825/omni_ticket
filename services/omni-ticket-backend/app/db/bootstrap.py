@@ -22,6 +22,7 @@ from app.db.models import (
     EmailNotificationRecord,
     ProductRecord,
     SavedReportRecord,
+    ServiceAppointmentRecord,
     ScenarioAutomationRecord,
     ConnectorEventRecord,
     CustomerRecord,
@@ -608,6 +609,15 @@ def seed_saved_reports(session: Session, source: InMemoryStore = store) -> None:
     session.commit()
 
 
+def seed_service_appointments(session: Session, source: InMemoryStore = store) -> None:
+    for appointment in source.service_appointments.values():
+        if session.get(ServiceAppointmentRecord, appointment.id) is not None:
+            continue
+        data = appointment.model_dump(exclude={"created_at", "updated_at"})
+        session.add(ServiceAppointmentRecord(**data))
+    session.commit()
+
+
 def seed_reference_data(session: Session, source: InMemoryStore = store) -> None:
     if session.scalar(select(MarketRecord.id).limit(1)):
         seed_connector_accounts(session)
@@ -625,6 +635,7 @@ def seed_reference_data(session: Session, source: InMemoryStore = store) -> None
         seed_custom_objects(session, source)
         seed_products(session, source)
         seed_saved_reports(session, source)
+        seed_service_appointments(session, source)
         return
 
     session.add_all(
@@ -730,6 +741,14 @@ def seed_reference_data(session: Session, source: InMemoryStore = store) -> None
     )
     session.add_all(
         [SavedReportRecord(**_payload(report)) for report in source.saved_reports.values()]
+    )
+    session.add_all(
+        [
+            ServiceAppointmentRecord(
+                **appointment.model_dump(exclude={"created_at", "updated_at"})
+            )
+            for appointment in source.service_appointments.values()
+        ]
     )
     session.add_all(
         [

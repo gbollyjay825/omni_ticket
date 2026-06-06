@@ -379,6 +379,19 @@ export interface SavedReport {
   updatedAt: string
 }
 
+export interface ServiceAppointment {
+  id: string
+  title: string
+  customerId: string
+  technicianId: string
+  scheduledAt: string
+  durationMinutes: number
+  status: string
+  location: string
+  notes: string
+  updatedAt: string
+}
+
 export interface OutboxItem {
   id: string
   conversationId: string
@@ -484,6 +497,7 @@ export interface OmniState {
   customObjects: CustomObject[]
   products: Product[]
   savedReports: SavedReport[]
+  serviceAppointments: ServiceAppointment[]
   handoffs: HandoffRecord[]
   outbox: OutboxItem[]
   settings: WorkspaceSettings

@@ -25,6 +25,7 @@ from app.db.models import (
     ProductRecord,
     ProductionAccountReferenceRecord,
     SavedReportRecord,
+    ServiceAppointmentRecord,
     ResponseMacroRecord,
     ScenarioAutomationRecord,
     SlaPolicyRecord,
@@ -77,6 +78,7 @@ from app.models.domain import (
     Product,
     ProductionAccountReference,
     SavedReport,
+    ServiceAppointment,
     ResponseMacro,
     ScenarioAutomation,
     SlaPolicy,
@@ -289,6 +291,25 @@ def custom_field_definition_from_record(
             "options": record.options or [],
             "help_text": record.help_text,
             "position": record.position,
+            "created_at": record.created_at,
+            "updated_at": record.updated_at,
+        }
+    )
+
+
+def service_appointment_from_record(record: ServiceAppointmentRecord) -> ServiceAppointment:
+    return ServiceAppointment.model_validate(
+        {
+            "id": record.id,
+            "market_id": record.market_id,
+            "title": record.title,
+            "customer_id": record.customer_id,
+            "technician_id": record.technician_id,
+            "scheduled_at": record.scheduled_at,
+            "duration_minutes": record.duration_minutes,
+            "status": record.status,
+            "location": record.location,
+            "notes": record.notes,
             "created_at": record.created_at,
             "updated_at": record.updated_at,
         }
