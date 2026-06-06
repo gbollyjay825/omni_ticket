@@ -2928,6 +2928,19 @@ button:disabled {
   }
 }
 
+.brand-mark img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  display: block;
+}
+
+.sso-settings-form input[type='color'] {
+  padding: 2px;
+  height: 38px;
+  cursor: pointer;
+}
+
 .desk-user-menu {
   position: relative;
 }

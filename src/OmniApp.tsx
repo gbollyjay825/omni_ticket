@@ -135,6 +135,7 @@ import {
   mergeBackendTickets,
   patchBackendEmailSettings,
   patchBackendIntegrationCredentialSettings,
+  patchBackendSettings,
   patchBackendSsoSettings,
   patchBackendProductionAccountReference,
   pruneBackendAttachmentRetention,
@@ -421,6 +422,8 @@ const setupBuiltModules = new Set<string>([
   'Profile settings',
   'Security controls',
   'Threads',
+  'Portal branding',
+  'Helpdesk settings',
 ])
 const analyticsReportCatalog: Record<AnalyticsReportGroup, { title: string; detail: string; badge: string }[]> = {
   catalog: [
@@ -1103,6 +1106,14 @@ function OmniApp() {
     requireEmailVerified: true,
   })
   const [ssoSettingsBusy, setSsoSettingsBusy] = useState(false)
+  const [brandingDraft, setBrandingDraft] = useState({
+    publicBrandName: 'Omni Ticket',
+    portalSupportName: '',
+    portalPrimaryColor: '#0b5eea',
+    portalLogoUrl: '',
+    portalWelcomeMessage: '',
+  })
+  const [brandingBusy, setBrandingBusy] = useState(false)
   const [productionAccountPack, setProductionAccountPack] =
     useState<BackendProductionAccountRequestPack | null>(null)
   const [productionAccountBusy, setProductionAccountBusy] = useState(false)
@@ -1243,6 +1254,7 @@ function OmniApp() {
     backendSnapshot?.integrationCredentialSettings ?? backendSnapshot?.integration_credential_settings ?? null
   const ssoProviderSettings: BackendSsoProviderSettings | null =
     backendSnapshot?.ssoProviderSettings ?? backendSnapshot?.sso_provider_settings ?? null
+  const workspaceSettings = backendSnapshot?.settings ?? null
   const availableMarkets = backendSession?.available_markets ?? []
   const operationalAlerts = backendSnapshot?.operationalAlerts ?? backendSnapshot?.operational_alerts ?? []
   const alertDeliveries = backendSnapshot?.alertDeliveries ?? backendSnapshot?.alert_deliveries ?? []
@@ -1422,6 +1434,21 @@ function OmniApp() {
     const timeoutId = window.setTimeout(syncDraft, 0)
     return () => window.clearTimeout(timeoutId)
   }, [ssoProviderSettings])
+
+  useEffect(() => {
+    function syncDraft() {
+      if (!workspaceSettings) return
+      setBrandingDraft({
+        publicBrandName: workspaceSettings.public_brand_name ?? 'Omni Ticket',
+        portalSupportName: workspaceSettings.portal_support_name ?? '',
+        portalPrimaryColor: workspaceSettings.portal_primary_color || '#0b5eea',
+        portalLogoUrl: workspaceSettings.portal_logo_url ?? '',
+        portalWelcomeMessage: workspaceSettings.portal_welcome_message ?? '',
+      })
+    }
+    const timeoutId = window.setTimeout(syncDraft, 0)
+    return () => window.clearTimeout(timeoutId)
+  }, [workspaceSettings])
 
   const operationalNotifications = activeOperationalAlerts.slice(0, 3).map((alert) => ({
     id: alert.id,
@@ -1816,6 +1843,30 @@ function OmniApp() {
       setPrototypeNotice(error instanceof Error ? error.message : 'SSO settings save failed.')
     } finally {
       setSsoSettingsBusy(false)
+    }
+  }
+
+  async function handleBrandingSave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!backendSession || brandingBusy) return
+    setBrandingBusy(true)
+    try {
+      await patchBackendSettings(
+        {
+          public_brand_name: brandingDraft.publicBrandName.trim() || 'Omni Ticket',
+          portal_support_name: brandingDraft.portalSupportName.trim(),
+          portal_primary_color: brandingDraft.portalPrimaryColor.trim() || '#0b5eea',
+          portal_logo_url: brandingDraft.portalLogoUrl.trim(),
+          portal_welcome_message: brandingDraft.portalWelcomeMessage.trim(),
+        },
+        backendSession,
+      )
+      setPrototypeNotice('Portal branding saved.')
+      await refreshBackend()
+    } catch (error) {
+      setPrototypeNotice(error instanceof Error ? error.message : 'Branding save failed.')
+    } finally {
+      setBrandingBusy(false)
     }
   }
 
@@ -2620,16 +2671,27 @@ function OmniApp() {
   }
 
   function renderPortalHelpCenter() {
+    const portalBrandName = workspaceSettings?.public_brand_name?.trim() || 'Omni Ticket'
+    const portalSupportName = workspaceSettings?.portal_support_name?.trim() || 'Wakanow support'
+    const portalAccent = workspaceSettings?.portal_primary_color?.trim() || '#0b5eea'
+    const portalWelcome =
+      workspaceSettings?.portal_welcome_message?.trim() ||
+      'Search answers or raise a support ticket'
+    const portalLogoUrl = workspaceSettings?.portal_logo_url?.trim() || ''
     return (
-      <main className="portal-shell">
+      <main className="portal-shell" style={{ ['--portal-accent' as string]: portalAccent }}>
         <header className="portal-topbar">
           <a className="portal-brand" href={routeHref({ screen: 'portal' })}>
-            <span className="brand-mark">
-              <LifeBuoy size={22} />
+            <span className="brand-mark" style={{ background: portalAccent }}>
+              {portalLogoUrl ? (
+                <img src={portalLogoUrl} alt={`${portalBrandName} logo`} />
+              ) : (
+                <LifeBuoy size={22} />
+              )}
             </span>
             <span>
-              <strong>Omni Ticket</strong>
-              <small>Wakanow support</small>
+              <strong>{portalBrandName}</strong>
+              <small>{portalSupportName}</small>
             </span>
           </a>
           <div className="portal-topbar-actions">
@@ -2660,7 +2722,7 @@ function OmniApp() {
         <section className="portal-hero">
           <div className="portal-hero-copy">
             <span className="section-kicker">Help Center</span>
-            <h1>Search answers or raise a support ticket</h1>
+            <h1>{portalWelcome}</h1>
             <form className="portal-search" onSubmit={(event) => event.preventDefault()}>
               <Search size={20} />
               <input
@@ -3843,6 +3905,7 @@ function OmniApp() {
     const sectionRoutes: Record<string, SetupSectionId> = {
       'Account exports': 'governance',
       'Security controls': 'people',
+      'Helpdesk settings': 'forms',
     }
     if (sectionRoutes[moduleName]) {
       setSetupSection(sectionRoutes[moduleName])
@@ -8659,6 +8722,83 @@ function OmniApp() {
                 ))
               )}
             </div>
+          </div>
+          <div className="automation-settings-panel branding-settings-panel" id="portal-branding">
+            <div className="panel-head compact">
+              <div>
+                <span>Portal branding</span>
+                <h2>Customer help center & helpdesk identity</h2>
+              </div>
+              <Globe2 size={18} />
+            </div>
+            {workspaceSettings ? (
+              <form className="sso-settings-form" onSubmit={handleBrandingSave}>
+                <div className="sso-settings-grid">
+                  <label>
+                    <span>Brand name</span>
+                    <input
+                      value={brandingDraft.publicBrandName}
+                      onChange={(event) =>
+                        setBrandingDraft((current) => ({ ...current, publicBrandName: event.target.value }))
+                      }
+                      placeholder="Omni Ticket"
+                      disabled={brandingBusy}
+                    />
+                  </label>
+                  <label>
+                    <span>Support team name</span>
+                    <input
+                      value={brandingDraft.portalSupportName}
+                      onChange={(event) =>
+                        setBrandingDraft((current) => ({ ...current, portalSupportName: event.target.value }))
+                      }
+                      placeholder="Omni Ticket Support"
+                      disabled={brandingBusy}
+                    />
+                  </label>
+                  <label>
+                    <span>Logo URL</span>
+                    <input
+                      value={brandingDraft.portalLogoUrl}
+                      onChange={(event) =>
+                        setBrandingDraft((current) => ({ ...current, portalLogoUrl: event.target.value }))
+                      }
+                      placeholder="https://cdn.example.com/logo.svg"
+                      disabled={brandingBusy}
+                    />
+                  </label>
+                  <label>
+                    <span>Primary color</span>
+                    <input
+                      type="color"
+                      value={brandingDraft.portalPrimaryColor}
+                      onChange={(event) =>
+                        setBrandingDraft((current) => ({ ...current, portalPrimaryColor: event.target.value }))
+                      }
+                      disabled={brandingBusy}
+                    />
+                  </label>
+                </div>
+                <label className="sso-settings-full">
+                  <span>Help center welcome message</span>
+                  <textarea
+                    rows={2}
+                    value={brandingDraft.portalWelcomeMessage}
+                    onChange={(event) =>
+                      setBrandingDraft((current) => ({ ...current, portalWelcomeMessage: event.target.value }))
+                    }
+                    placeholder="Search our help center or open a ticket — our support team replies fast."
+                    disabled={brandingBusy}
+                  />
+                </label>
+                <button type="submit" className="primary-action" disabled={brandingBusy}>
+                  <Globe2 size={16} />
+                  Save branding
+                </button>
+              </form>
+            ) : (
+              <p className="setup-module-hint">Sign in as an administrator to manage portal branding.</p>
+            )}
           </div>
           </>
           ) : null}

@@ -3347,6 +3347,35 @@ def test_admin_manages_sso_provider_settings(client: TestClient) -> None:
     assert sso_audit["details"]["client_secret_configured"] is True
 
 
+def test_admin_manages_portal_branding_settings(client: TestClient) -> None:
+    initial = client.get("/api/v1/settings")
+    assert initial.status_code == 200
+    body = initial.json()
+    assert body["portal_primary_color"] == "#0b5eea"
+    assert body["portal_support_name"]  # seeded, non-empty
+
+    updated = client.patch(
+        "/api/v1/settings",
+        json={
+            "public_brand_name": "Wakanow Care",
+            "portal_logo_url": "https://cdn.wakanow.test/logo.svg",
+            "portal_primary_color": "#0f766e",
+            "portal_support_name": "Wakanow Care Team",
+            "portal_welcome_message": "How can we help you travel better today?",
+        },
+    )
+    assert updated.status_code == 200
+    saved = updated.json()
+    assert saved["public_brand_name"] == "Wakanow Care"
+    assert saved["portal_primary_color"] == "#0f766e"
+    assert saved["portal_support_name"] == "Wakanow Care Team"
+
+    # Persisted across reads.
+    reread = client.get("/api/v1/settings").json()
+    assert reread["portal_logo_url"] == "https://cdn.wakanow.test/logo.svg"
+    assert reread["portal_welcome_message"] == "How can we help you travel better today?"
+
+
 def test_sms_outbound_uses_configured_http_adapter(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,

@@ -147,6 +147,10 @@ class InMemoryStore:
                     market_id=market_id,
                     default_timezone=market.timezone,
                     public_brand_name=f"Omni Ticket {market.code}",
+                    portal_support_name=f"Omni Ticket {market.code} Support",
+                    portal_welcome_message=(
+                        "Search our help center or open a ticket — our support team replies fast."
+                    ),
                 )
                 for market_id, market in self.markets.items()
             }

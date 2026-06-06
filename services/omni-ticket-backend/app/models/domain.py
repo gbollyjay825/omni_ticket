@@ -326,6 +326,10 @@ class WorkspaceSettings(BaseModel):
     default_timezone: str = "Africa/Lagos"
     business_hours: str = "Mon-Fri 08:00-18:00"
     public_brand_name: str = "Omni Ticket"
+    portal_logo_url: str = ""
+    portal_primary_color: str = "#0b5eea"
+    portal_support_name: str = ""
+    portal_welcome_message: str = ""
 
 
 class EmailProviderSettings(BaseModel):

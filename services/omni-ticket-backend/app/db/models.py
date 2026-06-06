@@ -90,6 +90,10 @@ class WorkspaceSettingsRecord(TimestampMixin, Base):
     default_timezone: Mapped[str] = mapped_column(String(80), nullable=False)
     business_hours: Mapped[str] = mapped_column(String(120), default="Mon-Fri 08:00-18:00")
     public_brand_name: Mapped[str] = mapped_column(String(160), default="Omni Ticket")
+    portal_logo_url: Mapped[str] = mapped_column(String(500), default="")
+    portal_primary_color: Mapped[str] = mapped_column(String(20), default="#0b5eea")
+    portal_support_name: Mapped[str] = mapped_column(String(160), default="")
+    portal_welcome_message: Mapped[str] = mapped_column(Text, default="")
 
 
 class EmailProviderSettingsRecord(TimestampMixin, Base):

@@ -17,7 +17,7 @@ from app.db.models import (
 )
 from app.db.session import create_database_engine
 
-ALEMBIC_HEAD = "20260606_0037"
+ALEMBIC_HEAD = "20260607_0038"
 
 
 def test_database_schema_and_seed_are_postgres_ready_with_local_sqlite(tmp_path: Path) -> None:

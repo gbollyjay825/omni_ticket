@@ -12,6 +12,10 @@ def workspace_settings_from_record(record: WorkspaceSettingsRecord) -> Workspace
         default_timezone=record.default_timezone,
         business_hours=record.business_hours,
         public_brand_name=record.public_brand_name,
+        portal_logo_url=record.portal_logo_url,
+        portal_primary_color=record.portal_primary_color,
+        portal_support_name=record.portal_support_name,
+        portal_welcome_message=record.portal_welcome_message,
     )
 
 

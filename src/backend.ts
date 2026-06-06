@@ -9,6 +9,10 @@ export interface BackendSettings {
   default_timezone: string
   business_hours: string
   public_brand_name: string
+  portal_logo_url: string
+  portal_primary_color: string
+  portal_support_name: string
+  portal_welcome_message: string
 }
 
 export interface BackendAnalyticsSummary {
