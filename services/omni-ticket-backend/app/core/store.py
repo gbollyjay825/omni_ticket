@@ -16,6 +16,7 @@ from app.models.domain import (
     CustomObject,
     CustomObjectField,
     EmailNotification,
+    Product,
     ScenarioAction,
     ScenarioAutomation,
     Tag,
@@ -91,6 +92,7 @@ class InMemoryStore:
         self.scenario_automations: dict[str, ScenarioAutomation] = {}
         self.custom_field_definitions: dict[str, CustomFieldDefinition] = {}
         self.custom_objects: dict[str, CustomObject] = {}
+        self.products: dict[str, Product] = {}
         self.rules: dict[str, AutomationRule] = {}
         self.connector_events: dict[str, ConnectorEvent] = {}
         self.outbound_messages: dict[str, OutboundMessage] = {}
@@ -722,6 +724,30 @@ class InMemoryStore:
                             options=["Voucher", "Baggage tag", "Device", "SIM"],
                         ),
                     ],
+                ),
+            }
+
+            self.products = {
+                "product-omni-ticket": Product(
+                    id="product-omni-ticket",
+                    market_id="market-ng",
+                    name="Omni Ticket",
+                    code="OMNI",
+                    description="Core omnichannel support desk product.",
+                ),
+                "product-wakanow-flights": Product(
+                    id="product-wakanow-flights",
+                    market_id="market-ng",
+                    name="Wakanow Flights",
+                    code="FLIGHTS",
+                    description="Flight booking, changes, and refunds.",
+                ),
+                "product-wakanow-hotels": Product(
+                    id="product-wakanow-hotels",
+                    market_id="market-ng",
+                    name="Wakanow Hotels",
+                    code="HOTELS",
+                    description="Hotel reservations and stays.",
                 ),
             }
 

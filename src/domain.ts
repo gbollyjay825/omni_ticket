@@ -358,6 +358,15 @@ export interface CustomObject {
   updatedAt: string
 }
 
+export interface Product {
+  id: string
+  name: string
+  code: string
+  description: string
+  active: boolean
+  updatedAt: string
+}
+
 export interface OutboxItem {
   id: string
   conversationId: string
@@ -461,6 +470,7 @@ export interface OmniState {
   scenarioAutomations: ScenarioAutomation[]
   customFieldDefinitions: CustomFieldDefinition[]
   customObjects: CustomObject[]
+  products: Product[]
   handoffs: HandoffRecord[]
   outbox: OutboxItem[]
   settings: WorkspaceSettings

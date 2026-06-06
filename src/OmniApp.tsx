@@ -76,6 +76,7 @@ import type {
   CustomFieldDefinition,
   CustomObject,
   CustomObjectField,
+  Product,
   TicketField,
   TicketFieldType,
   TicketTemplate,
@@ -469,6 +470,7 @@ const setupBuiltModules = new Set<string>([
   'Email notifications',
   'Scenario automations',
   'Custom objects',
+  'Multiple products',
 ])
 const analyticsReportCatalog: Record<AnalyticsReportGroup, { title: string; detail: string; badge: string }[]> = {
   catalog: [
@@ -905,6 +907,8 @@ function OmniApp() {
     updateCustomFieldDefinition,
     createCustomObject,
     updateCustomObject,
+    createProduct,
+    updateProduct,
     createTicketField,
     updateTicketField,
     changePassword,
@@ -1069,6 +1073,8 @@ function OmniApp() {
     { key: '', label: '', fieldType: 'text' },
   )
   const [objectBusy, setObjectBusy] = useState(false)
+  const [productDraft, setProductDraft] = useState({ name: '', code: '', description: '' })
+  const [productBusy, setProductBusy] = useState(false)
   const [addUserOpen, setAddUserOpen] = useState(false)
   const [addGroupOpen, setAddGroupOpen] = useState(false)
   const [addSlaPolicyOpen, setAddSlaPolicyOpen] = useState(false)
@@ -3465,6 +3471,37 @@ function OmniApp() {
       if (saved) setPrototypeNotice(`Custom object ${object.active ? 'paused' : 'activated'}.`)
     } finally {
       setObjectBusy(false)
+    }
+  }
+
+  async function handleCreateProduct(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const name = productDraft.name.trim()
+    if (name.length < 1 || productBusy) return
+    setProductBusy(true)
+    try {
+      const saved = await createProduct({
+        name,
+        code: productDraft.code.trim(),
+        description: productDraft.description.trim(),
+      })
+      if (saved) {
+        setProductDraft({ name: '', code: '', description: '' })
+        setPrototypeNotice('Product saved.')
+      }
+    } finally {
+      setProductBusy(false)
+    }
+  }
+
+  async function toggleProduct(product: Product) {
+    if (productBusy) return
+    setProductBusy(true)
+    try {
+      const saved = await updateProduct(product.id, { active: !product.active })
+      if (saved) setPrototypeNotice(`Product ${product.active ? 'paused' : 'activated'}.`)
+    } finally {
+      setProductBusy(false)
     }
   }
 
@@ -7544,6 +7581,82 @@ function OmniApp() {
                         onClick={() => void toggleCustomObject(object)}
                       >
                         {object.active ? 'Pause' : 'Activate'}
+                      </button>
+                    </div>
+                  </article>
+                ))
+              )}
+            </div>
+          </div>
+          <div className="automation-settings-panel products-panel">
+            <div className="panel-head compact">
+              <div>
+                <span>Products</span>
+                <h2>Multiple products tickets can be filed against</h2>
+              </div>
+              <BookOpen size={18} />
+            </div>
+            <form className="user-create-form canned-response-form" onSubmit={handleCreateProduct}>
+              <div className="canned-form-row">
+                <label>
+                  <span>Name</span>
+                  <input
+                    required
+                    value={productDraft.name}
+                    onChange={(event) => setProductDraft((current) => ({ ...current, name: event.target.value }))}
+                    placeholder="Wakanow Tours"
+                    disabled={!canManageUsers || productBusy}
+                  />
+                </label>
+                <label>
+                  <span>Code</span>
+                  <input
+                    value={productDraft.code}
+                    onChange={(event) => setProductDraft((current) => ({ ...current, code: event.target.value }))}
+                    placeholder="TOURS"
+                    disabled={!canManageUsers || productBusy}
+                  />
+                </label>
+              </div>
+              <label>
+                <span>Description</span>
+                <input
+                  value={productDraft.description}
+                  onChange={(event) => setProductDraft((current) => ({ ...current, description: event.target.value }))}
+                  placeholder="Guided tours and experiences"
+                  disabled={!canManageUsers || productBusy}
+                />
+              </label>
+              <button
+                type="submit"
+                className="primary-action"
+                disabled={!canManageUsers || productBusy || productDraft.name.trim().length < 1}
+              >
+                <Plus size={16} />
+                Add product
+              </button>
+            </form>
+            <div className="canned-response-list">
+              {state.products.length === 0 ? (
+                <p className="setup-module-hint">No products yet. Add the products you support.</p>
+              ) : (
+                state.products.map((product) => (
+                  <article className={`canned-response-card ${product.active ? '' : 'inactive'}`} key={product.id}>
+                    <div className="canned-card-head">
+                      <div>
+                        <strong>{product.name}</strong>
+                        {product.code ? <code>{product.code}</code> : null}
+                      </div>
+                    </div>
+                    {product.description ? <p className="canned-card-body">{product.description}</p> : null}
+                    <div className="canned-card-actions">
+                      <button
+                        type="button"
+                        className="secondary-action"
+                        disabled={!canManageUsers || productBusy}
+                        onClick={() => void toggleProduct(product)}
+                      >
+                        {product.active ? 'Pause' : 'Activate'}
                       </button>
                     </div>
                   </article>

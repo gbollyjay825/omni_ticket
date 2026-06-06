@@ -20,6 +20,7 @@ from app.db.models import (
     CustomFieldDefinitionRecord,
     CustomObjectRecord,
     EmailNotificationRecord,
+    ProductRecord,
     ScenarioAutomationRecord,
     ConnectorEventRecord,
     CustomerRecord,
@@ -578,6 +579,20 @@ def seed_custom_objects(session: Session, source: InMemoryStore = store) -> None
     session.commit()
 
 
+def seed_products(session: Session, source: InMemoryStore = store) -> None:
+    for product in source.products.values():
+        existing = session.get(ProductRecord, product.id) or session.scalar(
+            select(ProductRecord).where(
+                ProductRecord.market_id == product.market_id,
+                ProductRecord.name == product.name,
+            )
+        )
+        if existing is not None:
+            continue
+        session.add(ProductRecord(**_payload(product)))
+    session.commit()
+
+
 def seed_reference_data(session: Session, source: InMemoryStore = store) -> None:
     if session.scalar(select(MarketRecord.id).limit(1)):
         seed_connector_accounts(session)
@@ -593,6 +608,7 @@ def seed_reference_data(session: Session, source: InMemoryStore = store) -> None
         seed_scenario_automations(session, source)
         seed_custom_field_definitions(session, source)
         seed_custom_objects(session, source)
+        seed_products(session, source)
         return
 
     session.add_all(
@@ -692,6 +708,9 @@ def seed_reference_data(session: Session, source: InMemoryStore = store) -> None
             CustomObjectRecord(**_payload(custom_object))
             for custom_object in source.custom_objects.values()
         ]
+    )
+    session.add_all(
+        [ProductRecord(**_payload(product)) for product in source.products.values()]
     )
     session.add_all(
         [

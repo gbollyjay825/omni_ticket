@@ -346,6 +346,21 @@ class CustomObjectRecord(TimestampMixin, Base):
     )
 
 
+class ProductRecord(TimestampMixin, Base):
+    __tablename__ = "products"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    market_id: Mapped[str] = mapped_column(ForeignKey("markets.id"), index=True)
+    name: Mapped[str] = mapped_column(String(180), nullable=False)
+    code: Mapped[str] = mapped_column(String(64), default="")
+    description: Mapped[str] = mapped_column(String(500), default="")
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+
+    __table_args__ = (
+        UniqueConstraint("market_id", "name", name="uq_product_market_name"),
+    )
+
+
 class ChannelRecord(TimestampMixin, Base):
     __tablename__ = "channels"
 

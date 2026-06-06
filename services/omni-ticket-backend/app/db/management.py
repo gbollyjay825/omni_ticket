@@ -16,6 +16,7 @@ from app.db.mappers import (
     custom_field_definition_from_record,
     custom_object_from_record,
     email_notification_from_record,
+    product_from_record,
     scenario_automation_from_record,
     knowledge_article_from_record,
     response_macro_from_record,
@@ -36,6 +37,7 @@ from app.db.models import (
     CustomObjectRecord,
     EmailNotificationRecord,
     HandoffRecord,
+    ProductRecord,
     KnowledgeArticleRecord,
     ResponseMacroRecord,
     ScenarioAutomationRecord,
@@ -57,6 +59,7 @@ from app.models.domain import (
     CreateCustomFieldDefinitionRequest,
     CreateCustomObjectRequest,
     CreateEmailNotificationRequest,
+    CreateProductRequest,
     CreateKnowledgeArticleRequest,
     CreateResponseMacroRequest,
     CreateScenarioAutomationRequest,
@@ -70,6 +73,7 @@ from app.models.domain import (
     CustomObject,
     EmailNotification,
     KnowledgeArticle,
+    Product,
     KnowledgeSuggestion,
     KnowledgeArticleStatus,
     ResponseMacro,
@@ -89,6 +93,7 @@ from app.models.domain import (
     UpdateCustomFieldDefinitionRequest,
     UpdateCustomObjectRequest,
     UpdateEmailNotificationRequest,
+    UpdateProductRequest,
     UpdateKnowledgeArticleRequest,
     UpdateResponseMacroRequest,
     UpdateScenarioAutomationRequest,
@@ -647,6 +652,22 @@ def _custom_object_payload(
                 }
             )
         payload["fields"] = fields
+    return payload
+
+
+def _product_payload(request: CreateProductRequest | UpdateProductRequest) -> dict:
+    payload = request.model_dump(exclude_unset=True, mode="json")
+    if "name" in payload and payload["name"] is not None:
+        payload["name"] = _clean_group_name(payload["name"])
+        if not payload["name"]:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Product name is required",
+            )
+    if "code" in payload and payload["code"] is not None:
+        payload["code"] = payload["code"].strip()
+    if "description" in payload and payload["description"] is not None:
+        payload["description"] = payload["description"].strip()
     return payload
 
 
@@ -1810,6 +1831,105 @@ class ManagementRepository:
         custom_object = custom_object_from_record(record)
         state.custom_objects[custom_object.id] = custom_object
         return custom_object
+
+    def list_products(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        market_id: str,
+    ) -> list[Product]:
+        records = db.scalars(
+            select(ProductRecord).where(ProductRecord.market_id == market_id)
+        ).all()
+        products = [product_from_record(record) for record in records]
+        products.sort(key=lambda product: (not product.active, product.name.lower()))
+        state.products = {
+            **{
+                key: value
+                for key, value in state.products.items()
+                if value.market_id != market_id
+            },
+            **{product.id: product for product in products},
+        }
+        return products
+
+    def create_product(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        request: CreateProductRequest,
+        market_id: str,
+        actor: str,
+    ) -> Product:
+        payload = _product_payload(request)
+        name = payload["name"]
+        duplicate = db.scalar(
+            select(ProductRecord).where(
+                ProductRecord.market_id == market_id,
+                ProductRecord.name == name,
+            )
+        )
+        if duplicate is not None:
+            raise HTTPException(status.HTTP_409_CONFLICT, detail="Product already exists")
+        record = ProductRecord(id=_new_id("product"), market_id=market_id, **payload)
+        db.add(record)
+        db.flush()
+        _audit(
+            db,
+            state,
+            actor=actor,
+            action="product.create",
+            entity_type="product",
+            entity_id=record.id,
+            market_id=market_id,
+            details={"name": record.name, "code": record.code, "active": record.active},
+        )
+        db.commit()
+        db.refresh(record)
+        product = product_from_record(record)
+        state.products[product.id] = product
+        return product
+
+    def update_product(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        product_id: str,
+        request: UpdateProductRequest,
+        market_id: str,
+        actor: str,
+    ) -> Product:
+        record = db.get(ProductRecord, product_id)
+        if record is None or record.market_id != market_id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Product not found")
+        patch = _product_payload(request)
+        if "name" in patch and patch["name"] != record.name:
+            duplicate = db.scalar(
+                select(ProductRecord).where(
+                    ProductRecord.market_id == market_id,
+                    ProductRecord.name == patch["name"],
+                    ProductRecord.id != product_id,
+                )
+            )
+            if duplicate is not None:
+                raise HTTPException(status.HTTP_409_CONFLICT, detail="Product already exists")
+        for key, value in patch.items():
+            setattr(record, key, value)
+        _audit(
+            db,
+            state,
+            actor=actor,
+            action="product.update",
+            entity_type="product",
+            entity_id=product_id,
+            market_id=market_id,
+            details=patch,
+        )
+        db.commit()
+        db.refresh(record)
+        product = product_from_record(record)
+        state.products[product.id] = product
+        return product
 
     def list_knowledge(
         self,

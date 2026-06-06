@@ -1761,6 +1761,36 @@ def test_admin_manages_custom_objects(client: TestClient) -> None:
     assert any(event["action"] == "custom_object.update" for event in audit)
 
 
+def test_admin_manages_products(client: TestClient) -> None:
+    suffix = uuid4().hex[:6]
+    created = client.post(
+        "/api/v1/products",
+        json={"name": f"Wakanow Tours {suffix}", "code": "TOURS", "description": "Guided tours"},
+    )
+    assert created.status_code == 201
+    product = created.json()
+    assert product["code"] == "TOURS"
+
+    duplicate = client.post("/api/v1/products", json={"name": f"Wakanow Tours {suffix}"})
+    assert duplicate.status_code == 409
+
+    listing = client.get("/api/v1/products")
+    assert listing.status_code == 200
+    assert any(item["id"] == product["id"] for item in listing.json())
+
+    updated = client.patch(f"/api/v1/products/{product['id']}", json={"active": False})
+    assert updated.status_code == 200
+    assert updated.json()["active"] is False
+
+    snapshot = client.get("/api/v1/frontend/snapshot")
+    assert snapshot.status_code == 200
+    assert any(item["id"] == product["id"] for item in snapshot.json()["products"])
+
+    audit = client.get("/api/v1/audit").json()
+    assert any(event["action"] == "product.create" for event in audit)
+    assert any(event["action"] == "product.update" for event in audit)
+
+
 def test_role_policy_blocks_agent_from_admin_and_supervisor_controls(
     client: TestClient,
     login_as: Callable[..., dict[str, str]],

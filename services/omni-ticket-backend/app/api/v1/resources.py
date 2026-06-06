@@ -81,6 +81,7 @@ from app.models.domain import (
     CustomFieldDefinition,
     CustomObject,
     EmailNotification,
+    Product,
     ScenarioAutomation,
     CreateAutomationRuleRequest,
     CreateAttachmentRequest,
@@ -101,6 +102,7 @@ from app.models.domain import (
     CreateScenarioAutomationRequest,
     CreateCustomFieldDefinitionRequest,
     CreateCustomObjectRequest,
+    CreateProductRequest,
     CreateTicketFieldRequest,
     CreateTicketRequest,
     CreateTicketTemplateRequest,
@@ -172,6 +174,7 @@ from app.models.domain import (
     UpdateScenarioAutomationRequest,
     UpdateCustomFieldDefinitionRequest,
     UpdateCustomObjectRequest,
+    UpdateProductRequest,
     UpdateTicketFieldRequest,
     UpdateTicketRequest,
     UpdateTicketTemplateRequest,
@@ -1556,6 +1559,51 @@ def update_custom_object(
         db,
         state,
         object_id,
+        request,
+        context.market_id,
+        context.user.email,
+    )
+
+
+@router.get("/products", response_model=list[Product])
+def list_products(
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> list[Product]:
+    return management_repository.list_products(db, state, context.market_id)
+
+
+@router.post("/products", response_model=Product, status_code=status.HTTP_201_CREATED)
+def create_product(
+    request: CreateProductRequest,
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> Product:
+    require_admin(context)
+    return management_repository.create_product(
+        db,
+        state,
+        request,
+        context.market_id,
+        context.user.email,
+    )
+
+
+@router.patch("/products/{product_id}", response_model=Product)
+def update_product(
+    product_id: str,
+    request: UpdateProductRequest,
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> Product:
+    require_admin(context)
+    return management_repository.update_product(
+        db,
+        state,
+        product_id,
         request,
         context.market_id,
         context.user.email,
@@ -3368,6 +3416,7 @@ def read_frontend_snapshot(
             db, state, context.market_id
         ),
         "custom_objects": management_repository.list_custom_objects(db, state, context.market_id),
+        "products": management_repository.list_products(db, state, context.market_id),
         "companies": companies,
         "customers": customers,
         "tickets": [

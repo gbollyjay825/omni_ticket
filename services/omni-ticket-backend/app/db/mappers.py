@@ -22,6 +22,7 @@ from app.db.models import (
     MarketRecord,
     OperationalAlertRecord,
     OutboundMessageRecord,
+    ProductRecord,
     ProductionAccountReferenceRecord,
     ResponseMacroRecord,
     ScenarioAutomationRecord,
@@ -72,6 +73,7 @@ from app.models.domain import (
     OperationalAlertStatus,
     OutboundMessage,
     OutboundMessageStatus,
+    Product,
     ProductionAccountReference,
     ResponseMacro,
     ScenarioAutomation,
@@ -285,6 +287,21 @@ def custom_field_definition_from_record(
             "options": record.options or [],
             "help_text": record.help_text,
             "position": record.position,
+            "created_at": record.created_at,
+            "updated_at": record.updated_at,
+        }
+    )
+
+
+def product_from_record(record: ProductRecord) -> Product:
+    return Product.model_validate(
+        {
+            "id": record.id,
+            "market_id": record.market_id,
+            "name": record.name,
+            "code": record.code,
+            "description": record.description,
+            "active": record.active,
             "created_at": record.created_at,
             "updated_at": record.updated_at,
         }

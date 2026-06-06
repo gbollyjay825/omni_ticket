@@ -29,6 +29,7 @@ import type {
   ScenarioAutomation,
   CustomFieldDefinition,
   CustomObject,
+  Product,
   SlaState,
   SupportGroup,
   TicketField,
@@ -51,6 +52,7 @@ import {
   createBackendScenarioAutomation,
   createBackendCustomFieldDefinition,
   createBackendCustomObject,
+  createBackendProduct,
   createBackendSupportGroup,
   createBackendTicketField,
   createBackendUser,
@@ -70,6 +72,7 @@ import {
   type BackendCreateScenarioAutomationInput,
   type BackendCreateCustomFieldDefinitionInput,
   type BackendCreateCustomObjectInput,
+  type BackendCreateProductInput,
   type BackendCreateSupportGroupInput,
   type BackendCreateUserInput,
   type BackendCustomer,
@@ -96,6 +99,7 @@ import {
   patchBackendScenarioAutomation,
   patchBackendCustomFieldDefinition,
   patchBackendCustomObject,
+  patchBackendProduct,
   patchBackendSupportGroup,
   patchBackendTicket,
   patchBackendTicketField,
@@ -118,6 +122,7 @@ import {
   type BackendScenarioAutomation,
   type BackendCustomFieldDefinition,
   type BackendCustomObject,
+  type BackendProduct,
   type BackendSyncState,
   type BackendUpdateSlaPolicyInput,
   type BackendUpdateBusinessHoursInput,
@@ -128,6 +133,7 @@ import {
   type BackendUpdateScenarioAutomationInput,
   type BackendUpdateCustomFieldDefinitionInput,
   type BackendUpdateCustomObjectInput,
+  type BackendUpdateProductInput,
   type BackendUpdateSupportGroupInput,
   type BackendUpdateUserInput,
   type BackendUpdateTicketFieldInput,
@@ -294,6 +300,7 @@ function mergeReferenceData(state: OmniState): OmniState {
     scenarioAutomations: state.scenarioAutomations ?? initialOmniState.scenarioAutomations,
     customFieldDefinitions: state.customFieldDefinitions ?? initialOmniState.customFieldDefinitions,
     customObjects: state.customObjects ?? initialOmniState.customObjects,
+    products: state.products ?? initialOmniState.products,
     responseMacros: state.responseMacros ?? initialOmniState.responseMacros,
     epics: initialOmniState.epics,
     backlog: initialOmniState.backlog,
@@ -617,6 +624,17 @@ function mapCustomObject(object: BackendCustomObject): CustomObject {
   }
 }
 
+function mapProduct(product: BackendProduct): Product {
+  return {
+    id: product.id,
+    name: product.name,
+    code: product.code,
+    description: product.description,
+    active: product.active,
+    updatedAt: product.updated_at,
+  }
+}
+
 function mapAgent(agent: BackendAgent, ticketContexts: BackendTicketContext[]): AgentProfile {
   const assignedTickets = ticketContexts.filter((context) => context.ticket.assignee_id === agent.id)
   return {
@@ -930,6 +948,7 @@ function mergeBackendSnapshot(current: OmniState, snapshot: BackendSnapshot): Om
     []
   ).map(mapCustomFieldDefinition)
   const customObjects = (snapshot.custom_objects ?? snapshot.customObjects ?? []).map(mapCustomObject)
+  const products = (snapshot.products ?? []).map(mapProduct)
   const selectedConversationId =
     conversations.find((conversation) => conversation.id === current.selectedConversationId)?.id ??
     conversations[0]?.id ??
@@ -971,6 +990,7 @@ function mergeBackendSnapshot(current: OmniState, snapshot: BackendSnapshot): Om
     scenarioAutomations,
     customFieldDefinitions,
     customObjects,
+    products,
     articles: snapshot.knowledge.map(mapKnowledgeArticle),
     ticketFields: (snapshot.ticket_fields ?? snapshot.ticketFields ?? []).map(mapTicketField),
     responseMacros: snapshot.macros.map(mapResponseMacro),
@@ -2168,6 +2188,14 @@ export function useOmniStore() {
     return syncBackendMutation((session) => patchBackendCustomObject(objectId, patch, session))
   }
 
+  function createProduct(input: BackendCreateProductInput) {
+    return syncBackendMutation((session) => createBackendProduct(input, session))
+  }
+
+  function updateProduct(productId: string, patch: BackendUpdateProductInput) {
+    return syncBackendMutation((session) => patchBackendProduct(productId, patch, session))
+  }
+
   function createTicketField(input: BackendCreateTicketFieldInput) {
     return syncBackendMutation((session) => createBackendTicketField(input, session))
   }
@@ -2440,6 +2468,8 @@ export function useOmniStore() {
     updateCustomFieldDefinition,
     createCustomObject,
     updateCustomObject,
+    createProduct,
+    updateProduct,
     createTicketField,
     updateTicketField,
     changePassword,

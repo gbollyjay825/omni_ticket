@@ -527,6 +527,7 @@ export interface BackendSnapshot {
   scenarioAutomations: BackendScenarioAutomation[]
   customFieldDefinitions: BackendCustomFieldDefinition[]
   customObjects: BackendCustomObject[]
+  products: BackendProduct[]
   companies: BackendCompany[]
   customers: BackendCustomer[]
   tickets: BackendTicketContext[]
@@ -1163,6 +1164,31 @@ export interface BackendUpdateCustomObjectInput {
   active?: boolean
 }
 
+export interface BackendProduct {
+  id: string
+  market_id: string
+  name: string
+  code: string
+  description: string
+  active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface BackendCreateProductInput {
+  name: string
+  code?: string
+  description?: string
+  active?: boolean
+}
+
+export interface BackendUpdateProductInput {
+  name?: string
+  code?: string
+  description?: string
+  active?: boolean
+}
+
 export interface BackendCompany {
   id: string
   market_id: string
@@ -1553,6 +1579,7 @@ interface BackendFrontendSnapshot {
   scenario_automations: BackendScenarioAutomation[]
   custom_field_definitions: BackendCustomFieldDefinition[]
   custom_objects: BackendCustomObject[]
+  products: BackendProduct[]
   companies: BackendCompany[]
   customers: BackendCustomer[]
   tickets: BackendTicketContext[]
@@ -2203,6 +2230,35 @@ export async function patchBackendCustomObject(
 ): Promise<BackendCustomObject> {
   return fetchJson<BackendCustomObject>(
     `/custom-objects/${objectId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    },
+    session,
+  )
+}
+
+export async function createBackendProduct(
+  input: BackendCreateProductInput,
+  session: BackendSession,
+): Promise<BackendProduct> {
+  return fetchJson<BackendProduct>(
+    '/products',
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+    session,
+  )
+}
+
+export async function patchBackendProduct(
+  productId: string,
+  patch: BackendUpdateProductInput,
+  session: BackendSession,
+): Promise<BackendProduct> {
+  return fetchJson<BackendProduct>(
+    `/products/${productId}`,
     {
       method: 'PATCH',
       body: JSON.stringify(patch),

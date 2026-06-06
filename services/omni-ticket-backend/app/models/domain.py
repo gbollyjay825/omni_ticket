@@ -659,6 +659,17 @@ class CustomObject(BaseModel):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class Product(BaseModel):
+    id: str
+    market_id: str = "market-ng"
+    name: str
+    code: str = ""
+    description: str = ""
+    active: bool = True
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 class TicketTask(BaseModel):
     id: str
     label: str
@@ -1527,6 +1538,20 @@ class UpdateCustomObjectRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=180)
     description: str | None = Field(default=None, max_length=500)
     fields: list[CustomObjectField] | None = None
+    active: bool | None = None
+
+
+class CreateProductRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=180)
+    code: str = Field(default="", max_length=64)
+    description: str = Field(default="", max_length=500)
+    active: bool = True
+
+
+class UpdateProductRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=180)
+    code: str | None = Field(default=None, max_length=64)
+    description: str | None = Field(default=None, max_length=500)
     active: bool | None = None
 
 
