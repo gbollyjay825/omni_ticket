@@ -412,6 +412,15 @@ const setupBuiltModules = new Set<string>([
   'Scenario automations',
   'Custom objects',
   'Multiple products',
+  'Proactive outreach',
+  'Phone',
+  'Marketplace apps',
+  'Field service scheduling',
+  'Account exports',
+  'Scheduled exports',
+  'Profile settings',
+  'Security controls',
+  'Threads',
 ])
 const analyticsReportCatalog: Record<AnalyticsReportGroup, { title: string; detail: string; badge: string }[]> = {
   catalog: [
@@ -3819,6 +3828,25 @@ function OmniApp() {
   }
 
   function openSetupModule(moduleName: string) {
+    // Some catalog tiles live on a dedicated screen — navigate there directly.
+    const screenRoutes: Record<string, ScreenId> = {
+      'Field service scheduling': 'workforce',
+      'Scheduled exports': 'analytics',
+      Threads: 'inbox',
+    }
+    if (screenRoutes[moduleName]) {
+      if (moduleName === 'Scheduled exports') setAnalyticsReportGroup('scheduled')
+      selectScreen(screenRoutes[moduleName])
+      return
+    }
+    // Some tiles belong to a different Setup section than the one they are listed under.
+    const sectionRoutes: Record<string, SetupSectionId> = {
+      'Account exports': 'governance',
+      'Security controls': 'people',
+    }
+    if (sectionRoutes[moduleName]) {
+      setSetupSection(sectionRoutes[moduleName])
+    }
     // Route People modules to the right sub-view, then reveal the live settings panel.
     const peopleRoutes: Record<string, 'users' | 'groups' | 'security' | 'hours'> = {
       Agents: 'users',
@@ -3830,6 +3858,8 @@ function OmniApp() {
       MFA: 'security',
       'Enterprise SSO': 'security',
       'API status': 'security',
+      'Profile settings': 'security',
+      'Security controls': 'security',
     }
     if (peopleRoutes[moduleName]) {
       setPeopleView(peopleRoutes[moduleName])
