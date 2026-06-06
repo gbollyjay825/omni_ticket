@@ -17,7 +17,7 @@ from app.db.models import (
 )
 from app.db.session import create_database_engine
 
-ALEMBIC_HEAD = "20260606_0032"
+ALEMBIC_HEAD = "20260606_0033"
 
 
 def test_database_schema_and_seed_are_postgres_ready_with_local_sqlite(tmp_path: Path) -> None:
@@ -40,6 +40,7 @@ def test_database_schema_and_seed_are_postgres_ready_with_local_sqlite(tmp_path:
     assert "email_notifications" in tables
     assert "scenario_automations" in tables
     assert "custom_field_definitions" in tables
+    assert "custom_objects" in tables
     assert "customers" in tables
     assert "attachments" in tables
     assert "csat_feedback" in tables
@@ -160,6 +161,7 @@ def test_create_schema_repairs_legacy_user_auth_columns_and_stamps_head(
     assert "email_notifications" in inspector.get_table_names()
     assert "scenario_automations" in inspector.get_table_names()
     assert "custom_field_definitions" in inspector.get_table_names()
+    assert "custom_objects" in inspector.get_table_names()
 
     with Session(engine) as session:
         user = session.execute(

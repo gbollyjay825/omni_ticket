@@ -28,6 +28,7 @@ import type {
   EmailNotification,
   ScenarioAutomation,
   CustomFieldDefinition,
+  CustomObject,
   SlaState,
   SupportGroup,
   TicketField,
@@ -49,6 +50,7 @@ import {
   createBackendEmailNotification,
   createBackendScenarioAutomation,
   createBackendCustomFieldDefinition,
+  createBackendCustomObject,
   createBackendSupportGroup,
   createBackendTicketField,
   createBackendUser,
@@ -67,6 +69,7 @@ import {
   type BackendCreateEmailNotificationInput,
   type BackendCreateScenarioAutomationInput,
   type BackendCreateCustomFieldDefinitionInput,
+  type BackendCreateCustomObjectInput,
   type BackendCreateSupportGroupInput,
   type BackendCreateUserInput,
   type BackendCustomer,
@@ -92,6 +95,7 @@ import {
   patchBackendEmailNotification,
   patchBackendScenarioAutomation,
   patchBackendCustomFieldDefinition,
+  patchBackendCustomObject,
   patchBackendSupportGroup,
   patchBackendTicket,
   patchBackendTicketField,
@@ -113,6 +117,7 @@ import {
   type BackendEmailNotification,
   type BackendScenarioAutomation,
   type BackendCustomFieldDefinition,
+  type BackendCustomObject,
   type BackendSyncState,
   type BackendUpdateSlaPolicyInput,
   type BackendUpdateBusinessHoursInput,
@@ -122,6 +127,7 @@ import {
   type BackendUpdateEmailNotificationInput,
   type BackendUpdateScenarioAutomationInput,
   type BackendUpdateCustomFieldDefinitionInput,
+  type BackendUpdateCustomObjectInput,
   type BackendUpdateSupportGroupInput,
   type BackendUpdateUserInput,
   type BackendUpdateTicketFieldInput,
@@ -287,6 +293,7 @@ function mergeReferenceData(state: OmniState): OmniState {
     emailNotifications: state.emailNotifications ?? initialOmniState.emailNotifications,
     scenarioAutomations: state.scenarioAutomations ?? initialOmniState.scenarioAutomations,
     customFieldDefinitions: state.customFieldDefinitions ?? initialOmniState.customFieldDefinitions,
+    customObjects: state.customObjects ?? initialOmniState.customObjects,
     responseMacros: state.responseMacros ?? initialOmniState.responseMacros,
     epics: initialOmniState.epics,
     backlog: initialOmniState.backlog,
@@ -589,6 +596,24 @@ function mapCustomFieldDefinition(field: BackendCustomFieldDefinition): CustomFi
     helpText: field.help_text,
     position: field.position,
     updatedAt: field.updated_at,
+  }
+}
+
+function mapCustomObject(object: BackendCustomObject): CustomObject {
+  return {
+    id: object.id,
+    key: object.key,
+    name: object.name,
+    description: object.description,
+    fields: (object.fields ?? []).map((field) => ({
+      key: field.key,
+      label: field.label,
+      fieldType: field.field_type,
+      required: field.required,
+      options: field.options ?? [],
+    })),
+    active: object.active,
+    updatedAt: object.updated_at,
   }
 }
 
@@ -904,6 +929,7 @@ function mergeBackendSnapshot(current: OmniState, snapshot: BackendSnapshot): Om
     snapshot.customFieldDefinitions ??
     []
   ).map(mapCustomFieldDefinition)
+  const customObjects = (snapshot.custom_objects ?? snapshot.customObjects ?? []).map(mapCustomObject)
   const selectedConversationId =
     conversations.find((conversation) => conversation.id === current.selectedConversationId)?.id ??
     conversations[0]?.id ??
@@ -944,6 +970,7 @@ function mergeBackendSnapshot(current: OmniState, snapshot: BackendSnapshot): Om
     emailNotifications,
     scenarioAutomations,
     customFieldDefinitions,
+    customObjects,
     articles: snapshot.knowledge.map(mapKnowledgeArticle),
     ticketFields: (snapshot.ticket_fields ?? snapshot.ticketFields ?? []).map(mapTicketField),
     responseMacros: snapshot.macros.map(mapResponseMacro),
@@ -2133,6 +2160,14 @@ export function useOmniStore() {
     return syncBackendMutation((session) => patchBackendCustomFieldDefinition(fieldId, patch, session))
   }
 
+  function createCustomObject(input: BackendCreateCustomObjectInput) {
+    return syncBackendMutation((session) => createBackendCustomObject(input, session))
+  }
+
+  function updateCustomObject(objectId: string, patch: BackendUpdateCustomObjectInput) {
+    return syncBackendMutation((session) => patchBackendCustomObject(objectId, patch, session))
+  }
+
   function createTicketField(input: BackendCreateTicketFieldInput) {
     return syncBackendMutation((session) => createBackendTicketField(input, session))
   }
@@ -2403,6 +2438,8 @@ export function useOmniStore() {
     updateScenarioAutomation,
     createCustomFieldDefinition,
     updateCustomFieldDefinition,
+    createCustomObject,
+    updateCustomObject,
     createTicketField,
     updateTicketField,
     changePassword,

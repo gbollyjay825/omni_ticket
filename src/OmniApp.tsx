@@ -74,6 +74,8 @@ import type {
   ScenarioAction,
   ScenarioAutomation,
   CustomFieldDefinition,
+  CustomObject,
+  CustomObjectField,
   TicketField,
   TicketFieldType,
   TicketTemplate,
@@ -466,6 +468,7 @@ const setupBuiltModules = new Set<string>([
   'CSAT surveys',
   'Email notifications',
   'Scenario automations',
+  'Custom objects',
 ])
 const analyticsReportCatalog: Record<AnalyticsReportGroup, { title: string; detail: string; badge: string }[]> = {
   catalog: [
@@ -900,6 +903,8 @@ function OmniApp() {
     updateScenarioAutomation,
     createCustomFieldDefinition,
     updateCustomFieldDefinition,
+    createCustomObject,
+    updateCustomObject,
     createTicketField,
     updateTicketField,
     changePassword,
@@ -1058,6 +1063,12 @@ function OmniApp() {
     options: string
   }>({ key: '', label: '', fieldType: 'text', required: false, options: '' })
   const [customFieldBusy, setCustomFieldBusy] = useState(false)
+  const [objectDraft, setObjectDraft] = useState({ key: '', name: '', description: '' })
+  const [objectFields, setObjectFields] = useState<CustomObjectField[]>([])
+  const [objectFieldDraft, setObjectFieldDraft] = useState<{ key: string; label: string; fieldType: TicketFieldType }>(
+    { key: '', label: '', fieldType: 'text' },
+  )
+  const [objectBusy, setObjectBusy] = useState(false)
   const [addUserOpen, setAddUserOpen] = useState(false)
   const [addGroupOpen, setAddGroupOpen] = useState(false)
   const [addSlaPolicyOpen, setAddSlaPolicyOpen] = useState(false)
@@ -3394,6 +3405,66 @@ function OmniApp() {
       if (saved) setPrototypeNotice(`Custom field ${field.active ? 'paused' : 'activated'}.`)
     } finally {
       setCustomFieldBusy(false)
+    }
+  }
+
+  function addObjectField() {
+    const key = objectFieldDraft.key.trim().toLowerCase()
+    if (!/^[a-z][a-z0-9_]{1,63}$/.test(key)) return
+    setObjectFields((current) => [
+      ...current,
+      {
+        key,
+        label: objectFieldDraft.label.trim() || key,
+        fieldType: objectFieldDraft.fieldType,
+        required: false,
+        options: [],
+      },
+    ])
+    setObjectFieldDraft({ key: '', label: '', fieldType: 'text' })
+  }
+
+  function removeObjectField(index: number) {
+    setObjectFields((current) => current.filter((_, position) => position !== index))
+  }
+
+  async function handleCreateCustomObject(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const key = objectDraft.key.trim().toLowerCase()
+    const name = objectDraft.name.trim()
+    if (!/^[a-z][a-z0-9_]{1,63}$/.test(key) || name.length < 1 || objectBusy) return
+    setObjectBusy(true)
+    try {
+      const saved = await createCustomObject({
+        key,
+        name,
+        description: objectDraft.description.trim(),
+        fields: objectFields.map((field) => ({
+          key: field.key,
+          label: field.label,
+          field_type: field.fieldType,
+          required: field.required,
+          options: field.options,
+        })),
+      })
+      if (saved) {
+        setObjectDraft({ key: '', name: '', description: '' })
+        setObjectFields([])
+        setPrototypeNotice('Custom object saved.')
+      }
+    } finally {
+      setObjectBusy(false)
+    }
+  }
+
+  async function toggleCustomObject(object: CustomObject) {
+    if (objectBusy) return
+    setObjectBusy(true)
+    try {
+      const saved = await updateCustomObject(object.id, { active: !object.active })
+      if (saved) setPrototypeNotice(`Custom object ${object.active ? 'paused' : 'activated'}.`)
+    } finally {
+      setObjectBusy(false)
     }
   }
 
@@ -7340,6 +7411,143 @@ function OmniApp() {
                       </div>
                     </article>
                   ))
+              )}
+            </div>
+          </div>
+          <div className="automation-settings-panel custom-objects-panel">
+            <div className="panel-head compact">
+              <div>
+                <span>Custom objects</span>
+                <h2>Reusable object schemas with typed fields</h2>
+              </div>
+              <DatabaseZap size={18} />
+            </div>
+            <form className="user-create-form canned-response-form" onSubmit={handleCreateCustomObject}>
+              <div className="canned-form-row">
+                <label>
+                  <span>Key</span>
+                  <input
+                    required
+                    value={objectDraft.key}
+                    onChange={(event) => setObjectDraft((current) => ({ ...current, key: event.target.value }))}
+                    placeholder="loyalty_account"
+                    disabled={!canManageUsers || objectBusy}
+                  />
+                </label>
+                <label>
+                  <span>Name</span>
+                  <input
+                    required
+                    value={objectDraft.name}
+                    onChange={(event) => setObjectDraft((current) => ({ ...current, name: event.target.value }))}
+                    placeholder="Loyalty account"
+                    disabled={!canManageUsers || objectBusy}
+                  />
+                </label>
+              </div>
+              <label>
+                <span>Description</span>
+                <input
+                  value={objectDraft.description}
+                  onChange={(event) => setObjectDraft((current) => ({ ...current, description: event.target.value }))}
+                  placeholder="Frequent-flyer account linked to a traveller"
+                  disabled={!canManageUsers || objectBusy}
+                />
+              </label>
+              <div className="scenario-action-builder">
+                <span className="scenario-builder-label">Fields</span>
+                {objectFields.length > 0 ? (
+                  <ul className="scenario-action-list">
+                    {objectFields.map((field, index) => (
+                      <li key={`${field.key}-${index}`}>
+                        <span>{field.label} (<b>{titleCase(field.fieldType)}</b>) · {field.key}</span>
+                        <button type="button" aria-label="Remove field" onClick={() => removeObjectField(index)}>
+                          <X size={13} />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                <div className="scenario-action-row">
+                  <input
+                    value={objectFieldDraft.key}
+                    onChange={(event) => setObjectFieldDraft((current) => ({ ...current, key: event.target.value }))}
+                    placeholder="field_key"
+                    disabled={!canManageUsers || objectBusy}
+                    aria-label="Field key"
+                  />
+                  <input
+                    value={objectFieldDraft.label}
+                    onChange={(event) => setObjectFieldDraft((current) => ({ ...current, label: event.target.value }))}
+                    placeholder="Field label"
+                    disabled={!canManageUsers || objectBusy}
+                    aria-label="Field label"
+                  />
+                  <select
+                    value={objectFieldDraft.fieldType}
+                    onChange={(event) =>
+                      setObjectFieldDraft((current) => ({ ...current, fieldType: event.target.value as TicketFieldType }))
+                    }
+                    disabled={!canManageUsers || objectBusy}
+                    aria-label="Field type"
+                  >
+                    {ticketFieldTypeOptions.map((option) => (
+                      <option key={option} value={option}>{titleCase(option)}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="secondary-action"
+                    onClick={addObjectField}
+                    disabled={!canManageUsers || objectBusy || !/^[a-z][a-z0-9_]{1,63}$/.test(objectFieldDraft.key.trim().toLowerCase())}
+                  >
+                    <Plus size={14} />
+                    Add field
+                  </button>
+                </div>
+              </div>
+              <button
+                type="submit"
+                className="primary-action"
+                disabled={!canManageUsers || objectBusy || objectDraft.name.trim().length < 1 || !/^[a-z][a-z0-9_]{1,63}$/.test(objectDraft.key.trim().toLowerCase())}
+              >
+                <Plus size={16} />
+                Add object
+              </button>
+            </form>
+            <div className="canned-response-list">
+              {state.customObjects.length === 0 ? (
+                <p className="setup-module-hint">No custom objects yet. Define one above.</p>
+              ) : (
+                state.customObjects.map((object) => (
+                  <article className={`canned-response-card ${object.active ? '' : 'inactive'}`} key={object.id}>
+                    <div className="canned-card-head">
+                      <div>
+                        <strong>{object.name}</strong>
+                        <span className="template-priority">{object.fields.length} fields</span>
+                      </div>
+                      <span><code>{object.key}</code></span>
+                    </div>
+                    {object.description ? <p className="canned-card-body">{object.description}</p> : null}
+                    {object.fields.length > 0 ? (
+                      <div className="tag-list compact-tags">
+                        {object.fields.map((field) => (
+                          <span key={field.key}>{field.label}: {titleCase(field.fieldType)}</span>
+                        ))}
+                      </div>
+                    ) : null}
+                    <div className="canned-card-actions">
+                      <button
+                        type="button"
+                        className="secondary-action"
+                        disabled={!canManageUsers || objectBusy}
+                        onClick={() => void toggleCustomObject(object)}
+                      >
+                        {object.active ? 'Pause' : 'Activate'}
+                      </button>
+                    </div>
+                  </article>
+                ))
               )}
             </div>
           </div>

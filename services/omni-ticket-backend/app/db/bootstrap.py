@@ -18,6 +18,7 @@ from app.db.models import (
     CompanyRecord,
     CsatSurveyRecord,
     CustomFieldDefinitionRecord,
+    CustomObjectRecord,
     EmailNotificationRecord,
     ScenarioAutomationRecord,
     ConnectorEventRecord,
@@ -563,6 +564,20 @@ def seed_custom_field_definitions(session: Session, source: InMemoryStore = stor
     session.commit()
 
 
+def seed_custom_objects(session: Session, source: InMemoryStore = store) -> None:
+    for custom_object in source.custom_objects.values():
+        existing = session.get(CustomObjectRecord, custom_object.id) or session.scalar(
+            select(CustomObjectRecord).where(
+                CustomObjectRecord.market_id == custom_object.market_id,
+                CustomObjectRecord.key == custom_object.key,
+            )
+        )
+        if existing is not None:
+            continue
+        session.add(CustomObjectRecord(**_payload(custom_object)))
+    session.commit()
+
+
 def seed_reference_data(session: Session, source: InMemoryStore = store) -> None:
     if session.scalar(select(MarketRecord.id).limit(1)):
         seed_connector_accounts(session)
@@ -577,6 +592,7 @@ def seed_reference_data(session: Session, source: InMemoryStore = store) -> None
         seed_email_notifications(session, source)
         seed_scenario_automations(session, source)
         seed_custom_field_definitions(session, source)
+        seed_custom_objects(session, source)
         return
 
     session.add_all(
@@ -669,6 +685,12 @@ def seed_reference_data(session: Session, source: InMemoryStore = store) -> None
         [
             CustomFieldDefinitionRecord(**_payload(field))
             for field in source.custom_field_definitions.values()
+        ]
+    )
+    session.add_all(
+        [
+            CustomObjectRecord(**_payload(custom_object))
+            for custom_object in source.custom_objects.values()
         ]
     )
     session.add_all(

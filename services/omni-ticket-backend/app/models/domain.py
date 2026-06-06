@@ -639,6 +639,26 @@ class CustomFieldDefinition(BaseModel):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class CustomObjectField(BaseModel):
+    key: str = Field(pattern=r"^[a-z][a-z0-9_]{1,63}$")
+    label: str
+    field_type: TicketFieldType = TicketFieldType.text
+    required: bool = False
+    options: list[str] = Field(default_factory=list)
+
+
+class CustomObject(BaseModel):
+    id: str
+    market_id: str = "market-ng"
+    key: str = Field(pattern=r"^[a-z][a-z0-9_]{1,63}$")
+    name: str
+    description: str = ""
+    fields: list[CustomObjectField] = Field(default_factory=list)
+    active: bool = True
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 class TicketTask(BaseModel):
     id: str
     label: str
@@ -1493,6 +1513,21 @@ class UpdateCustomFieldDefinitionRequest(BaseModel):
     options: list[str] | None = None
     help_text: str | None = Field(default=None, max_length=300)
     position: int | None = None
+
+
+class CreateCustomObjectRequest(BaseModel):
+    key: str = Field(pattern=r"^[a-z][a-z0-9_]{1,63}$")
+    name: str = Field(min_length=1, max_length=180)
+    description: str = Field(default="", max_length=500)
+    fields: list[CustomObjectField] = Field(default_factory=list)
+    active: bool = True
+
+
+class UpdateCustomObjectRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=180)
+    description: str | None = Field(default=None, max_length=500)
+    fields: list[CustomObjectField] | None = None
+    active: bool | None = None
 
 
 class UpdateTicketRequest(BaseModel):

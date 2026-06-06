@@ -14,6 +14,7 @@ from app.db.mappers import (
     channel_from_record,
     csat_survey_from_record,
     custom_field_definition_from_record,
+    custom_object_from_record,
     email_notification_from_record,
     scenario_automation_from_record,
     knowledge_article_from_record,
@@ -32,6 +33,7 @@ from app.db.models import (
     ChannelRecord,
     CsatSurveyRecord,
     CustomFieldDefinitionRecord,
+    CustomObjectRecord,
     EmailNotificationRecord,
     HandoffRecord,
     KnowledgeArticleRecord,
@@ -53,6 +55,7 @@ from app.models.domain import (
     CreateBusinessHoursRequest,
     CreateCsatSurveyRequest,
     CreateCustomFieldDefinitionRequest,
+    CreateCustomObjectRequest,
     CreateEmailNotificationRequest,
     CreateKnowledgeArticleRequest,
     CreateResponseMacroRequest,
@@ -64,6 +67,7 @@ from app.models.domain import (
     CreateTicketTemplateRequest,
     CsatSurvey,
     CustomFieldDefinition,
+    CustomObject,
     EmailNotification,
     KnowledgeArticle,
     KnowledgeSuggestion,
@@ -83,6 +87,7 @@ from app.models.domain import (
     UpdateChannelRequest,
     UpdateCsatSurveyRequest,
     UpdateCustomFieldDefinitionRequest,
+    UpdateCustomObjectRequest,
     UpdateEmailNotificationRequest,
     UpdateKnowledgeArticleRequest,
     UpdateResponseMacroRequest,
@@ -604,6 +609,44 @@ def _custom_field_payload(
                 status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Select fields need at least one option",
             )
+    return payload
+
+
+def _custom_object_payload(
+    request: CreateCustomObjectRequest | UpdateCustomObjectRequest,
+) -> dict:
+    payload = request.model_dump(exclude_unset=True, mode="json")
+    if "name" in payload and payload["name"] is not None:
+        payload["name"] = _clean_group_name(payload["name"])
+        if not payload["name"]:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Custom object name is required",
+            )
+    if "description" in payload and payload["description"] is not None:
+        payload["description"] = payload["description"].strip()
+    if "fields" in payload and payload["fields"] is not None:
+        seen: set[str] = set()
+        fields: list[dict] = []
+        for field in payload["fields"]:
+            key = str(field.get("key", "")).strip().lower()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            field_type = field.get("field_type", "text")
+            options = _normalized_options(field.get("options") or [])
+            if field_type not in _OPTION_FIELD_TYPES:
+                options = []
+            fields.append(
+                {
+                    "key": key,
+                    "label": str(field.get("label", "")).strip() or key,
+                    "field_type": field_type,
+                    "required": bool(field.get("required", False)),
+                    "options": options,
+                }
+            )
+        payload["fields"] = fields
     return payload
 
 
@@ -1678,6 +1721,95 @@ class ManagementRepository:
         field = custom_field_definition_from_record(record)
         state.custom_field_definitions[field.id] = field
         return field
+
+    def list_custom_objects(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        market_id: str,
+    ) -> list[CustomObject]:
+        records = db.scalars(
+            select(CustomObjectRecord).where(CustomObjectRecord.market_id == market_id)
+        ).all()
+        objects = [custom_object_from_record(record) for record in records]
+        objects.sort(key=lambda obj: (not obj.active, obj.name.lower()))
+        state.custom_objects = {
+            **{
+                key: value
+                for key, value in state.custom_objects.items()
+                if value.market_id != market_id
+            },
+            **{obj.id: obj for obj in objects},
+        }
+        return objects
+
+    def create_custom_object(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        request: CreateCustomObjectRequest,
+        market_id: str,
+        actor: str,
+    ) -> CustomObject:
+        payload = _custom_object_payload(request)
+        payload["key"] = payload["key"].strip().lower()
+        duplicate = db.scalar(
+            select(CustomObjectRecord).where(
+                CustomObjectRecord.market_id == market_id,
+                CustomObjectRecord.key == payload["key"],
+            )
+        )
+        if duplicate is not None:
+            raise HTTPException(status.HTTP_409_CONFLICT, detail="Custom object key already exists")
+        record = CustomObjectRecord(id=_new_id("object"), market_id=market_id, **payload)
+        db.add(record)
+        db.flush()
+        _audit(
+            db,
+            state,
+            actor=actor,
+            action="custom_object.create",
+            entity_type="custom_object",
+            entity_id=record.id,
+            market_id=market_id,
+            details={"key": record.key, "name": record.name, "active": record.active},
+        )
+        db.commit()
+        db.refresh(record)
+        custom_object = custom_object_from_record(record)
+        state.custom_objects[custom_object.id] = custom_object
+        return custom_object
+
+    def update_custom_object(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        object_id: str,
+        request: UpdateCustomObjectRequest,
+        market_id: str,
+        actor: str,
+    ) -> CustomObject:
+        record = db.get(CustomObjectRecord, object_id)
+        if record is None or record.market_id != market_id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Custom object not found")
+        patch = _custom_object_payload(request)
+        for key, value in patch.items():
+            setattr(record, key, value)
+        _audit(
+            db,
+            state,
+            actor=actor,
+            action="custom_object.update",
+            entity_type="custom_object",
+            entity_id=object_id,
+            market_id=market_id,
+            details=patch,
+        )
+        db.commit()
+        db.refresh(record)
+        custom_object = custom_object_from_record(record)
+        state.custom_objects[custom_object.id] = custom_object
+        return custom_object
 
     def list_knowledge(
         self,

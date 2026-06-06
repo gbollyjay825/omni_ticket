@@ -79,6 +79,7 @@ from app.models.domain import (
     CsatFeedback,
     CsatSurvey,
     CustomFieldDefinition,
+    CustomObject,
     EmailNotification,
     ScenarioAutomation,
     CreateAutomationRuleRequest,
@@ -99,6 +100,7 @@ from app.models.domain import (
     CreateEmailNotificationRequest,
     CreateScenarioAutomationRequest,
     CreateCustomFieldDefinitionRequest,
+    CreateCustomObjectRequest,
     CreateTicketFieldRequest,
     CreateTicketRequest,
     CreateTicketTemplateRequest,
@@ -169,6 +171,7 @@ from app.models.domain import (
     UpdateEmailNotificationRequest,
     UpdateScenarioAutomationRequest,
     UpdateCustomFieldDefinitionRequest,
+    UpdateCustomObjectRequest,
     UpdateTicketFieldRequest,
     UpdateTicketRequest,
     UpdateTicketTemplateRequest,
@@ -1508,6 +1511,51 @@ def update_custom_field_definition(
         db,
         state,
         field_id,
+        request,
+        context.market_id,
+        context.user.email,
+    )
+
+
+@router.get("/custom-objects", response_model=list[CustomObject])
+def list_custom_objects(
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> list[CustomObject]:
+    return management_repository.list_custom_objects(db, state, context.market_id)
+
+
+@router.post("/custom-objects", response_model=CustomObject, status_code=status.HTTP_201_CREATED)
+def create_custom_object(
+    request: CreateCustomObjectRequest,
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> CustomObject:
+    require_admin(context)
+    return management_repository.create_custom_object(
+        db,
+        state,
+        request,
+        context.market_id,
+        context.user.email,
+    )
+
+
+@router.patch("/custom-objects/{object_id}", response_model=CustomObject)
+def update_custom_object(
+    object_id: str,
+    request: UpdateCustomObjectRequest,
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> CustomObject:
+    require_admin(context)
+    return management_repository.update_custom_object(
+        db,
+        state,
+        object_id,
         request,
         context.market_id,
         context.user.email,
@@ -3319,6 +3367,7 @@ def read_frontend_snapshot(
         "custom_field_definitions": management_repository.list_custom_field_definitions(
             db, state, context.market_id
         ),
+        "custom_objects": management_repository.list_custom_objects(db, state, context.market_id),
         "companies": companies,
         "customers": customers,
         "tickets": [

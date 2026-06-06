@@ -13,6 +13,7 @@ from app.db.models import (
     CsatFeedbackRecord,
     CsatSurveyRecord,
     CustomFieldDefinitionRecord,
+    CustomObjectRecord,
     CustomerRecord,
     EmailNotificationRecord,
     HandoffRecord,
@@ -59,6 +60,7 @@ from app.models.domain import (
     CsatSurvey,
     Customer,
     CustomFieldDefinition,
+    CustomObject,
     EmailNotification,
     Handoff,
     KnowledgeArticle,
@@ -283,6 +285,22 @@ def custom_field_definition_from_record(
             "options": record.options or [],
             "help_text": record.help_text,
             "position": record.position,
+            "created_at": record.created_at,
+            "updated_at": record.updated_at,
+        }
+    )
+
+
+def custom_object_from_record(record: CustomObjectRecord) -> CustomObject:
+    return CustomObject.model_validate(
+        {
+            "id": record.id,
+            "market_id": record.market_id,
+            "key": record.key,
+            "name": record.name,
+            "description": record.description,
+            "fields": record.fields or [],
+            "active": record.active,
             "created_at": record.created_at,
             "updated_at": record.updated_at,
         }

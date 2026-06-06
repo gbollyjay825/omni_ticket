@@ -330,6 +330,22 @@ class CustomFieldDefinitionRecord(TimestampMixin, Base):
     )
 
 
+class CustomObjectRecord(TimestampMixin, Base):
+    __tablename__ = "custom_objects"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    market_id: Mapped[str] = mapped_column(ForeignKey("markets.id"), index=True)
+    key: Mapped[str] = mapped_column(String(64), nullable=False)
+    name: Mapped[str] = mapped_column(String(180), nullable=False)
+    description: Mapped[str] = mapped_column(String(500), default="")
+    fields: Mapped[list] = mapped_column(JSON, default=list)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+
+    __table_args__ = (
+        UniqueConstraint("market_id", "key", name="uq_custom_object_market_key"),
+    )
+
+
 class ChannelRecord(TimestampMixin, Base):
     __tablename__ = "channels"
 

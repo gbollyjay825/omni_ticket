@@ -13,6 +13,8 @@ from app.models.domain import (
     BusinessHoursDay,
     CsatSurvey,
     CustomFieldDefinition,
+    CustomObject,
+    CustomObjectField,
     EmailNotification,
     ScenarioAction,
     ScenarioAutomation,
@@ -88,6 +90,7 @@ class InMemoryStore:
         self.email_notifications: dict[str, EmailNotification] = {}
         self.scenario_automations: dict[str, ScenarioAutomation] = {}
         self.custom_field_definitions: dict[str, CustomFieldDefinition] = {}
+        self.custom_objects: dict[str, CustomObject] = {}
         self.rules: dict[str, AutomationRule] = {}
         self.connector_events: dict[str, ConnectorEvent] = {}
         self.outbound_messages: dict[str, OutboundMessage] = {}
@@ -669,6 +672,56 @@ class InMemoryStore:
                     label="Account manager",
                     field_type=TicketFieldType.text,
                     position=10,
+                ),
+            }
+
+            self.custom_objects = {
+                "object-loyalty-account": CustomObject(
+                    id="object-loyalty-account",
+                    market_id="market-ng",
+                    key="loyalty_account",
+                    name="Loyalty account",
+                    description="Frequent-flyer account linked to a traveller.",
+                    fields=[
+                        CustomObjectField(
+                            key="membership_id",
+                            label="Membership ID",
+                            field_type=TicketFieldType.text,
+                            required=True,
+                        ),
+                        CustomObjectField(
+                            key="tier",
+                            label="Tier",
+                            field_type=TicketFieldType.select,
+                            options=["Blue", "Silver", "Gold", "Platinum"],
+                        ),
+                        CustomObjectField(
+                            key="points_balance",
+                            label="Points balance",
+                            field_type=TicketFieldType.number,
+                        ),
+                    ],
+                ),
+                "object-travel-asset": CustomObject(
+                    id="object-travel-asset",
+                    market_id="market-ng",
+                    key="travel_asset",
+                    name="Travel asset",
+                    description="Voucher, baggage tag, device, or SIM tied to a booking.",
+                    fields=[
+                        CustomObjectField(
+                            key="asset_tag",
+                            label="Asset tag",
+                            field_type=TicketFieldType.text,
+                            required=True,
+                        ),
+                        CustomObjectField(
+                            key="asset_type",
+                            label="Asset type",
+                            field_type=TicketFieldType.select,
+                            options=["Voucher", "Baggage tag", "Device", "SIM"],
+                        ),
+                    ],
                 ),
             }
 

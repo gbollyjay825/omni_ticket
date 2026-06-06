@@ -1714,6 +1714,53 @@ def test_admin_manages_custom_field_definitions(client: TestClient) -> None:
     assert any(event["action"] == "custom_field.update" for event in audit)
 
 
+def test_admin_manages_custom_objects(client: TestClient) -> None:
+    suffix = uuid4().hex[:6]
+    created = client.post(
+        "/api/v1/custom-objects",
+        json={
+            "key": f"loyalty_{suffix}",
+            "name": "Loyalty account",
+            "description": "Frequent-flyer account",
+            "fields": [
+                {"key": "membership_id", "label": "Membership ID", "field_type": "text", "required": True},
+                {"key": "tier", "label": "Tier", "field_type": "select", "options": ["Blue", "Gold"]},
+                {"key": "tier", "label": "Dup", "field_type": "text"},
+            ],
+        },
+    )
+    assert created.status_code == 201
+    obj = created.json()
+    assert len(obj["fields"]) == 2  # duplicate field key dropped
+    assert obj["fields"][1]["options"] == ["Blue", "Gold"]
+
+    duplicate = client.post(
+        "/api/v1/custom-objects",
+        json={"key": f"loyalty_{suffix}", "name": "Dup"},
+    )
+    assert duplicate.status_code == 409
+
+    listing = client.get("/api/v1/custom-objects")
+    assert listing.status_code == 200
+    assert any(item["id"] == obj["id"] for item in listing.json())
+
+    updated = client.patch(
+        f"/api/v1/custom-objects/{obj['id']}",
+        json={"active": False, "name": "Loyalty programme"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["active"] is False
+    assert updated.json()["name"] == "Loyalty programme"
+
+    snapshot = client.get("/api/v1/frontend/snapshot")
+    assert snapshot.status_code == 200
+    assert any(item["id"] == obj["id"] for item in snapshot.json()["custom_objects"])
+
+    audit = client.get("/api/v1/audit").json()
+    assert any(event["action"] == "custom_object.create" for event in audit)
+    assert any(event["action"] == "custom_object.update" for event in audit)
+
+
 def test_role_policy_blocks_agent_from_admin_and_supervisor_controls(
     client: TestClient,
     login_as: Callable[..., dict[str, str]],

@@ -340,6 +340,24 @@ export interface CustomFieldDefinition {
   updatedAt: string
 }
 
+export interface CustomObjectField {
+  key: string
+  label: string
+  fieldType: TicketFieldType
+  required: boolean
+  options: string[]
+}
+
+export interface CustomObject {
+  id: string
+  key: string
+  name: string
+  description: string
+  fields: CustomObjectField[]
+  active: boolean
+  updatedAt: string
+}
+
 export interface OutboxItem {
   id: string
   conversationId: string
@@ -442,6 +460,7 @@ export interface OmniState {
   emailNotifications: EmailNotification[]
   scenarioAutomations: ScenarioAutomation[]
   customFieldDefinitions: CustomFieldDefinition[]
+  customObjects: CustomObject[]
   handoffs: HandoffRecord[]
   outbox: OutboxItem[]
   settings: WorkspaceSettings

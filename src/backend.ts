@@ -526,6 +526,7 @@ export interface BackendSnapshot {
   emailNotifications: BackendEmailNotification[]
   scenarioAutomations: BackendScenarioAutomation[]
   customFieldDefinitions: BackendCustomFieldDefinition[]
+  customObjects: BackendCustomObject[]
   companies: BackendCompany[]
   customers: BackendCustomer[]
   tickets: BackendTicketContext[]
@@ -552,6 +553,7 @@ export interface BackendSnapshot {
   email_notifications: BackendEmailNotification[]
   scenario_automations: BackendScenarioAutomation[]
   custom_field_definitions: BackendCustomFieldDefinition[]
+  custom_objects: BackendCustomObject[]
   knowledge: BackendKnowledgeArticle[]
   macros: BackendResponseMacro[]
   rules: BackendAutomationRule[]
@@ -1126,6 +1128,41 @@ export interface BackendUpdateCustomFieldDefinitionInput {
   position?: number
 }
 
+export interface BackendCustomObjectField {
+  key: string
+  label: string
+  field_type: BackendTicketFieldType
+  required: boolean
+  options: string[]
+}
+
+export interface BackendCustomObject {
+  id: string
+  market_id: string
+  key: string
+  name: string
+  description: string
+  fields: BackendCustomObjectField[]
+  active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface BackendCreateCustomObjectInput {
+  key: string
+  name: string
+  description?: string
+  fields?: BackendCustomObjectField[]
+  active?: boolean
+}
+
+export interface BackendUpdateCustomObjectInput {
+  name?: string
+  description?: string
+  fields?: BackendCustomObjectField[]
+  active?: boolean
+}
+
 export interface BackendCompany {
   id: string
   market_id: string
@@ -1515,6 +1552,7 @@ interface BackendFrontendSnapshot {
   email_notifications: BackendEmailNotification[]
   scenario_automations: BackendScenarioAutomation[]
   custom_field_definitions: BackendCustomFieldDefinition[]
+  custom_objects: BackendCustomObject[]
   companies: BackendCompany[]
   customers: BackendCustomer[]
   tickets: BackendTicketContext[]
@@ -1681,6 +1719,7 @@ export async function fetchBackendSnapshot(
     emailNotifications: frontendSnapshot.email_notifications ?? [],
     scenarioAutomations: frontendSnapshot.scenario_automations ?? [],
     customFieldDefinitions: frontendSnapshot.custom_field_definitions ?? [],
+    customObjects: frontendSnapshot.custom_objects ?? [],
     connectorAccounts: frontendSnapshot.connector_accounts,
     outboundMessages: frontendSnapshot.outbound_messages,
     outboundProviderConfig: frontendSnapshot.outbound_provider_config ?? [],
@@ -2135,6 +2174,35 @@ export async function patchBackendCustomFieldDefinition(
 ): Promise<BackendCustomFieldDefinition> {
   return fetchJson<BackendCustomFieldDefinition>(
     `/custom-fields/${fieldId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    },
+    session,
+  )
+}
+
+export async function createBackendCustomObject(
+  input: BackendCreateCustomObjectInput,
+  session: BackendSession,
+): Promise<BackendCustomObject> {
+  return fetchJson<BackendCustomObject>(
+    '/custom-objects',
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+    session,
+  )
+}
+
+export async function patchBackendCustomObject(
+  objectId: string,
+  patch: BackendUpdateCustomObjectInput,
+  session: BackendSession,
+): Promise<BackendCustomObject> {
+  return fetchJson<BackendCustomObject>(
+    `/custom-objects/${objectId}`,
     {
       method: 'PATCH',
       body: JSON.stringify(patch),
