@@ -70,6 +70,7 @@ import type {
   SlaState,
   Tag,
   CsatSurvey,
+  EmailNotification,
   TicketField,
   TicketFieldType,
   TicketTemplate,
@@ -446,6 +447,7 @@ const setupBuiltModules = new Set<string>([
   'Ticket templates',
   'Tags',
   'CSAT surveys',
+  'Email notifications',
 ])
 const analyticsReportCatalog: Record<AnalyticsReportGroup, { title: string; detail: string; badge: string }[]> = {
   catalog: [
@@ -874,6 +876,8 @@ function OmniApp() {
     updateTag,
     createCsatSurvey,
     updateCsatSurvey,
+    createEmailNotification,
+    updateEmailNotification,
     createTicketField,
     updateTicketField,
     changePassword,
@@ -1008,6 +1012,14 @@ function OmniApp() {
   const [tagBusy, setTagBusy] = useState(false)
   const [surveyDraft, setSurveyDraft] = useState({ name: '', question: '', scale: 5 })
   const [surveyBusy, setSurveyBusy] = useState(false)
+  const [notifDraft, setNotifDraft] = useState({
+    name: '',
+    event: 'ticket_created',
+    recipients: '',
+    subject: '',
+    body: '',
+  })
+  const [notifBusy, setNotifBusy] = useState(false)
   const [addUserOpen, setAddUserOpen] = useState(false)
   const [addGroupOpen, setAddGroupOpen] = useState(false)
   const [addSlaPolicyOpen, setAddSlaPolicyOpen] = useState(false)
@@ -3219,6 +3231,44 @@ function OmniApp() {
       if (saved) setPrototypeNotice(`CSAT survey ${survey.active ? 'paused' : 'activated'}.`)
     } finally {
       setSurveyBusy(false)
+    }
+  }
+
+  async function handleCreateEmailNotification(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const name = notifDraft.name.trim()
+    if (name.length < 2 || notifBusy) return
+    setNotifBusy(true)
+    try {
+      const recipients = notifDraft.recipients
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean)
+      const saved = await createEmailNotification({
+        name,
+        event: notifDraft.event,
+        recipients,
+        subject: notifDraft.subject.trim(),
+        body: notifDraft.body.trim(),
+      })
+      if (saved) {
+        setNotifDraft({ name: '', event: 'ticket_created', recipients: '', subject: '', body: '' })
+        setPrototypeNotice('Email notification saved.')
+      }
+    } finally {
+      setNotifBusy(false)
+    }
+  }
+
+  async function toggleEmailNotification(notification: EmailNotification) {
+    if (notifBusy) return
+    setNotifBusy(true)
+    try {
+      const saved = await updateEmailNotification(notification.id, { active: !notification.active })
+      if (saved)
+        setPrototypeNotice(`Email notification ${notification.active ? 'paused' : 'activated'}.`)
+    } finally {
+      setNotifBusy(false)
     }
   }
 
@@ -10383,6 +10433,121 @@ function OmniApp() {
                         onClick={() => void toggleCsatSurvey(survey)}
                       >
                         {survey.active ? 'Pause' : 'Activate'}
+                      </button>
+                    </div>
+                  </article>
+                ))
+              )}
+            </div>
+          </div>
+          <div className="automation-settings-panel email-notifications-panel">
+            <div className="panel-head compact">
+              <div>
+                <span>Email notifications</span>
+                <h2>Automatic emails on ticket lifecycle events</h2>
+              </div>
+              <Mail size={18} />
+            </div>
+            <form className="user-create-form canned-response-form" onSubmit={handleCreateEmailNotification}>
+              <div className="canned-form-row">
+                <label>
+                  <span>Name</span>
+                  <input
+                    required
+                    value={notifDraft.name}
+                    onChange={(event) => setNotifDraft((current) => ({ ...current, name: event.target.value }))}
+                    placeholder="New ticket acknowledgement"
+                    disabled={!canManageUsers || notifBusy}
+                  />
+                </label>
+                <label>
+                  <span>Trigger event</span>
+                  <select
+                    value={notifDraft.event}
+                    onChange={(event) => setNotifDraft((current) => ({ ...current, event: event.target.value }))}
+                    disabled={!canManageUsers || notifBusy}
+                  >
+                    <option value="ticket_created">Ticket created</option>
+                    <option value="ticket_assigned">Ticket assigned</option>
+                    <option value="ticket_replied">Agent replied</option>
+                    <option value="ticket_resolved">Ticket resolved</option>
+                    <option value="sla_breach">SLA breach</option>
+                  </select>
+                </label>
+              </div>
+              <label>
+                <span>Recipients (comma separated)</span>
+                <input
+                  value={notifDraft.recipients}
+                  onChange={(event) => setNotifDraft((current) => ({ ...current, recipients: event.target.value }))}
+                  placeholder="requester, assignee, supervisor"
+                  disabled={!canManageUsers || notifBusy}
+                />
+              </label>
+              <label>
+                <span>Subject</span>
+                <input
+                  value={notifDraft.subject}
+                  onChange={(event) => setNotifDraft((current) => ({ ...current, subject: event.target.value }))}
+                  placeholder="We've received your request"
+                  disabled={!canManageUsers || notifBusy}
+                />
+              </label>
+              <label>
+                <span>Body</span>
+                <textarea
+                  rows={3}
+                  value={notifDraft.body}
+                  onChange={(event) => setNotifDraft((current) => ({ ...current, body: event.target.value }))}
+                  placeholder="Hi {{name}}, thanks for contacting support…"
+                  disabled={!canManageUsers || notifBusy}
+                />
+              </label>
+              <button
+                type="submit"
+                className="primary-action"
+                disabled={!canManageUsers || notifBusy || notifDraft.name.trim().length < 2}
+              >
+                <Plus size={16} />
+                Add notification
+              </button>
+            </form>
+            <div className="canned-response-list">
+              {state.emailNotifications.length === 0 ? (
+                <p className="setup-module-hint">No email notifications yet. Add lifecycle emails.</p>
+              ) : (
+                state.emailNotifications.map((notification) => (
+                  <article
+                    className={`canned-response-card ${notification.active ? '' : 'inactive'}`}
+                    key={notification.id}
+                  >
+                    <div className="canned-card-head">
+                      <div>
+                        <strong>{notification.name}</strong>
+                        <span className="template-priority">{titleCase(notification.event.replace(/_/g, ' '))}</span>
+                      </div>
+                      <span>
+                        {notification.recipients.length > 0
+                          ? notification.recipients.join(', ')
+                          : 'No recipients'}
+                      </span>
+                    </div>
+                    {notification.subject ? (
+                      <p className="canned-card-body">
+                        <b>{notification.subject}</b>
+                        {notification.body ? ` — ${notification.body}` : ''}
+                      </p>
+                    ) : notification.body ? (
+                      <p className="canned-card-body">{notification.body}</p>
+                    ) : null}
+                    <div className="canned-card-actions">
+                      <button
+                        type="button"
+                        className="secondary-action"
+                        disabled={!canManageUsers || notifBusy}
+                        onClick={() => void toggleEmailNotification(notification)}
+                      >
+                        {notification.active ? 'Pause' : 'Activate'}
                       </button>
                     </div>
                   </article>

@@ -13,6 +13,7 @@ from app.db.models import (
     CsatFeedbackRecord,
     CsatSurveyRecord,
     CustomerRecord,
+    EmailNotificationRecord,
     HandoffRecord,
     KnowledgeArticleRecord,
     OperationalAlertDeliveryRecord,
@@ -55,6 +56,7 @@ from app.models.domain import (
     CsatSource,
     CsatSurvey,
     Customer,
+    EmailNotification,
     Handoff,
     KnowledgeArticle,
     Market,
@@ -237,6 +239,23 @@ def csat_survey_from_record(record: CsatSurveyRecord) -> CsatSurvey:
             "question": record.question,
             "scale": record.scale,
             "channels": record.channels or [],
+            "active": record.active,
+            "created_at": record.created_at,
+            "updated_at": record.updated_at,
+        }
+    )
+
+
+def email_notification_from_record(record: EmailNotificationRecord) -> EmailNotification:
+    return EmailNotification.model_validate(
+        {
+            "id": record.id,
+            "market_id": record.market_id,
+            "name": record.name,
+            "event": record.event,
+            "recipients": record.recipients or [],
+            "subject": record.subject,
+            "body": record.body,
             "active": record.active,
             "created_at": record.created_at,
             "updated_at": record.updated_at,

@@ -25,6 +25,7 @@ import type {
   TicketTemplate,
   Tag,
   CsatSurvey,
+  EmailNotification,
   SlaState,
   SupportGroup,
   TicketField,
@@ -43,6 +44,7 @@ import {
   createBackendTicketTemplate,
   createBackendTag,
   createBackendCsatSurvey,
+  createBackendEmailNotification,
   createBackendSupportGroup,
   createBackendTicketField,
   createBackendUser,
@@ -58,6 +60,7 @@ import {
   type BackendCreateTicketTemplateInput,
   type BackendCreateTagInput,
   type BackendCreateCsatSurveyInput,
+  type BackendCreateEmailNotificationInput,
   type BackendCreateSupportGroupInput,
   type BackendCreateUserInput,
   type BackendCustomer,
@@ -80,6 +83,7 @@ import {
   patchBackendTicketTemplate,
   patchBackendTag,
   patchBackendCsatSurvey,
+  patchBackendEmailNotification,
   patchBackendSupportGroup,
   patchBackendTicket,
   patchBackendTicketField,
@@ -98,12 +102,14 @@ import {
   type BackendTicketTemplate,
   type BackendTag,
   type BackendCsatSurvey,
+  type BackendEmailNotification,
   type BackendSyncState,
   type BackendUpdateSlaPolicyInput,
   type BackendUpdateBusinessHoursInput,
   type BackendUpdateTicketTemplateInput,
   type BackendUpdateTagInput,
   type BackendUpdateCsatSurveyInput,
+  type BackendUpdateEmailNotificationInput,
   type BackendUpdateSupportGroupInput,
   type BackendUpdateUserInput,
   type BackendUpdateTicketFieldInput,
@@ -266,6 +272,7 @@ function mergeReferenceData(state: OmniState): OmniState {
     ticketTemplates: state.ticketTemplates ?? initialOmniState.ticketTemplates,
     tags: state.tags ?? initialOmniState.tags,
     csatSurveys: state.csatSurveys ?? initialOmniState.csatSurveys,
+    emailNotifications: state.emailNotifications ?? initialOmniState.emailNotifications,
     responseMacros: state.responseMacros ?? initialOmniState.responseMacros,
     epics: initialOmniState.epics,
     backlog: initialOmniState.backlog,
@@ -525,6 +532,19 @@ function mapCsatSurvey(survey: BackendCsatSurvey): CsatSurvey {
     channels: (survey.channels ?? []).map(normalizeChannelId),
     active: survey.active,
     updatedAt: survey.updated_at,
+  }
+}
+
+function mapEmailNotification(notification: BackendEmailNotification): EmailNotification {
+  return {
+    id: notification.id,
+    name: notification.name,
+    event: notification.event,
+    recipients: notification.recipients ?? [],
+    subject: notification.subject,
+    body: notification.body,
+    active: notification.active,
+    updatedAt: notification.updated_at,
   }
 }
 
@@ -825,6 +845,11 @@ function mergeBackendSnapshot(current: OmniState, snapshot: BackendSnapshot): Om
   )
   const tags = (snapshot.tags ?? []).map(mapTag)
   const csatSurveys = (snapshot.csat_surveys ?? snapshot.csatSurveys ?? []).map(mapCsatSurvey)
+  const emailNotifications = (
+    snapshot.email_notifications ??
+    snapshot.emailNotifications ??
+    []
+  ).map(mapEmailNotification)
   const selectedConversationId =
     conversations.find((conversation) => conversation.id === current.selectedConversationId)?.id ??
     conversations[0]?.id ??
@@ -862,6 +887,7 @@ function mergeBackendSnapshot(current: OmniState, snapshot: BackendSnapshot): Om
     ticketTemplates,
     tags,
     csatSurveys,
+    emailNotifications,
     articles: snapshot.knowledge.map(mapKnowledgeArticle),
     ticketFields: (snapshot.ticket_fields ?? snapshot.ticketFields ?? []).map(mapTicketField),
     responseMacros: snapshot.macros.map(mapResponseMacro),
@@ -2027,6 +2053,14 @@ export function useOmniStore() {
     return syncBackendMutation((session) => patchBackendCsatSurvey(surveyId, patch, session))
   }
 
+  function createEmailNotification(input: BackendCreateEmailNotificationInput) {
+    return syncBackendMutation((session) => createBackendEmailNotification(input, session))
+  }
+
+  function updateEmailNotification(notificationId: string, patch: BackendUpdateEmailNotificationInput) {
+    return syncBackendMutation((session) => patchBackendEmailNotification(notificationId, patch, session))
+  }
+
   function createTicketField(input: BackendCreateTicketFieldInput) {
     return syncBackendMutation((session) => createBackendTicketField(input, session))
   }
@@ -2291,6 +2325,8 @@ export function useOmniStore() {
     updateTag,
     createCsatSurvey,
     updateCsatSurvey,
+    createEmailNotification,
+    updateEmailNotification,
     createTicketField,
     updateTicketField,
     changePassword,

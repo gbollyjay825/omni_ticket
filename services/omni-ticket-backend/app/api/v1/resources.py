@@ -78,6 +78,7 @@ from app.models.domain import (
     ConnectorInboundRequest,
     CsatFeedback,
     CsatSurvey,
+    EmailNotification,
     CreateAutomationRuleRequest,
     CreateAttachmentRequest,
     CreateBusinessHoursRequest,
@@ -93,6 +94,7 @@ from app.models.domain import (
     CreateSupportGroupRequest,
     CreateTagRequest,
     CreateCsatSurveyRequest,
+    CreateEmailNotificationRequest,
     CreateTicketFieldRequest,
     CreateTicketRequest,
     CreateTicketTemplateRequest,
@@ -160,6 +162,7 @@ from app.models.domain import (
     UpdateSupportGroupRequest,
     UpdateTagRequest,
     UpdateCsatSurveyRequest,
+    UpdateEmailNotificationRequest,
     UpdateTicketFieldRequest,
     UpdateTicketRequest,
     UpdateTicketTemplateRequest,
@@ -1352,6 +1355,53 @@ def update_csat_survey(
         db,
         state,
         survey_id,
+        request,
+        context.market_id,
+        context.user.email,
+    )
+
+
+@router.get("/email-notifications", response_model=list[EmailNotification])
+def list_email_notifications(
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> list[EmailNotification]:
+    return management_repository.list_email_notifications(db, state, context.market_id)
+
+
+@router.post(
+    "/email-notifications", response_model=EmailNotification, status_code=status.HTTP_201_CREATED
+)
+def create_email_notification(
+    request: CreateEmailNotificationRequest,
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> EmailNotification:
+    require_admin(context)
+    return management_repository.create_email_notification(
+        db,
+        state,
+        request,
+        context.market_id,
+        context.user.email,
+    )
+
+
+@router.patch("/email-notifications/{notification_id}", response_model=EmailNotification)
+def update_email_notification(
+    notification_id: str,
+    request: UpdateEmailNotificationRequest,
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> EmailNotification:
+    require_admin(context)
+    return management_repository.update_email_notification(
+        db,
+        state,
+        notification_id,
         request,
         context.market_id,
         context.user.email,
@@ -3154,6 +3204,9 @@ def read_frontend_snapshot(
         "ticket_templates": management_repository.list_ticket_templates(db, state, context.market_id),
         "tags": management_repository.list_tags(db, state, context.market_id),
         "csat_surveys": management_repository.list_csat_surveys(db, state, context.market_id),
+        "email_notifications": management_repository.list_email_notifications(
+            db, state, context.market_id
+        ),
         "companies": companies,
         "customers": customers,
         "tickets": [

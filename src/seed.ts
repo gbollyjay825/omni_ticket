@@ -1782,6 +1782,7 @@ export const initialOmniState: OmniState = {
   ticketTemplates: [],
   tags: [],
   csatSurveys: [],
+  emailNotifications: [],
   handoffs: seedHandoffs,
   outbox: [],
   settings: {

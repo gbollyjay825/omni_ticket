@@ -523,6 +523,7 @@ export interface BackendSnapshot {
   ticketTemplates: BackendTicketTemplate[]
   tags: BackendTag[]
   csatSurveys: BackendCsatSurvey[]
+  emailNotifications: BackendEmailNotification[]
   companies: BackendCompany[]
   customers: BackendCustomer[]
   tickets: BackendTicketContext[]
@@ -546,6 +547,7 @@ export interface BackendSnapshot {
   business_hours: BackendBusinessHours[]
   ticket_templates: BackendTicketTemplate[]
   csat_surveys: BackendCsatSurvey[]
+  email_notifications: BackendEmailNotification[]
   knowledge: BackendKnowledgeArticle[]
   macros: BackendResponseMacro[]
   rules: BackendAutomationRule[]
@@ -1021,6 +1023,37 @@ export interface BackendUpdateCsatSurveyInput {
   active?: boolean
 }
 
+export interface BackendEmailNotification {
+  id: string
+  market_id: string
+  name: string
+  event: string
+  recipients: string[]
+  subject: string
+  body: string
+  active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface BackendCreateEmailNotificationInput {
+  name: string
+  event?: string
+  recipients?: string[]
+  subject?: string
+  body?: string
+  active?: boolean
+}
+
+export interface BackendUpdateEmailNotificationInput {
+  name?: string
+  event?: string
+  recipients?: string[]
+  subject?: string
+  body?: string
+  active?: boolean
+}
+
 export interface BackendCompany {
   id: string
   market_id: string
@@ -1407,6 +1440,7 @@ interface BackendFrontendSnapshot {
   ticket_templates: BackendTicketTemplate[]
   tags: BackendTag[]
   csat_surveys: BackendCsatSurvey[]
+  email_notifications: BackendEmailNotification[]
   companies: BackendCompany[]
   customers: BackendCustomer[]
   tickets: BackendTicketContext[]
@@ -1570,6 +1604,7 @@ export async function fetchBackendSnapshot(
     businessHours: frontendSnapshot.business_hours ?? [],
     ticketTemplates: frontendSnapshot.ticket_templates ?? [],
     csatSurveys: frontendSnapshot.csat_surveys ?? [],
+    emailNotifications: frontendSnapshot.email_notifications ?? [],
     connectorAccounts: frontendSnapshot.connector_accounts,
     outboundMessages: frontendSnapshot.outbound_messages,
     outboundProviderConfig: frontendSnapshot.outbound_provider_config ?? [],
@@ -1937,6 +1972,35 @@ export async function patchBackendCsatSurvey(
 ): Promise<BackendCsatSurvey> {
   return fetchJson<BackendCsatSurvey>(
     `/csat-surveys/${surveyId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    },
+    session,
+  )
+}
+
+export async function createBackendEmailNotification(
+  input: BackendCreateEmailNotificationInput,
+  session: BackendSession,
+): Promise<BackendEmailNotification> {
+  return fetchJson<BackendEmailNotification>(
+    '/email-notifications',
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+    session,
+  )
+}
+
+export async function patchBackendEmailNotification(
+  notificationId: string,
+  patch: BackendUpdateEmailNotificationInput,
+  session: BackendSession,
+): Promise<BackendEmailNotification> {
+  return fetchJson<BackendEmailNotification>(
+    `/email-notifications/${notificationId}`,
     {
       method: 'PATCH',
       body: JSON.stringify(patch),

@@ -301,6 +301,17 @@ export interface CsatSurvey {
   updatedAt: string
 }
 
+export interface EmailNotification {
+  id: string
+  name: string
+  event: string
+  recipients: string[]
+  subject: string
+  body: string
+  active: boolean
+  updatedAt: string
+}
+
 export interface OutboxItem {
   id: string
   conversationId: string
@@ -400,6 +411,7 @@ export interface OmniState {
   ticketTemplates: TicketTemplate[]
   tags: Tag[]
   csatSurveys: CsatSurvey[]
+  emailNotifications: EmailNotification[]
   handoffs: HandoffRecord[]
   outbox: OutboxItem[]
   settings: WorkspaceSettings

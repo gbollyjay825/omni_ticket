@@ -12,6 +12,7 @@ from app.models.domain import (
     BusinessHours,
     BusinessHoursDay,
     CsatSurvey,
+    EmailNotification,
     Tag,
     TicketTemplate,
     Channel,
@@ -81,6 +82,7 @@ class InMemoryStore:
         self.ticket_templates: dict[str, TicketTemplate] = {}
         self.tags: dict[str, Tag] = {}
         self.csat_surveys: dict[str, CsatSurvey] = {}
+        self.email_notifications: dict[str, EmailNotification] = {}
         self.rules: dict[str, AutomationRule] = {}
         self.connector_events: dict[str, ConnectorEvent] = {}
         self.outbound_messages: dict[str, OutboundMessage] = {}
@@ -569,6 +571,39 @@ class InMemoryStore:
                     question="How would you rate this conversation?",
                     scale=5,
                     channels=[ChannelType.whatsapp, ChannelType.instagram],
+                ),
+            }
+
+            self.email_notifications = {
+                "notif-ng-ack": EmailNotification(
+                    id="notif-ng-ack",
+                    market_id="market-ng",
+                    name="New ticket acknowledgement",
+                    event="ticket_created",
+                    recipients=["requester"],
+                    subject="We've received your request",
+                    body="Hi, thanks for contacting Wakanow support. Your ticket has been logged "
+                    "and an agent will be in touch shortly.",
+                ),
+                "notif-ng-resolved": EmailNotification(
+                    id="notif-ng-resolved",
+                    market_id="market-ng",
+                    name="Ticket resolved",
+                    event="ticket_resolved",
+                    recipients=["requester"],
+                    subject="Your request has been resolved",
+                    body="Hi, your support request has been resolved. Reply to this email if you "
+                    "need anything else.",
+                ),
+                "notif-ng-breach": EmailNotification(
+                    id="notif-ng-breach",
+                    market_id="market-ng",
+                    name="SLA breach alert",
+                    event="sla_breach",
+                    recipients=["assignee", "supervisor"],
+                    subject="SLA breached on an open ticket",
+                    body="A ticket assigned to your group has breached its SLA and needs "
+                    "immediate attention.",
                 ),
             }
 

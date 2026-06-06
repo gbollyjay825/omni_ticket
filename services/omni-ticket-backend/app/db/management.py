@@ -13,6 +13,7 @@ from app.db.mappers import (
     business_hours_from_record,
     channel_from_record,
     csat_survey_from_record,
+    email_notification_from_record,
     knowledge_article_from_record,
     response_macro_from_record,
     sla_policy_from_record,
@@ -28,6 +29,7 @@ from app.db.models import (
     BusinessHoursRecord,
     ChannelRecord,
     CsatSurveyRecord,
+    EmailNotificationRecord,
     HandoffRecord,
     KnowledgeArticleRecord,
     ResponseMacroRecord,
@@ -46,6 +48,7 @@ from app.models.domain import (
     CreateAutomationRuleRequest,
     CreateBusinessHoursRequest,
     CreateCsatSurveyRequest,
+    CreateEmailNotificationRequest,
     CreateKnowledgeArticleRequest,
     CreateResponseMacroRequest,
     CreateSlaPolicyRequest,
@@ -54,6 +57,7 @@ from app.models.domain import (
     CreateTicketFieldRequest,
     CreateTicketTemplateRequest,
     CsatSurvey,
+    EmailNotification,
     KnowledgeArticle,
     KnowledgeSuggestion,
     KnowledgeArticleStatus,
@@ -70,6 +74,7 @@ from app.models.domain import (
     UpdateBusinessHoursRequest,
     UpdateChannelRequest,
     UpdateCsatSurveyRequest,
+    UpdateEmailNotificationRequest,
     UpdateKnowledgeArticleRequest,
     UpdateResponseMacroRequest,
     UpdateSlaPolicyRequest,
@@ -510,6 +515,31 @@ def _csat_survey_payload(request: CreateCsatSurveyRequest | UpdateCsatSurveyRequ
                 seen.add(channel)
                 channels.append(channel)
         payload["channels"] = channels
+    return payload
+
+
+def _email_notification_payload(
+    request: CreateEmailNotificationRequest | UpdateEmailNotificationRequest,
+) -> dict:
+    payload = request.model_dump(exclude_unset=True, mode="json")
+    if "name" in payload and payload["name"] is not None:
+        payload["name"] = _clean_group_name(payload["name"])
+        if not payload["name"]:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Email notification name is required",
+            )
+    if "event" in payload and payload["event"] is not None:
+        payload["event"] = payload["event"].strip() or "ticket_created"
+    if "recipients" in payload and payload["recipients"] is not None:
+        seen: set[str] = set()
+        recipients: list[str] = []
+        for recipient in payload["recipients"]:
+            cleaned = str(recipient).strip()
+            if cleaned and cleaned.lower() not in seen:
+                seen.add(cleaned.lower())
+                recipients.append(cleaned)
+        payload["recipients"] = recipients
     return payload
 
 
@@ -1285,6 +1315,109 @@ class ManagementRepository:
         survey = csat_survey_from_record(record)
         state.csat_surveys[survey.id] = survey
         return survey
+
+    def list_email_notifications(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        market_id: str,
+    ) -> list[EmailNotification]:
+        records = db.scalars(
+            select(EmailNotificationRecord).where(EmailNotificationRecord.market_id == market_id)
+        ).all()
+        notifications = [email_notification_from_record(record) for record in records]
+        notifications.sort(key=lambda item: (not item.active, item.name.lower()))
+        state.email_notifications = {
+            **{
+                key: value
+                for key, value in state.email_notifications.items()
+                if value.market_id != market_id
+            },
+            **{item.id: item for item in notifications},
+        }
+        return notifications
+
+    def create_email_notification(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        request: CreateEmailNotificationRequest,
+        market_id: str,
+        actor: str,
+    ) -> EmailNotification:
+        payload = _email_notification_payload(request)
+        name = payload["name"]
+        duplicate = db.scalar(
+            select(EmailNotificationRecord).where(
+                EmailNotificationRecord.market_id == market_id,
+                EmailNotificationRecord.name == name,
+            )
+        )
+        if duplicate is not None:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT, detail="Email notification already exists"
+            )
+        record = EmailNotificationRecord(id=_new_id("notif"), market_id=market_id, **payload)
+        db.add(record)
+        db.flush()
+        _audit(
+            db,
+            state,
+            actor=actor,
+            action="email_notification.create",
+            entity_type="email_notification",
+            entity_id=record.id,
+            market_id=market_id,
+            details={"name": record.name, "event": record.event, "active": record.active},
+        )
+        db.commit()
+        db.refresh(record)
+        notification = email_notification_from_record(record)
+        state.email_notifications[notification.id] = notification
+        return notification
+
+    def update_email_notification(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        notification_id: str,
+        request: UpdateEmailNotificationRequest,
+        market_id: str,
+        actor: str,
+    ) -> EmailNotification:
+        record = db.get(EmailNotificationRecord, notification_id)
+        if record is None or record.market_id != market_id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Email notification not found")
+        patch = _email_notification_payload(request)
+        if "name" in patch and patch["name"] != record.name:
+            duplicate = db.scalar(
+                select(EmailNotificationRecord).where(
+                    EmailNotificationRecord.market_id == market_id,
+                    EmailNotificationRecord.name == patch["name"],
+                    EmailNotificationRecord.id != notification_id,
+                )
+            )
+            if duplicate is not None:
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT, detail="Email notification already exists"
+                )
+        for key, value in patch.items():
+            setattr(record, key, value)
+        _audit(
+            db,
+            state,
+            actor=actor,
+            action="email_notification.update",
+            entity_type="email_notification",
+            entity_id=notification_id,
+            market_id=market_id,
+            details=patch,
+        )
+        db.commit()
+        db.refresh(record)
+        notification = email_notification_from_record(record)
+        state.email_notifications[notification.id] = notification
+        return notification
 
     def list_knowledge(
         self,

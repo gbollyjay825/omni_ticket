@@ -17,6 +17,7 @@ from app.db.models import (
     ConnectorAccountRecord,
     CompanyRecord,
     CsatSurveyRecord,
+    EmailNotificationRecord,
     ConnectorEventRecord,
     CustomerRecord,
     HandoffRecord,
@@ -517,6 +518,20 @@ def seed_csat_surveys(session: Session, source: InMemoryStore = store) -> None:
     session.commit()
 
 
+def seed_email_notifications(session: Session, source: InMemoryStore = store) -> None:
+    for notification in source.email_notifications.values():
+        existing = session.get(EmailNotificationRecord, notification.id) or session.scalar(
+            select(EmailNotificationRecord).where(
+                EmailNotificationRecord.market_id == notification.market_id,
+                EmailNotificationRecord.name == notification.name,
+            )
+        )
+        if existing is not None:
+            continue
+        session.add(EmailNotificationRecord(**_payload(notification)))
+    session.commit()
+
+
 def seed_reference_data(session: Session, source: InMemoryStore = store) -> None:
     if session.scalar(select(MarketRecord.id).limit(1)):
         seed_connector_accounts(session)
@@ -528,6 +543,7 @@ def seed_reference_data(session: Session, source: InMemoryStore = store) -> None
         seed_ticket_templates(session, source)
         seed_tags(session, source)
         seed_csat_surveys(session, source)
+        seed_email_notifications(session, source)
         return
 
     session.add_all(
@@ -603,6 +619,12 @@ def seed_reference_data(session: Session, source: InMemoryStore = store) -> None
     )
     session.add_all(
         [CsatSurveyRecord(**_payload(survey)) for survey in source.csat_surveys.values()]
+    )
+    session.add_all(
+        [
+            EmailNotificationRecord(**_payload(notification))
+            for notification in source.email_notifications.values()
+        ]
     )
     session.add_all(
         [

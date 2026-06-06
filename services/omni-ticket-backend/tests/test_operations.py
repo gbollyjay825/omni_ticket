@@ -1589,6 +1589,44 @@ def test_admin_manages_csat_surveys(client: TestClient) -> None:
     assert any(event["action"] == "csat_survey.update" for event in audit)
 
 
+def test_admin_manages_email_notifications(client: TestClient) -> None:
+    suffix = uuid4().hex[:8]
+    created = client.post(
+        "/api/v1/email-notifications",
+        json={
+            "name": f"Resolved notice {suffix}",
+            "event": "ticket_resolved",
+            "recipients": ["requester", "requester"],
+            "subject": "Resolved",
+            "body": "Your ticket is resolved.",
+        },
+    )
+    assert created.status_code == 201
+    notification = created.json()
+    assert notification["recipients"] == ["requester"]  # de-duplicated
+    assert notification["event"] == "ticket_resolved"
+
+    listing = client.get("/api/v1/email-notifications")
+    assert listing.status_code == 200
+    assert any(item["id"] == notification["id"] for item in listing.json())
+
+    updated = client.patch(
+        f"/api/v1/email-notifications/{notification['id']}",
+        json={"active": False, "subject": "Updated subject"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["active"] is False
+    assert updated.json()["subject"] == "Updated subject"
+
+    snapshot = client.get("/api/v1/frontend/snapshot")
+    assert snapshot.status_code == 200
+    assert any(item["id"] == notification["id"] for item in snapshot.json()["email_notifications"])
+
+    audit = client.get("/api/v1/audit").json()
+    assert any(event["action"] == "email_notification.create" for event in audit)
+    assert any(event["action"] == "email_notification.update" for event in audit)
+
+
 def test_role_policy_blocks_agent_from_admin_and_supervisor_controls(
     client: TestClient,
     login_as: Callable[..., dict[str, str]],

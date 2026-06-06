@@ -594,6 +594,19 @@ class CsatSurvey(BaseModel):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class EmailNotification(BaseModel):
+    id: str
+    market_id: str = "market-ng"
+    name: str
+    event: str = "ticket_created"
+    recipients: list[str] = Field(default_factory=list)
+    subject: str = ""
+    body: str = ""
+    active: bool = True
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 class TicketTask(BaseModel):
     id: str
     label: str
@@ -1393,6 +1406,24 @@ class UpdateCsatSurveyRequest(BaseModel):
     question: str | None = Field(default=None, min_length=2, max_length=300)
     scale: int | None = Field(default=None, ge=2, le=10)
     channels: list[ChannelType] | None = None
+    active: bool | None = None
+
+
+class CreateEmailNotificationRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=180)
+    event: str = Field(default="ticket_created", max_length=80)
+    recipients: list[str] = Field(default_factory=list)
+    subject: str = Field(default="", max_length=300)
+    body: str = Field(default="", max_length=5000)
+    active: bool = True
+
+
+class UpdateEmailNotificationRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=180)
+    event: str | None = Field(default=None, max_length=80)
+    recipients: list[str] | None = None
+    subject: str | None = Field(default=None, max_length=300)
+    body: str | None = Field(default=None, max_length=5000)
     active: bool | None = None
 
 
