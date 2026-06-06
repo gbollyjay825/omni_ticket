@@ -623,6 +623,22 @@ class ScenarioAutomation(BaseModel):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class CustomFieldDefinition(BaseModel):
+    id: str
+    market_id: str = "market-ng"
+    entity: str = "contact"
+    key: str = Field(pattern=r"^[a-z][a-z0-9_]{1,63}$")
+    label: str
+    field_type: TicketFieldType = TicketFieldType.text
+    required: bool = False
+    active: bool = True
+    options: list[str] = Field(default_factory=list)
+    help_text: str = ""
+    position: int = 100
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 class TicketTask(BaseModel):
     id: str
     label: str
@@ -1455,6 +1471,28 @@ class UpdateScenarioAutomationRequest(BaseModel):
     description: str | None = Field(default=None, max_length=500)
     actions: list[ScenarioAction] | None = None
     active: bool | None = None
+
+
+class CreateCustomFieldDefinitionRequest(BaseModel):
+    entity: str = Field(default="contact", max_length=20)
+    key: str = Field(pattern=r"^[a-z][a-z0-9_]{1,63}$")
+    label: str = Field(min_length=1, max_length=120)
+    field_type: TicketFieldType = TicketFieldType.text
+    required: bool = False
+    active: bool = True
+    options: list[str] = Field(default_factory=list)
+    help_text: str = Field(default="", max_length=300)
+    position: int = 100
+
+
+class UpdateCustomFieldDefinitionRequest(BaseModel):
+    label: str | None = Field(default=None, min_length=1, max_length=120)
+    field_type: TicketFieldType | None = None
+    required: bool | None = None
+    active: bool | None = None
+    options: list[str] | None = None
+    help_text: str | None = Field(default=None, max_length=300)
+    position: int | None = None
 
 
 class UpdateTicketRequest(BaseModel):

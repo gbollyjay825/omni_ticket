@@ -1666,6 +1666,54 @@ def test_admin_manages_scenario_automations(client: TestClient) -> None:
     assert any(event["action"] == "scenario_automation.update" for event in audit)
 
 
+def test_admin_manages_custom_field_definitions(client: TestClient) -> None:
+    suffix = uuid4().hex[:6]
+    created = client.post(
+        "/api/v1/custom-fields",
+        json={
+            "entity": "contact",
+            "key": f"tier_{suffix}",
+            "label": "Tier",
+            "field_type": "select",
+            "options": ["Gold", "Gold", "Silver"],
+        },
+    )
+    assert created.status_code == 201
+    field = created.json()
+    assert field["entity"] == "contact"
+    assert field["options"] == ["Gold", "Silver"]  # de-duplicated
+
+    # select fields require options
+    bad = client.post(
+        "/api/v1/custom-fields",
+        json={"entity": "company", "key": f"bad_{suffix}", "label": "Bad", "field_type": "select"},
+    )
+    assert bad.status_code == 422
+
+    filtered = client.get("/api/v1/custom-fields", params={"entity": "contact"})
+    assert filtered.status_code == 200
+    assert all(item["entity"] == "contact" for item in filtered.json())
+    assert any(item["id"] == field["id"] for item in filtered.json())
+
+    updated = client.patch(
+        f"/api/v1/custom-fields/{field['id']}",
+        json={"active": False, "label": "Loyalty tier"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["active"] is False
+    assert updated.json()["label"] == "Loyalty tier"
+
+    snapshot = client.get("/api/v1/frontend/snapshot")
+    assert snapshot.status_code == 200
+    assert any(
+        item["id"] == field["id"] for item in snapshot.json()["custom_field_definitions"]
+    )
+
+    audit = client.get("/api/v1/audit").json()
+    assert any(event["action"] == "custom_field.create" for event in audit)
+    assert any(event["action"] == "custom_field.update" for event in audit)
+
+
 def test_role_policy_blocks_agent_from_admin_and_supervisor_controls(
     client: TestClient,
     login_as: Callable[..., dict[str, str]],

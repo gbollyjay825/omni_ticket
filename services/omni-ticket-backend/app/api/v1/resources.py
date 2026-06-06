@@ -78,6 +78,7 @@ from app.models.domain import (
     ConnectorInboundRequest,
     CsatFeedback,
     CsatSurvey,
+    CustomFieldDefinition,
     EmailNotification,
     ScenarioAutomation,
     CreateAutomationRuleRequest,
@@ -97,6 +98,7 @@ from app.models.domain import (
     CreateCsatSurveyRequest,
     CreateEmailNotificationRequest,
     CreateScenarioAutomationRequest,
+    CreateCustomFieldDefinitionRequest,
     CreateTicketFieldRequest,
     CreateTicketRequest,
     CreateTicketTemplateRequest,
@@ -166,6 +168,7 @@ from app.models.domain import (
     UpdateCsatSurveyRequest,
     UpdateEmailNotificationRequest,
     UpdateScenarioAutomationRequest,
+    UpdateCustomFieldDefinitionRequest,
     UpdateTicketFieldRequest,
     UpdateTicketRequest,
     UpdateTicketTemplateRequest,
@@ -1454,6 +1457,57 @@ def update_scenario_automation(
         db,
         state,
         scenario_id,
+        request,
+        context.market_id,
+        context.user.email,
+    )
+
+
+@router.get("/custom-fields", response_model=list[CustomFieldDefinition])
+def list_custom_field_definitions(
+    entity: str | None = None,
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> list[CustomFieldDefinition]:
+    fields = management_repository.list_custom_field_definitions(db, state, context.market_id)
+    if entity is not None:
+        fields = [field for field in fields if field.entity == entity]
+    return fields
+
+
+@router.post(
+    "/custom-fields", response_model=CustomFieldDefinition, status_code=status.HTTP_201_CREATED
+)
+def create_custom_field_definition(
+    request: CreateCustomFieldDefinitionRequest,
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> CustomFieldDefinition:
+    require_admin(context)
+    return management_repository.create_custom_field_definition(
+        db,
+        state,
+        request,
+        context.market_id,
+        context.user.email,
+    )
+
+
+@router.patch("/custom-fields/{field_id}", response_model=CustomFieldDefinition)
+def update_custom_field_definition(
+    field_id: str,
+    request: UpdateCustomFieldDefinitionRequest,
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> CustomFieldDefinition:
+    require_admin(context)
+    return management_repository.update_custom_field_definition(
+        db,
+        state,
+        field_id,
         request,
         context.market_id,
         context.user.email,
@@ -3260,6 +3314,9 @@ def read_frontend_snapshot(
             db, state, context.market_id
         ),
         "scenario_automations": management_repository.list_scenario_automations(
+            db, state, context.market_id
+        ),
+        "custom_field_definitions": management_repository.list_custom_field_definitions(
             db, state, context.market_id
         ),
         "companies": companies,

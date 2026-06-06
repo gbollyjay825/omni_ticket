@@ -12,6 +12,7 @@ from app.db.models import (
     ConnectorEventRecord,
     CsatFeedbackRecord,
     CsatSurveyRecord,
+    CustomFieldDefinitionRecord,
     CustomerRecord,
     EmailNotificationRecord,
     HandoffRecord,
@@ -57,6 +58,7 @@ from app.models.domain import (
     CsatSource,
     CsatSurvey,
     Customer,
+    CustomFieldDefinition,
     EmailNotification,
     Handoff,
     KnowledgeArticle,
@@ -259,6 +261,28 @@ def email_notification_from_record(record: EmailNotificationRecord) -> EmailNoti
             "subject": record.subject,
             "body": record.body,
             "active": record.active,
+            "created_at": record.created_at,
+            "updated_at": record.updated_at,
+        }
+    )
+
+
+def custom_field_definition_from_record(
+    record: CustomFieldDefinitionRecord,
+) -> CustomFieldDefinition:
+    return CustomFieldDefinition.model_validate(
+        {
+            "id": record.id,
+            "market_id": record.market_id,
+            "entity": record.entity,
+            "key": record.key,
+            "label": record.label,
+            "field_type": record.field_type,
+            "required": record.required,
+            "active": record.active,
+            "options": record.options or [],
+            "help_text": record.help_text,
+            "position": record.position,
             "created_at": record.created_at,
             "updated_at": record.updated_at,
         }

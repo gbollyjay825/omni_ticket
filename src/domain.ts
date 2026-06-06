@@ -326,6 +326,20 @@ export interface ScenarioAutomation {
   updatedAt: string
 }
 
+export interface CustomFieldDefinition {
+  id: string
+  entity: string
+  key: string
+  label: string
+  fieldType: TicketFieldType
+  required: boolean
+  active: boolean
+  options: string[]
+  helpText: string
+  position: number
+  updatedAt: string
+}
+
 export interface OutboxItem {
   id: string
   conversationId: string
@@ -427,6 +441,7 @@ export interface OmniState {
   csatSurveys: CsatSurvey[]
   emailNotifications: EmailNotification[]
   scenarioAutomations: ScenarioAutomation[]
+  customFieldDefinitions: CustomFieldDefinition[]
   handoffs: HandoffRecord[]
   outbox: OutboxItem[]
   settings: WorkspaceSettings

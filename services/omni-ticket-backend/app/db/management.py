@@ -13,6 +13,7 @@ from app.db.mappers import (
     business_hours_from_record,
     channel_from_record,
     csat_survey_from_record,
+    custom_field_definition_from_record,
     email_notification_from_record,
     scenario_automation_from_record,
     knowledge_article_from_record,
@@ -30,6 +31,7 @@ from app.db.models import (
     BusinessHoursRecord,
     ChannelRecord,
     CsatSurveyRecord,
+    CustomFieldDefinitionRecord,
     EmailNotificationRecord,
     HandoffRecord,
     KnowledgeArticleRecord,
@@ -50,6 +52,7 @@ from app.models.domain import (
     CreateAutomationRuleRequest,
     CreateBusinessHoursRequest,
     CreateCsatSurveyRequest,
+    CreateCustomFieldDefinitionRequest,
     CreateEmailNotificationRequest,
     CreateKnowledgeArticleRequest,
     CreateResponseMacroRequest,
@@ -60,6 +63,7 @@ from app.models.domain import (
     CreateTicketFieldRequest,
     CreateTicketTemplateRequest,
     CsatSurvey,
+    CustomFieldDefinition,
     EmailNotification,
     KnowledgeArticle,
     KnowledgeSuggestion,
@@ -78,6 +82,7 @@ from app.models.domain import (
     UpdateBusinessHoursRequest,
     UpdateChannelRequest,
     UpdateCsatSurveyRequest,
+    UpdateCustomFieldDefinitionRequest,
     UpdateEmailNotificationRequest,
     UpdateKnowledgeArticleRequest,
     UpdateResponseMacroRequest,
@@ -567,6 +572,38 @@ def _scenario_automation_payload(
                 continue
             actions.append({"type": action_type, "value": str(action.get("value", "")).strip()})
         payload["actions"] = actions
+    return payload
+
+
+def _custom_field_payload(
+    request: CreateCustomFieldDefinitionRequest | UpdateCustomFieldDefinitionRequest,
+) -> dict:
+    payload = request.model_dump(exclude_unset=True, mode="json")
+    if "label" in payload and payload["label"] is not None:
+        payload["label"] = payload["label"].strip()
+        if not payload["label"]:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Custom field label is required",
+            )
+    if "entity" in payload and payload["entity"] is not None:
+        entity = payload["entity"].strip().lower()
+        if entity not in {"contact", "company"}:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Custom field entity must be 'contact' or 'company'",
+            )
+        payload["entity"] = entity
+    if "options" in payload and payload["options"] is not None:
+        payload["options"] = _normalized_options(payload["options"])
+    if "field_type" in payload and payload["field_type"] is not None:
+        if payload["field_type"] not in _OPTION_FIELD_TYPES:
+            payload["options"] = []
+        elif not payload.get("options"):
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Select fields need at least one option",
+            )
     return payload
 
 
@@ -1550,6 +1587,97 @@ class ManagementRepository:
         scenario = scenario_automation_from_record(record)
         state.scenario_automations[scenario.id] = scenario
         return scenario
+
+    def list_custom_field_definitions(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        market_id: str,
+    ) -> list[CustomFieldDefinition]:
+        records = db.scalars(
+            select(CustomFieldDefinitionRecord).where(
+                CustomFieldDefinitionRecord.market_id == market_id
+            )
+        ).all()
+        fields = [custom_field_definition_from_record(record) for record in records]
+        fields.sort(key=lambda field: (field.entity, not field.active, field.position, field.label.lower()))
+        state.custom_field_definitions = {
+            **{
+                key: value
+                for key, value in state.custom_field_definitions.items()
+                if value.market_id != market_id
+            },
+            **{field.id: field for field in fields},
+        }
+        return fields
+
+    def create_custom_field_definition(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        request: CreateCustomFieldDefinitionRequest,
+        market_id: str,
+        actor: str,
+    ) -> CustomFieldDefinition:
+        payload = _custom_field_payload(request)
+        duplicate = db.scalar(
+            select(CustomFieldDefinitionRecord).where(
+                CustomFieldDefinitionRecord.market_id == market_id,
+                CustomFieldDefinitionRecord.entity == payload["entity"],
+                CustomFieldDefinitionRecord.key == payload["key"],
+            )
+        )
+        if duplicate is not None:
+            raise HTTPException(status.HTTP_409_CONFLICT, detail="Custom field key already exists")
+        record = CustomFieldDefinitionRecord(id=_new_id("cfd"), market_id=market_id, **payload)
+        db.add(record)
+        db.flush()
+        _audit(
+            db,
+            state,
+            actor=actor,
+            action="custom_field.create",
+            entity_type="custom_field",
+            entity_id=record.id,
+            market_id=market_id,
+            details={"entity": record.entity, "key": record.key, "active": record.active},
+        )
+        db.commit()
+        db.refresh(record)
+        field = custom_field_definition_from_record(record)
+        state.custom_field_definitions[field.id] = field
+        return field
+
+    def update_custom_field_definition(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        field_id: str,
+        request: UpdateCustomFieldDefinitionRequest,
+        market_id: str,
+        actor: str,
+    ) -> CustomFieldDefinition:
+        record = db.get(CustomFieldDefinitionRecord, field_id)
+        if record is None or record.market_id != market_id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Custom field not found")
+        patch = _custom_field_payload(request)
+        for key, value in patch.items():
+            setattr(record, key, value)
+        _audit(
+            db,
+            state,
+            actor=actor,
+            action="custom_field.update",
+            entity_type="custom_field",
+            entity_id=field_id,
+            market_id=market_id,
+            details=patch,
+        )
+        db.commit()
+        db.refresh(record)
+        field = custom_field_definition_from_record(record)
+        state.custom_field_definitions[field.id] = field
+        return field
 
     def list_knowledge(
         self,

@@ -1784,6 +1784,7 @@ export const initialOmniState: OmniState = {
   csatSurveys: [],
   emailNotifications: [],
   scenarioAutomations: [],
+  customFieldDefinitions: [],
   handoffs: seedHandoffs,
   outbox: [],
   settings: {

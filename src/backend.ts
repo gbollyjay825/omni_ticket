@@ -525,6 +525,7 @@ export interface BackendSnapshot {
   csatSurveys: BackendCsatSurvey[]
   emailNotifications: BackendEmailNotification[]
   scenarioAutomations: BackendScenarioAutomation[]
+  customFieldDefinitions: BackendCustomFieldDefinition[]
   companies: BackendCompany[]
   customers: BackendCustomer[]
   tickets: BackendTicketContext[]
@@ -550,6 +551,7 @@ export interface BackendSnapshot {
   csat_surveys: BackendCsatSurvey[]
   email_notifications: BackendEmailNotification[]
   scenario_automations: BackendScenarioAutomation[]
+  custom_field_definitions: BackendCustomFieldDefinition[]
   knowledge: BackendKnowledgeArticle[]
   macros: BackendResponseMacro[]
   rules: BackendAutomationRule[]
@@ -1086,6 +1088,44 @@ export interface BackendUpdateScenarioAutomationInput {
   active?: boolean
 }
 
+export interface BackendCustomFieldDefinition {
+  id: string
+  market_id: string
+  entity: string
+  key: string
+  label: string
+  field_type: BackendTicketFieldType
+  required: boolean
+  active: boolean
+  options: string[]
+  help_text: string
+  position: number
+  created_at: string
+  updated_at: string
+}
+
+export interface BackendCreateCustomFieldDefinitionInput {
+  entity: string
+  key: string
+  label: string
+  field_type?: BackendTicketFieldType
+  required?: boolean
+  active?: boolean
+  options?: string[]
+  help_text?: string
+  position?: number
+}
+
+export interface BackendUpdateCustomFieldDefinitionInput {
+  label?: string
+  field_type?: BackendTicketFieldType
+  required?: boolean
+  active?: boolean
+  options?: string[]
+  help_text?: string
+  position?: number
+}
+
 export interface BackendCompany {
   id: string
   market_id: string
@@ -1474,6 +1514,7 @@ interface BackendFrontendSnapshot {
   csat_surveys: BackendCsatSurvey[]
   email_notifications: BackendEmailNotification[]
   scenario_automations: BackendScenarioAutomation[]
+  custom_field_definitions: BackendCustomFieldDefinition[]
   companies: BackendCompany[]
   customers: BackendCustomer[]
   tickets: BackendTicketContext[]
@@ -1639,6 +1680,7 @@ export async function fetchBackendSnapshot(
     csatSurveys: frontendSnapshot.csat_surveys ?? [],
     emailNotifications: frontendSnapshot.email_notifications ?? [],
     scenarioAutomations: frontendSnapshot.scenario_automations ?? [],
+    customFieldDefinitions: frontendSnapshot.custom_field_definitions ?? [],
     connectorAccounts: frontendSnapshot.connector_accounts,
     outboundMessages: frontendSnapshot.outbound_messages,
     outboundProviderConfig: frontendSnapshot.outbound_provider_config ?? [],
@@ -2064,6 +2106,35 @@ export async function patchBackendScenarioAutomation(
 ): Promise<BackendScenarioAutomation> {
   return fetchJson<BackendScenarioAutomation>(
     `/scenario-automations/${scenarioId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    },
+    session,
+  )
+}
+
+export async function createBackendCustomFieldDefinition(
+  input: BackendCreateCustomFieldDefinitionInput,
+  session: BackendSession,
+): Promise<BackendCustomFieldDefinition> {
+  return fetchJson<BackendCustomFieldDefinition>(
+    '/custom-fields',
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+    session,
+  )
+}
+
+export async function patchBackendCustomFieldDefinition(
+  fieldId: string,
+  patch: BackendUpdateCustomFieldDefinitionInput,
+  session: BackendSession,
+): Promise<BackendCustomFieldDefinition> {
+  return fetchJson<BackendCustomFieldDefinition>(
+    `/custom-fields/${fieldId}`,
     {
       method: 'PATCH',
       body: JSON.stringify(patch),

@@ -73,6 +73,7 @@ import type {
   EmailNotification,
   ScenarioAction,
   ScenarioAutomation,
+  CustomFieldDefinition,
   TicketField,
   TicketFieldType,
   TicketTemplate,
@@ -448,6 +449,8 @@ const setupBuiltModules = new Set<string>([
   'API status',
   'Ticket fields',
   'Ticket forms',
+  'Contact fields',
+  'Company fields',
   'Audit export',
   'Retention',
   'Attachment lifecycle',
@@ -895,6 +898,8 @@ function OmniApp() {
     updateEmailNotification,
     createScenarioAutomation,
     updateScenarioAutomation,
+    createCustomFieldDefinition,
+    updateCustomFieldDefinition,
     createTicketField,
     updateTicketField,
     changePassword,
@@ -1044,6 +1049,15 @@ function OmniApp() {
     value: '',
   })
   const [scenarioBusy, setScenarioBusy] = useState(false)
+  const [customFieldEntity, setCustomFieldEntity] = useState<'contact' | 'company'>('contact')
+  const [customFieldDraft, setCustomFieldDraft] = useState<{
+    key: string
+    label: string
+    fieldType: TicketFieldType
+    required: boolean
+    options: string
+  }>({ key: '', label: '', fieldType: 'text', required: false, options: '' })
+  const [customFieldBusy, setCustomFieldBusy] = useState(false)
   const [addUserOpen, setAddUserOpen] = useState(false)
   const [addGroupOpen, setAddGroupOpen] = useState(false)
   const [addSlaPolicyOpen, setAddSlaPolicyOpen] = useState(false)
@@ -3339,6 +3353,50 @@ function OmniApp() {
     }
   }
 
+  async function handleCreateCustomField(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const key = customFieldDraft.key.trim().toLowerCase()
+    const label = customFieldDraft.label.trim()
+    if (!/^[a-z][a-z0-9_]{1,63}$/.test(key) || label.length < 1 || customFieldBusy) return
+    const needsOptions = customFieldDraft.fieldType === 'select' || customFieldDraft.fieldType === 'multiselect'
+    const options = customFieldDraft.options
+      .split(',')
+      .map((option) => option.trim())
+      .filter(Boolean)
+    if (needsOptions && options.length === 0) {
+      setPrototypeNotice('Select fields need at least one option.')
+      return
+    }
+    setCustomFieldBusy(true)
+    try {
+      const saved = await createCustomFieldDefinition({
+        entity: customFieldEntity,
+        key,
+        label,
+        field_type: customFieldDraft.fieldType,
+        required: customFieldDraft.required,
+        options: needsOptions ? options : [],
+      })
+      if (saved) {
+        setCustomFieldDraft({ key: '', label: '', fieldType: 'text', required: false, options: '' })
+        setPrototypeNotice('Custom field saved.')
+      }
+    } finally {
+      setCustomFieldBusy(false)
+    }
+  }
+
+  async function toggleCustomField(field: CustomFieldDefinition) {
+    if (customFieldBusy) return
+    setCustomFieldBusy(true)
+    try {
+      const saved = await updateCustomFieldDefinition(field.id, { active: !field.active })
+      if (saved) setPrototypeNotice(`Custom field ${field.active ? 'paused' : 'activated'}.`)
+    } finally {
+      setCustomFieldBusy(false)
+    }
+  }
+
   function openSetupModule(moduleName: string) {
     // Route People modules to the right sub-view, then reveal the live settings panel.
     const peopleRoutes: Record<string, 'users' | 'groups' | 'security' | 'hours'> = {
@@ -3355,6 +3413,8 @@ function OmniApp() {
     if (peopleRoutes[moduleName]) {
       setPeopleView(peopleRoutes[moduleName])
     }
+    if (moduleName === 'Contact fields') setCustomFieldEntity('contact')
+    if (moduleName === 'Company fields') setCustomFieldEntity('company')
     setSetupModuleHint(`Showing ${moduleName} settings below.`)
     if (typeof document !== 'undefined') {
       window.requestAnimationFrame(() => {
@@ -6999,6 +7059,7 @@ function OmniApp() {
             </p>
           ) : null}
           {setupSection === 'forms' ? (
+          <>
           <div className="automation-settings-panel ticket-fields-panel">
             <div className="panel-head compact">
               <div>
@@ -7154,6 +7215,135 @@ function OmniApp() {
               ))}
             </div>
           </div>
+          <div className="automation-settings-panel custom-fields-panel">
+            <div className="panel-head compact">
+              <div>
+                <span>Contact &amp; company fields</span>
+                <h2>Custom attributes captured on contacts and companies</h2>
+              </div>
+              <ClipboardList size={18} />
+            </div>
+            <div className="people-subtabs" role="tablist" aria-label="Custom field entity">
+              {(['contact', 'company'] as const).map((entity) => (
+                <button
+                  key={entity}
+                  type="button"
+                  role="tab"
+                  aria-selected={customFieldEntity === entity}
+                  className={customFieldEntity === entity ? 'active' : ''}
+                  onClick={() => setCustomFieldEntity(entity)}
+                >
+                  {entity === 'contact' ? 'Contact fields' : 'Company fields'}
+                </button>
+              ))}
+            </div>
+            <form className="user-create-form canned-response-form" onSubmit={handleCreateCustomField}>
+              <div className="canned-form-row">
+                <label>
+                  <span>Field key</span>
+                  <input
+                    required
+                    value={customFieldDraft.key}
+                    onChange={(event) => setCustomFieldDraft((current) => ({ ...current, key: event.target.value }))}
+                    placeholder="loyalty_tier"
+                    disabled={!canManageUsers || customFieldBusy}
+                  />
+                </label>
+                <label>
+                  <span>Label</span>
+                  <input
+                    required
+                    value={customFieldDraft.label}
+                    onChange={(event) => setCustomFieldDraft((current) => ({ ...current, label: event.target.value }))}
+                    placeholder="Loyalty tier"
+                    disabled={!canManageUsers || customFieldBusy}
+                  />
+                </label>
+              </div>
+              <div className="canned-form-row">
+                <label>
+                  <span>Type</span>
+                  <select
+                    value={customFieldDraft.fieldType}
+                    onChange={(event) =>
+                      setCustomFieldDraft((current) => ({ ...current, fieldType: event.target.value as TicketFieldType }))
+                    }
+                    disabled={!canManageUsers || customFieldBusy}
+                  >
+                    {ticketFieldTypeOptions.map((option) => (
+                      <option key={option} value={option}>{titleCase(option)}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="custom-field-required">
+                  <input
+                    type="checkbox"
+                    checked={customFieldDraft.required}
+                    onChange={(event) => setCustomFieldDraft((current) => ({ ...current, required: event.target.checked }))}
+                    disabled={!canManageUsers || customFieldBusy}
+                  />
+                  <span>Required</span>
+                </label>
+              </div>
+              {customFieldDraft.fieldType === 'select' || customFieldDraft.fieldType === 'multiselect' ? (
+                <label>
+                  <span>Options (comma separated)</span>
+                  <input
+                    value={customFieldDraft.options}
+                    onChange={(event) => setCustomFieldDraft((current) => ({ ...current, options: event.target.value }))}
+                    placeholder="Blue, Silver, Gold"
+                    disabled={!canManageUsers || customFieldBusy}
+                  />
+                </label>
+              ) : null}
+              <button
+                type="submit"
+                className="primary-action"
+                disabled={!canManageUsers || customFieldBusy || customFieldDraft.label.trim().length < 1}
+              >
+                <Plus size={16} />
+                Add {customFieldEntity} field
+              </button>
+            </form>
+            <div className="canned-response-list">
+              {state.customFieldDefinitions.filter((field) => field.entity === customFieldEntity).length === 0 ? (
+                <p className="setup-module-hint">No {customFieldEntity} fields yet. Add one above.</p>
+              ) : (
+                state.customFieldDefinitions
+                  .filter((field) => field.entity === customFieldEntity)
+                  .map((field) => (
+                    <article className={`canned-response-card ${field.active ? '' : 'inactive'}`} key={field.id}>
+                      <div className="canned-card-head">
+                        <div>
+                          <strong>{field.label}</strong>
+                          <span className="template-priority">{titleCase(field.fieldType)}</span>
+                          {field.required ? <span className="template-priority priority-high">Required</span> : null}
+                        </div>
+                        <span><code>{field.key}</code></span>
+                      </div>
+                      {field.options.length > 0 ? (
+                        <div className="tag-list compact-tags">
+                          {field.options.map((option) => (
+                            <span key={option}>{option}</span>
+                          ))}
+                        </div>
+                      ) : null}
+                      <div className="canned-card-actions">
+                        <button
+                          type="button"
+                          className="secondary-action"
+                          disabled={!canManageUsers || customFieldBusy}
+                          onClick={() => void toggleCustomField(field)}
+                        >
+                          {field.active ? 'Pause' : 'Activate'}
+                        </button>
+                      </div>
+                    </article>
+                  ))
+              )}
+            </div>
+          </div>
+          </>
           ) : null}
           {setupSection === 'governance' ? (
           <>

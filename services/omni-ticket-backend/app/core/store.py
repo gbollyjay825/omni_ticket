@@ -12,6 +12,7 @@ from app.models.domain import (
     BusinessHours,
     BusinessHoursDay,
     CsatSurvey,
+    CustomFieldDefinition,
     EmailNotification,
     ScenarioAction,
     ScenarioAutomation,
@@ -86,6 +87,7 @@ class InMemoryStore:
         self.csat_surveys: dict[str, CsatSurvey] = {}
         self.email_notifications: dict[str, EmailNotification] = {}
         self.scenario_automations: dict[str, ScenarioAutomation] = {}
+        self.custom_field_definitions: dict[str, CustomFieldDefinition] = {}
         self.rules: dict[str, AutomationRule] = {}
         self.connector_events: dict[str, ConnectorEvent] = {}
         self.outbound_messages: dict[str, OutboundMessage] = {}
@@ -635,6 +637,38 @@ class InMemoryStore:
                         ScenarioAction(type="add_tag", value="escalated"),
                         ScenarioAction(type="set_status", value="open"),
                     ],
+                ),
+            }
+
+            self.custom_field_definitions = {
+                "cfd-contact-loyalty": CustomFieldDefinition(
+                    id="cfd-contact-loyalty",
+                    market_id="market-ng",
+                    entity="contact",
+                    key="loyalty_tier",
+                    label="Loyalty tier",
+                    field_type=TicketFieldType.select,
+                    options=["Blue", "Silver", "Gold", "Platinum"],
+                    help_text="Frequent-flyer tier for the traveller.",
+                    position=10,
+                ),
+                "cfd-contact-passport": CustomFieldDefinition(
+                    id="cfd-contact-passport",
+                    market_id="market-ng",
+                    entity="contact",
+                    key="passport_number",
+                    label="Passport number",
+                    field_type=TicketFieldType.text,
+                    position=20,
+                ),
+                "cfd-company-account": CustomFieldDefinition(
+                    id="cfd-company-account",
+                    market_id="market-ng",
+                    entity="company",
+                    key="account_manager",
+                    label="Account manager",
+                    field_type=TicketFieldType.text,
+                    position=10,
                 ),
             }
 

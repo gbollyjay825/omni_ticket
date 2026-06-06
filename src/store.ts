@@ -27,6 +27,7 @@ import type {
   CsatSurvey,
   EmailNotification,
   ScenarioAutomation,
+  CustomFieldDefinition,
   SlaState,
   SupportGroup,
   TicketField,
@@ -47,6 +48,7 @@ import {
   createBackendCsatSurvey,
   createBackendEmailNotification,
   createBackendScenarioAutomation,
+  createBackendCustomFieldDefinition,
   createBackendSupportGroup,
   createBackendTicketField,
   createBackendUser,
@@ -64,6 +66,7 @@ import {
   type BackendCreateCsatSurveyInput,
   type BackendCreateEmailNotificationInput,
   type BackendCreateScenarioAutomationInput,
+  type BackendCreateCustomFieldDefinitionInput,
   type BackendCreateSupportGroupInput,
   type BackendCreateUserInput,
   type BackendCustomer,
@@ -88,6 +91,7 @@ import {
   patchBackendCsatSurvey,
   patchBackendEmailNotification,
   patchBackendScenarioAutomation,
+  patchBackendCustomFieldDefinition,
   patchBackendSupportGroup,
   patchBackendTicket,
   patchBackendTicketField,
@@ -108,6 +112,7 @@ import {
   type BackendCsatSurvey,
   type BackendEmailNotification,
   type BackendScenarioAutomation,
+  type BackendCustomFieldDefinition,
   type BackendSyncState,
   type BackendUpdateSlaPolicyInput,
   type BackendUpdateBusinessHoursInput,
@@ -116,6 +121,7 @@ import {
   type BackendUpdateCsatSurveyInput,
   type BackendUpdateEmailNotificationInput,
   type BackendUpdateScenarioAutomationInput,
+  type BackendUpdateCustomFieldDefinitionInput,
   type BackendUpdateSupportGroupInput,
   type BackendUpdateUserInput,
   type BackendUpdateTicketFieldInput,
@@ -280,6 +286,7 @@ function mergeReferenceData(state: OmniState): OmniState {
     csatSurveys: state.csatSurveys ?? initialOmniState.csatSurveys,
     emailNotifications: state.emailNotifications ?? initialOmniState.emailNotifications,
     scenarioAutomations: state.scenarioAutomations ?? initialOmniState.scenarioAutomations,
+    customFieldDefinitions: state.customFieldDefinitions ?? initialOmniState.customFieldDefinitions,
     responseMacros: state.responseMacros ?? initialOmniState.responseMacros,
     epics: initialOmniState.epics,
     backlog: initialOmniState.backlog,
@@ -566,6 +573,22 @@ function mapScenarioAutomation(scenario: BackendScenarioAutomation): ScenarioAut
     })),
     active: scenario.active,
     updatedAt: scenario.updated_at,
+  }
+}
+
+function mapCustomFieldDefinition(field: BackendCustomFieldDefinition): CustomFieldDefinition {
+  return {
+    id: field.id,
+    entity: field.entity,
+    key: field.key,
+    label: field.label,
+    fieldType: field.field_type,
+    required: field.required,
+    active: field.active,
+    options: field.options ?? [],
+    helpText: field.help_text,
+    position: field.position,
+    updatedAt: field.updated_at,
   }
 }
 
@@ -876,6 +899,11 @@ function mergeBackendSnapshot(current: OmniState, snapshot: BackendSnapshot): Om
     snapshot.scenarioAutomations ??
     []
   ).map(mapScenarioAutomation)
+  const customFieldDefinitions = (
+    snapshot.custom_field_definitions ??
+    snapshot.customFieldDefinitions ??
+    []
+  ).map(mapCustomFieldDefinition)
   const selectedConversationId =
     conversations.find((conversation) => conversation.id === current.selectedConversationId)?.id ??
     conversations[0]?.id ??
@@ -915,6 +943,7 @@ function mergeBackendSnapshot(current: OmniState, snapshot: BackendSnapshot): Om
     csatSurveys,
     emailNotifications,
     scenarioAutomations,
+    customFieldDefinitions,
     articles: snapshot.knowledge.map(mapKnowledgeArticle),
     ticketFields: (snapshot.ticket_fields ?? snapshot.ticketFields ?? []).map(mapTicketField),
     responseMacros: snapshot.macros.map(mapResponseMacro),
@@ -2096,6 +2125,14 @@ export function useOmniStore() {
     return syncBackendMutation((session) => patchBackendScenarioAutomation(scenarioId, patch, session))
   }
 
+  function createCustomFieldDefinition(input: BackendCreateCustomFieldDefinitionInput) {
+    return syncBackendMutation((session) => createBackendCustomFieldDefinition(input, session))
+  }
+
+  function updateCustomFieldDefinition(fieldId: string, patch: BackendUpdateCustomFieldDefinitionInput) {
+    return syncBackendMutation((session) => patchBackendCustomFieldDefinition(fieldId, patch, session))
+  }
+
   function createTicketField(input: BackendCreateTicketFieldInput) {
     return syncBackendMutation((session) => createBackendTicketField(input, session))
   }
@@ -2364,6 +2401,8 @@ export function useOmniStore() {
     updateEmailNotification,
     createScenarioAutomation,
     updateScenarioAutomation,
+    createCustomFieldDefinition,
+    updateCustomFieldDefinition,
     createTicketField,
     updateTicketField,
     changePassword,

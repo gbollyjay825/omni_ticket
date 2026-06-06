@@ -17,6 +17,7 @@ from app.db.models import (
     ConnectorAccountRecord,
     CompanyRecord,
     CsatSurveyRecord,
+    CustomFieldDefinitionRecord,
     EmailNotificationRecord,
     ScenarioAutomationRecord,
     ConnectorEventRecord,
@@ -547,6 +548,21 @@ def seed_scenario_automations(session: Session, source: InMemoryStore = store) -
     session.commit()
 
 
+def seed_custom_field_definitions(session: Session, source: InMemoryStore = store) -> None:
+    for field in source.custom_field_definitions.values():
+        existing = session.get(CustomFieldDefinitionRecord, field.id) or session.scalar(
+            select(CustomFieldDefinitionRecord).where(
+                CustomFieldDefinitionRecord.market_id == field.market_id,
+                CustomFieldDefinitionRecord.entity == field.entity,
+                CustomFieldDefinitionRecord.key == field.key,
+            )
+        )
+        if existing is not None:
+            continue
+        session.add(CustomFieldDefinitionRecord(**_payload(field)))
+    session.commit()
+
+
 def seed_reference_data(session: Session, source: InMemoryStore = store) -> None:
     if session.scalar(select(MarketRecord.id).limit(1)):
         seed_connector_accounts(session)
@@ -560,6 +576,7 @@ def seed_reference_data(session: Session, source: InMemoryStore = store) -> None
         seed_csat_surveys(session, source)
         seed_email_notifications(session, source)
         seed_scenario_automations(session, source)
+        seed_custom_field_definitions(session, source)
         return
 
     session.add_all(
@@ -646,6 +663,12 @@ def seed_reference_data(session: Session, source: InMemoryStore = store) -> None
         [
             ScenarioAutomationRecord(**_payload(scenario))
             for scenario in source.scenario_automations.values()
+        ]
+    )
+    session.add_all(
+        [
+            CustomFieldDefinitionRecord(**_payload(field))
+            for field in source.custom_field_definitions.values()
         ]
     )
     session.add_all(

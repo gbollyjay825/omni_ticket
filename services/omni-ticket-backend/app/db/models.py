@@ -310,6 +310,26 @@ class ScenarioAutomationRecord(TimestampMixin, Base):
     )
 
 
+class CustomFieldDefinitionRecord(TimestampMixin, Base):
+    __tablename__ = "custom_field_definitions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    market_id: Mapped[str] = mapped_column(ForeignKey("markets.id"), index=True)
+    entity: Mapped[str] = mapped_column(String(20), default="contact", index=True)
+    key: Mapped[str] = mapped_column(String(64), nullable=False)
+    label: Mapped[str] = mapped_column(String(120), nullable=False)
+    field_type: Mapped[str] = mapped_column(String(32), default="text")
+    required: Mapped[bool] = mapped_column(Boolean, default=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    options: Mapped[list] = mapped_column(JSON, default=list)
+    help_text: Mapped[str] = mapped_column(String(300), default="")
+    position: Mapped[int] = mapped_column(Integer, default=100)
+
+    __table_args__ = (
+        UniqueConstraint("market_id", "entity", "key", name="uq_custom_field_market_entity_key"),
+    )
+
+
 class ChannelRecord(TimestampMixin, Base):
     __tablename__ = "channels"
 
