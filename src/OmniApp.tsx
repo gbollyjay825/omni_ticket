@@ -6186,14 +6186,180 @@ function OmniApp() {
     if (channelConsoleView === 'inbox') return null
     const activeModule = freshchatConsoleViews.find((view) => view.id === channelConsoleView)
     const ActiveIcon = activeModule?.icon ?? MessageCircle
-    const moduleRows: Record<Exclude<ChannelConsoleView, 'inbox'>, string[]> = {
-      dashboard: ['Conversation volume', 'Speed of response', 'SLA metrics', 'Resolved conversations', 'Agent availability'],
-      campaigns: ['Proactive WhatsApp campaigns', 'TravelFest rules', 'Audience filters', 'Draft/live state', 'Campaign performance'],
-      people: ['Contact timeline', 'Segments', 'Conversation history', 'Import/export', 'Channel identity merge'],
-      reports: ['Chat analytics', 'AI Agent analytics', 'Team performance', 'Customer satisfaction', 'Hourly reports'],
-      marketplace: ['Omni bridge', 'CRM cards', 'Travel systems', 'Telephony', 'Analytics SDK'],
-      settings: ['Account settings', 'Channels', 'Agents', 'Groups', 'Assignment rules', 'SLA policies', 'API tokens'],
-      'ai-studio': ['AI agents', 'Bot handoff reasons', 'Answer sources', 'Session consumption', 'Guardrails'],
+    const connectorAccounts = backendSnapshot?.connectorAccounts ?? []
+    const chatChannels = state.channels.filter((channel) =>
+      ['chat', 'whatsapp', 'instagram', 'facebook', 'sms'].includes(channel.id),
+    )
+
+    function moduleBody() {
+      if (channelConsoleView === 'dashboard') {
+        const totalQueue = chatChannels.reduce((sum, channel) => sum + channel.queueDepth, 0)
+        const activeSessions = chatChannels.reduce((sum, channel) => sum + channel.activeSessions, 0)
+        const avgWait = chatChannels.length
+          ? Math.round(
+              chatChannels.reduce((sum, channel) => sum + channel.avgWaitMinutes, 0) / chatChannels.length,
+            )
+          : 0
+        const atRisk = chatChannels.reduce((sum, channel) => sum + channel.slaRisk, 0)
+        return (
+          <>
+            <div className="freshchat-kpi-row">
+              <article>
+                <strong>{totalQueue}</strong>
+                <span>Queued conversations</span>
+              </article>
+              <article>
+                <strong>{activeSessions}</strong>
+                <span>Active sessions</span>
+              </article>
+              <article>
+                <strong>{avgWait}m</strong>
+                <span>Avg wait</span>
+              </article>
+              <article>
+                <strong>{atRisk}</strong>
+                <span>SLA risk</span>
+              </article>
+            </div>
+            <div className="freshchat-module-list">
+              {chatChannels.map((channel) => (
+                <div key={channel.id} className="freshchat-module-row">
+                  <strong>{channel.label}</strong>
+                  <span>{channel.queueDepth} queued · {channel.activeSessions} active</span>
+                  <em className={`chip status-${channel.status === 'healthy' ? 'done' : channel.status === 'degraded' ? 'progress' : 'pending'}`}>
+                    {titleCase(channel.status)}
+                  </em>
+                </div>
+              ))}
+            </div>
+          </>
+        )
+      }
+      if (channelConsoleView === 'campaigns') {
+        const campaigns = state.scenarioAutomations
+        if (campaigns.length === 0) {
+          return (
+            <p className="setup-module-hint">
+              No proactive campaigns yet. Build one in Automation → Proactive outreach.
+            </p>
+          )
+        }
+        return (
+          <div className="freshchat-module-list">
+            {campaigns.map((campaign) => (
+              <div key={campaign.id} className="freshchat-module-row">
+                <strong>{campaign.name}</strong>
+                <span>{campaign.actions.length} action{campaign.actions.length === 1 ? '' : 's'}</span>
+                <em className={`chip status-${campaign.active ? 'done' : 'pending'}`}>
+                  {campaign.active ? 'Live' : 'Draft'}
+                </em>
+              </div>
+            ))}
+          </div>
+        )
+      }
+      if (channelConsoleView === 'people') {
+        const recent = state.customers.slice(0, 6)
+        return (
+          <>
+            <div className="freshchat-module-list">
+              {recent.map((customer) => (
+                <div key={customer.id} className="freshchat-module-row">
+                  <strong>{customer.name}</strong>
+                  <span>{customer.company} · {customer.email}</span>
+                  <em className="chip status-progress">{customer.totalConversations} convos</em>
+                </div>
+              ))}
+            </div>
+            <button type="button" className="secondary-action" onClick={() => selectScreen('customers')}>
+              <Users size={14} />
+              Open Contacts ({state.customers.length})
+            </button>
+          </>
+        )
+      }
+      if (channelConsoleView === 'reports') {
+        return (
+          <>
+            <div className="freshchat-module-list">
+              {state.savedReports.length === 0 ? (
+                <p className="setup-module-hint">No saved reports yet. Create one in Analytics.</p>
+              ) : (
+                state.savedReports.slice(0, 6).map((report) => (
+                  <div key={report.id} className="freshchat-module-row">
+                    <strong>{report.name}</strong>
+                    <span>{titleCase(report.reportType)} · {report.cadence === 'none' ? 'On demand' : titleCase(report.cadence)}</span>
+                    <em className={`chip status-${report.active ? 'done' : 'pending'}`}>
+                      {report.active ? 'Active' : 'Paused'}
+                    </em>
+                  </div>
+                ))
+              )}
+            </div>
+            <button type="button" className="secondary-action" onClick={() => selectScreen('analytics')}>
+              <BarChart3 size={14} />
+              Open Analytics
+            </button>
+          </>
+        )
+      }
+      if (channelConsoleView === 'marketplace') {
+        if (connectorAccounts.length === 0) {
+          return (
+            <p className="setup-module-hint">
+              No connected integrations yet. Add channel credentials in Setup → Channels.
+            </p>
+          )
+        }
+        return (
+          <div className="freshchat-module-list">
+            {connectorAccounts.map((account) => (
+              <div key={account.id} className="freshchat-module-row">
+                <strong>{account.display_name}</strong>
+                <span>{titleCase(account.provider)} · {account.account_identifier || 'No identifier'}</span>
+                <em className={`chip status-${account.status === 'connected' ? 'done' : account.status === 'error' || account.status === 'action_required' ? 'pending' : 'progress'}`}>
+                  {titleCase(account.status.replace(/_/g, ' '))}
+                </em>
+              </div>
+            ))}
+          </div>
+        )
+      }
+      if (channelConsoleView === 'settings') {
+        return (
+          <>
+            <p className="setup-module-hint">
+              Account, channel, agent, and credential settings are managed in Setup.
+            </p>
+            <button type="button" className="secondary-action" onClick={() => selectScreen('admin')}>
+              <Settings size={14} />
+              Open Setup
+            </button>
+          </>
+        )
+      }
+      // ai-studio
+      return (
+        <>
+          <div className="freshchat-module-list">
+            {state.rules.length === 0 ? (
+              <p className="setup-module-hint">No automation rules yet. Build one in Automation.</p>
+            ) : (
+              state.rules.slice(0, 6).map((rule) => (
+                <div key={rule.id} className="freshchat-module-row">
+                  <strong>{rule.name}</strong>
+                  <span>{rule.trigger}</span>
+                  <em className={`chip status-${rule.status}`}>{rule.health}%</em>
+                </div>
+              ))
+            )}
+          </div>
+          <button type="button" className="secondary-action" onClick={() => selectScreen('automation')}>
+            <Workflow size={14} />
+            Open Automation
+          </button>
+        </>
+      )
     }
 
     return (
@@ -6205,15 +6371,7 @@ function OmniApp() {
           </div>
           <ActiveIcon size={20} />
         </div>
-        <div className="freshchat-module-grid">
-          {moduleRows[channelConsoleView].map((row) => (
-            <article key={row}>
-              <CheckCircle2 size={16} />
-              <strong>{row}</strong>
-              <span>{channelConsoleView === 'settings' ? 'Managed in Setup with production credentials.' : 'Mirrored as an Omni operational surface.'}</span>
-            </article>
-          ))}
-        </div>
+        {moduleBody()}
       </section>
     )
   }

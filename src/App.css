@@ -2202,6 +2202,88 @@ button:disabled {
   gap: 12px;
 }
 
+.freshchat-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.freshchat-kpi-row article {
+  display: grid;
+  gap: 3px;
+  padding: 12px 14px;
+  border: 1px solid #e1eaf3;
+  border-radius: 11px;
+  background: #f7fafd;
+}
+
+.freshchat-kpi-row strong {
+  font-size: 21px;
+  font-weight: 800;
+  color: #16324a;
+  line-height: 1;
+}
+
+.freshchat-kpi-row span {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #5d748a;
+}
+
+.freshchat-module-list {
+  display: grid;
+  gap: 8px;
+}
+
+.freshchat-module-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  border: 1px solid #e8eef5;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.freshchat-module-row strong {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1d3953;
+  flex: 0 0 auto;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.freshchat-module-row span {
+  font-size: 12px;
+  color: #6a809a;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.freshchat-module-row .chip {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 640px) {
+  .freshchat-kpi-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .freshchat-module-row {
+    flex-wrap: wrap;
+  }
+
+  .freshchat-module-row strong {
+    max-width: 100%;
+  }
+}
+
 .dashboard-filter-row,
 .freshchat-console-shell,
 .ticket-action-bar,
@@ -2249,7 +2331,6 @@ button:disabled {
 
 .freshworks-dashboard-grid,
 .report-card-grid,
-.freshchat-module-grid,
 .freshworks-admin-catalog {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3048,7 +3129,6 @@ button:disabled {
 
 .freshworks-dashboard-grid > article,
 .report-card-grid > article,
-.freshchat-module-grid > article,
 .freshworks-admin-catalog > article {
   min-width: 0;
   border: 1px solid var(--line);
@@ -3126,8 +3206,7 @@ button:disabled {
 .performance-list small,
 .dashboard-activity-list small,
 .agent-availability-list small,
-.report-card-grid span,
-.freshchat-module-grid span {
+.report-card-grid span {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.35;
@@ -3304,19 +3383,7 @@ button:disabled {
   font-weight: 850;
 }
 
-.freshchat-module-grid article {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 5px 8px;
-}
 
-.freshchat-module-grid svg {
-  color: #0f766e;
-  grid-row: span 2;
-  margin-top: 1px;
-}
-
-.freshchat-module-grid strong,
 .report-card-grid strong {
   display: block;
   color: var(--heading);
@@ -7494,7 +7561,6 @@ button:disabled {
   .freshworks-dashboard-grid,
   .freshworks-admin-catalog,
   .report-card-grid,
-  .freshchat-module-grid,
   .channel-grid,
   .channel-flow-grid,
   .ticket-command-strip,
