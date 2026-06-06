@@ -79,6 +79,7 @@ from app.models.domain import (
     CsatFeedback,
     CsatSurvey,
     EmailNotification,
+    ScenarioAutomation,
     CreateAutomationRuleRequest,
     CreateAttachmentRequest,
     CreateBusinessHoursRequest,
@@ -95,6 +96,7 @@ from app.models.domain import (
     CreateTagRequest,
     CreateCsatSurveyRequest,
     CreateEmailNotificationRequest,
+    CreateScenarioAutomationRequest,
     CreateTicketFieldRequest,
     CreateTicketRequest,
     CreateTicketTemplateRequest,
@@ -163,6 +165,7 @@ from app.models.domain import (
     UpdateTagRequest,
     UpdateCsatSurveyRequest,
     UpdateEmailNotificationRequest,
+    UpdateScenarioAutomationRequest,
     UpdateTicketFieldRequest,
     UpdateTicketRequest,
     UpdateTicketTemplateRequest,
@@ -1402,6 +1405,55 @@ def update_email_notification(
         db,
         state,
         notification_id,
+        request,
+        context.market_id,
+        context.user.email,
+    )
+
+
+@router.get("/scenario-automations", response_model=list[ScenarioAutomation])
+def list_scenario_automations(
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> list[ScenarioAutomation]:
+    return management_repository.list_scenario_automations(db, state, context.market_id)
+
+
+@router.post(
+    "/scenario-automations",
+    response_model=ScenarioAutomation,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_scenario_automation(
+    request: CreateScenarioAutomationRequest,
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> ScenarioAutomation:
+    require_admin(context)
+    return management_repository.create_scenario_automation(
+        db,
+        state,
+        request,
+        context.market_id,
+        context.user.email,
+    )
+
+
+@router.patch("/scenario-automations/{scenario_id}", response_model=ScenarioAutomation)
+def update_scenario_automation(
+    scenario_id: str,
+    request: UpdateScenarioAutomationRequest,
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> ScenarioAutomation:
+    require_admin(context)
+    return management_repository.update_scenario_automation(
+        db,
+        state,
+        scenario_id,
         request,
         context.market_id,
         context.user.email,
@@ -3205,6 +3257,9 @@ def read_frontend_snapshot(
         "tags": management_repository.list_tags(db, state, context.market_id),
         "csat_surveys": management_repository.list_csat_surveys(db, state, context.market_id),
         "email_notifications": management_repository.list_email_notifications(
+            db, state, context.market_id
+        ),
+        "scenario_automations": management_repository.list_scenario_automations(
             db, state, context.market_id
         ),
         "companies": companies,

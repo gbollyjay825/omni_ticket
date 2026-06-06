@@ -18,6 +18,7 @@ from app.db.models import (
     CompanyRecord,
     CsatSurveyRecord,
     EmailNotificationRecord,
+    ScenarioAutomationRecord,
     ConnectorEventRecord,
     CustomerRecord,
     HandoffRecord,
@@ -532,6 +533,20 @@ def seed_email_notifications(session: Session, source: InMemoryStore = store) ->
     session.commit()
 
 
+def seed_scenario_automations(session: Session, source: InMemoryStore = store) -> None:
+    for scenario in source.scenario_automations.values():
+        existing = session.get(ScenarioAutomationRecord, scenario.id) or session.scalar(
+            select(ScenarioAutomationRecord).where(
+                ScenarioAutomationRecord.market_id == scenario.market_id,
+                ScenarioAutomationRecord.name == scenario.name,
+            )
+        )
+        if existing is not None:
+            continue
+        session.add(ScenarioAutomationRecord(**_payload(scenario)))
+    session.commit()
+
+
 def seed_reference_data(session: Session, source: InMemoryStore = store) -> None:
     if session.scalar(select(MarketRecord.id).limit(1)):
         seed_connector_accounts(session)
@@ -544,6 +559,7 @@ def seed_reference_data(session: Session, source: InMemoryStore = store) -> None
         seed_tags(session, source)
         seed_csat_surveys(session, source)
         seed_email_notifications(session, source)
+        seed_scenario_automations(session, source)
         return
 
     session.add_all(
@@ -624,6 +640,12 @@ def seed_reference_data(session: Session, source: InMemoryStore = store) -> None
         [
             EmailNotificationRecord(**_payload(notification))
             for notification in source.email_notifications.values()
+        ]
+    )
+    session.add_all(
+        [
+            ScenarioAutomationRecord(**_payload(scenario))
+            for scenario in source.scenario_automations.values()
         ]
     )
     session.add_all(

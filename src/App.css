@@ -2501,6 +2501,68 @@ button:disabled {
   gap: 10px;
 }
 
+.scenario-action-builder {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #eef2f7;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.scenario-builder-label {
+  font-size: 12px;
+  font-weight: 800;
+  color: #506a82;
+}
+
+.scenario-action-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.scenario-action-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: #f6f8fb;
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 13px;
+  color: #17314b;
+}
+
+.scenario-action-list li button {
+  border: 0;
+  background: transparent;
+  color: #6b8195;
+  cursor: pointer;
+  display: inline-flex;
+}
+
+.scenario-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.scenario-action-row select,
+.scenario-action-row input {
+  height: 36px;
+  border: 1px solid #d5e0ec;
+  border-radius: 7px;
+  padding: 0 10px;
+  font: inherit;
+}
+
+.scenario-action-row input {
+  flex: 1 1 200px;
+  min-width: 140px;
+}
+
 .template-priority {
   margin-left: 8px;
   padding: 2px 8px;

@@ -295,6 +295,21 @@ class EmailNotificationRecord(TimestampMixin, Base):
     )
 
 
+class ScenarioAutomationRecord(TimestampMixin, Base):
+    __tablename__ = "scenario_automations"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    market_id: Mapped[str] = mapped_column(ForeignKey("markets.id"), index=True)
+    name: Mapped[str] = mapped_column(String(180), nullable=False)
+    description: Mapped[str] = mapped_column(String(500), default="")
+    actions: Mapped[list] = mapped_column(JSON, default=list)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+
+    __table_args__ = (
+        UniqueConstraint("market_id", "name", name="uq_scenario_automation_market_name"),
+    )
+
+
 class ChannelRecord(TimestampMixin, Base):
     __tablename__ = "channels"
 

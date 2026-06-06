@@ -14,6 +14,7 @@ from app.db.mappers import (
     channel_from_record,
     csat_survey_from_record,
     email_notification_from_record,
+    scenario_automation_from_record,
     knowledge_article_from_record,
     response_macro_from_record,
     sla_policy_from_record,
@@ -33,6 +34,7 @@ from app.db.models import (
     HandoffRecord,
     KnowledgeArticleRecord,
     ResponseMacroRecord,
+    ScenarioAutomationRecord,
     SlaPolicyRecord,
     SupportGroupRecord,
     TagRecord,
@@ -51,6 +53,7 @@ from app.models.domain import (
     CreateEmailNotificationRequest,
     CreateKnowledgeArticleRequest,
     CreateResponseMacroRequest,
+    CreateScenarioAutomationRequest,
     CreateSlaPolicyRequest,
     CreateSupportGroupRequest,
     CreateTagRequest,
@@ -63,6 +66,7 @@ from app.models.domain import (
     KnowledgeArticleStatus,
     ResponseMacro,
     ResponseMacroSuggestion,
+    ScenarioAutomation,
     SlaPolicy,
     SupportGroup,
     Tag,
@@ -77,6 +81,7 @@ from app.models.domain import (
     UpdateEmailNotificationRequest,
     UpdateKnowledgeArticleRequest,
     UpdateResponseMacroRequest,
+    UpdateScenarioAutomationRequest,
     UpdateSlaPolicyRequest,
     UpdateSupportGroupRequest,
     UpdateTagRequest,
@@ -540,6 +545,28 @@ def _email_notification_payload(
                 seen.add(cleaned.lower())
                 recipients.append(cleaned)
         payload["recipients"] = recipients
+    return payload
+
+
+def _scenario_automation_payload(
+    request: CreateScenarioAutomationRequest | UpdateScenarioAutomationRequest,
+) -> dict:
+    payload = request.model_dump(exclude_unset=True, mode="json")
+    if "name" in payload and payload["name"] is not None:
+        payload["name"] = _clean_group_name(payload["name"])
+        if not payload["name"]:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Scenario automation name is required",
+            )
+    if "actions" in payload and payload["actions"] is not None:
+        actions: list[dict] = []
+        for action in payload["actions"]:
+            action_type = str(action.get("type", "")).strip()
+            if not action_type:
+                continue
+            actions.append({"type": action_type, "value": str(action.get("value", "")).strip()})
+        payload["actions"] = actions
     return payload
 
 
@@ -1418,6 +1445,111 @@ class ManagementRepository:
         notification = email_notification_from_record(record)
         state.email_notifications[notification.id] = notification
         return notification
+
+    def list_scenario_automations(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        market_id: str,
+    ) -> list[ScenarioAutomation]:
+        records = db.scalars(
+            select(ScenarioAutomationRecord).where(
+                ScenarioAutomationRecord.market_id == market_id
+            )
+        ).all()
+        scenarios = [scenario_automation_from_record(record) for record in records]
+        scenarios.sort(key=lambda item: (not item.active, item.name.lower()))
+        state.scenario_automations = {
+            **{
+                key: value
+                for key, value in state.scenario_automations.items()
+                if value.market_id != market_id
+            },
+            **{item.id: item for item in scenarios},
+        }
+        return scenarios
+
+    def create_scenario_automation(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        request: CreateScenarioAutomationRequest,
+        market_id: str,
+        actor: str,
+    ) -> ScenarioAutomation:
+        payload = _scenario_automation_payload(request)
+        name = payload["name"]
+        duplicate = db.scalar(
+            select(ScenarioAutomationRecord).where(
+                ScenarioAutomationRecord.market_id == market_id,
+                ScenarioAutomationRecord.name == name,
+            )
+        )
+        if duplicate is not None:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT, detail="Scenario automation already exists"
+            )
+        record = ScenarioAutomationRecord(id=_new_id("scenario"), market_id=market_id, **payload)
+        db.add(record)
+        db.flush()
+        _audit(
+            db,
+            state,
+            actor=actor,
+            action="scenario_automation.create",
+            entity_type="scenario_automation",
+            entity_id=record.id,
+            market_id=market_id,
+            details={"name": record.name, "active": record.active},
+        )
+        db.commit()
+        db.refresh(record)
+        scenario = scenario_automation_from_record(record)
+        state.scenario_automations[scenario.id] = scenario
+        return scenario
+
+    def update_scenario_automation(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        scenario_id: str,
+        request: UpdateScenarioAutomationRequest,
+        market_id: str,
+        actor: str,
+    ) -> ScenarioAutomation:
+        record = db.get(ScenarioAutomationRecord, scenario_id)
+        if record is None or record.market_id != market_id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Scenario automation not found")
+        patch = _scenario_automation_payload(request)
+        if "name" in patch and patch["name"] != record.name:
+            duplicate = db.scalar(
+                select(ScenarioAutomationRecord).where(
+                    ScenarioAutomationRecord.market_id == market_id,
+                    ScenarioAutomationRecord.name == patch["name"],
+                    ScenarioAutomationRecord.id != scenario_id,
+                )
+            )
+            if duplicate is not None:
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT, detail="Scenario automation already exists"
+                )
+        for key, value in patch.items():
+            setattr(record, key, value)
+        _audit(
+            db,
+            state,
+            actor=actor,
+            action="scenario_automation.update",
+            entity_type="scenario_automation",
+            entity_id=scenario_id,
+            market_id=market_id,
+            details=patch,
+        )
+        db.commit()
+        db.refresh(record)
+        scenario = scenario_automation_from_record(record)
+        state.scenario_automations[scenario.id] = scenario
+        return scenario
 
     def list_knowledge(
         self,

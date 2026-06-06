@@ -1783,6 +1783,7 @@ export const initialOmniState: OmniState = {
   tags: [],
   csatSurveys: [],
   emailNotifications: [],
+  scenarioAutomations: [],
   handoffs: seedHandoffs,
   outbox: [],
   settings: {

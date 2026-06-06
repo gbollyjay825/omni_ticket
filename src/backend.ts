@@ -524,6 +524,7 @@ export interface BackendSnapshot {
   tags: BackendTag[]
   csatSurveys: BackendCsatSurvey[]
   emailNotifications: BackendEmailNotification[]
+  scenarioAutomations: BackendScenarioAutomation[]
   companies: BackendCompany[]
   customers: BackendCustomer[]
   tickets: BackendTicketContext[]
@@ -548,6 +549,7 @@ export interface BackendSnapshot {
   ticket_templates: BackendTicketTemplate[]
   csat_surveys: BackendCsatSurvey[]
   email_notifications: BackendEmailNotification[]
+  scenario_automations: BackendScenarioAutomation[]
   knowledge: BackendKnowledgeArticle[]
   macros: BackendResponseMacro[]
   rules: BackendAutomationRule[]
@@ -1054,6 +1056,36 @@ export interface BackendUpdateEmailNotificationInput {
   active?: boolean
 }
 
+export interface BackendScenarioAction {
+  type: string
+  value: string
+}
+
+export interface BackendScenarioAutomation {
+  id: string
+  market_id: string
+  name: string
+  description: string
+  actions: BackendScenarioAction[]
+  active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface BackendCreateScenarioAutomationInput {
+  name: string
+  description?: string
+  actions?: BackendScenarioAction[]
+  active?: boolean
+}
+
+export interface BackendUpdateScenarioAutomationInput {
+  name?: string
+  description?: string
+  actions?: BackendScenarioAction[]
+  active?: boolean
+}
+
 export interface BackendCompany {
   id: string
   market_id: string
@@ -1441,6 +1473,7 @@ interface BackendFrontendSnapshot {
   tags: BackendTag[]
   csat_surveys: BackendCsatSurvey[]
   email_notifications: BackendEmailNotification[]
+  scenario_automations: BackendScenarioAutomation[]
   companies: BackendCompany[]
   customers: BackendCustomer[]
   tickets: BackendTicketContext[]
@@ -1605,6 +1638,7 @@ export async function fetchBackendSnapshot(
     ticketTemplates: frontendSnapshot.ticket_templates ?? [],
     csatSurveys: frontendSnapshot.csat_surveys ?? [],
     emailNotifications: frontendSnapshot.email_notifications ?? [],
+    scenarioAutomations: frontendSnapshot.scenario_automations ?? [],
     connectorAccounts: frontendSnapshot.connector_accounts,
     outboundMessages: frontendSnapshot.outbound_messages,
     outboundProviderConfig: frontendSnapshot.outbound_provider_config ?? [],
@@ -2001,6 +2035,35 @@ export async function patchBackendEmailNotification(
 ): Promise<BackendEmailNotification> {
   return fetchJson<BackendEmailNotification>(
     `/email-notifications/${notificationId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    },
+    session,
+  )
+}
+
+export async function createBackendScenarioAutomation(
+  input: BackendCreateScenarioAutomationInput,
+  session: BackendSession,
+): Promise<BackendScenarioAutomation> {
+  return fetchJson<BackendScenarioAutomation>(
+    '/scenario-automations',
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+    session,
+  )
+}
+
+export async function patchBackendScenarioAutomation(
+  scenarioId: string,
+  patch: BackendUpdateScenarioAutomationInput,
+  session: BackendSession,
+): Promise<BackendScenarioAutomation> {
+  return fetchJson<BackendScenarioAutomation>(
+    `/scenario-automations/${scenarioId}`,
     {
       method: 'PATCH',
       body: JSON.stringify(patch),

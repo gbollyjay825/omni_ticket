@@ -22,6 +22,7 @@ from app.db.models import (
     OutboundMessageRecord,
     ProductionAccountReferenceRecord,
     ResponseMacroRecord,
+    ScenarioAutomationRecord,
     SlaPolicyRecord,
     SupportGroupRecord,
     TagRecord,
@@ -69,6 +70,7 @@ from app.models.domain import (
     OutboundMessageStatus,
     ProductionAccountReference,
     ResponseMacro,
+    ScenarioAutomation,
     SlaPolicy,
     SupportGroup,
     Tag,
@@ -256,6 +258,21 @@ def email_notification_from_record(record: EmailNotificationRecord) -> EmailNoti
             "recipients": record.recipients or [],
             "subject": record.subject,
             "body": record.body,
+            "active": record.active,
+            "created_at": record.created_at,
+            "updated_at": record.updated_at,
+        }
+    )
+
+
+def scenario_automation_from_record(record: ScenarioAutomationRecord) -> ScenarioAutomation:
+    return ScenarioAutomation.model_validate(
+        {
+            "id": record.id,
+            "market_id": record.market_id,
+            "name": record.name,
+            "description": record.description,
+            "actions": record.actions or [],
             "active": record.active,
             "created_at": record.created_at,
             "updated_at": record.updated_at,

@@ -71,6 +71,8 @@ import type {
   Tag,
   CsatSurvey,
   EmailNotification,
+  ScenarioAction,
+  ScenarioAutomation,
   TicketField,
   TicketFieldType,
   TicketTemplate,
@@ -422,6 +424,18 @@ const setupModuleCatalog: Record<SetupSectionId, { title: string; modules: strin
 // Admin-catalog modules that map to a real, configurable Setup panel today. Only these
 // render as clickable tiles so nothing in the catalog is a dead link; the rest land here
 // as we build their panels (B-112/B-113).
+const scenarioActionTypes: { value: string; label: string }[] = [
+  { value: 'add_tag', label: 'Add tag' },
+  { value: 'set_priority', label: 'Set priority' },
+  { value: 'set_status', label: 'Set status' },
+  { value: 'assign_group', label: 'Assign group' },
+  { value: 'add_note', label: 'Add note' },
+]
+
+function scenarioActionLabel(type: string): string {
+  return scenarioActionTypes.find((option) => option.value === type)?.label ?? titleCase(type.replace(/_/g, ' '))
+}
+
 const setupBuiltModules = new Set<string>([
   'Agents',
   'Groups',
@@ -448,6 +462,7 @@ const setupBuiltModules = new Set<string>([
   'Tags',
   'CSAT surveys',
   'Email notifications',
+  'Scenario automations',
 ])
 const analyticsReportCatalog: Record<AnalyticsReportGroup, { title: string; detail: string; badge: string }[]> = {
   catalog: [
@@ -878,6 +893,8 @@ function OmniApp() {
     updateCsatSurvey,
     createEmailNotification,
     updateEmailNotification,
+    createScenarioAutomation,
+    updateScenarioAutomation,
     createTicketField,
     updateTicketField,
     changePassword,
@@ -1020,6 +1037,13 @@ function OmniApp() {
     body: '',
   })
   const [notifBusy, setNotifBusy] = useState(false)
+  const [scenarioDraft, setScenarioDraft] = useState({ name: '', description: '' })
+  const [scenarioActions, setScenarioActions] = useState<ScenarioAction[]>([])
+  const [scenarioActionDraft, setScenarioActionDraft] = useState<ScenarioAction>({
+    type: 'add_tag',
+    value: '',
+  })
+  const [scenarioBusy, setScenarioBusy] = useState(false)
   const [addUserOpen, setAddUserOpen] = useState(false)
   const [addGroupOpen, setAddGroupOpen] = useState(false)
   const [addSlaPolicyOpen, setAddSlaPolicyOpen] = useState(false)
@@ -3269,6 +3293,49 @@ function OmniApp() {
         setPrototypeNotice(`Email notification ${notification.active ? 'paused' : 'activated'}.`)
     } finally {
       setNotifBusy(false)
+    }
+  }
+
+  function addScenarioAction() {
+    const value = scenarioActionDraft.value.trim()
+    if (!value) return
+    setScenarioActions((current) => [...current, { type: scenarioActionDraft.type, value }])
+    setScenarioActionDraft({ type: scenarioActionDraft.type, value: '' })
+  }
+
+  function removeScenarioAction(index: number) {
+    setScenarioActions((current) => current.filter((_, position) => position !== index))
+  }
+
+  async function handleCreateScenarioAutomation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const name = scenarioDraft.name.trim()
+    if (name.length < 2 || scenarioActions.length === 0 || scenarioBusy) return
+    setScenarioBusy(true)
+    try {
+      const saved = await createScenarioAutomation({
+        name,
+        description: scenarioDraft.description.trim(),
+        actions: scenarioActions,
+      })
+      if (saved) {
+        setScenarioDraft({ name: '', description: '' })
+        setScenarioActions([])
+        setPrototypeNotice('Scenario automation saved.')
+      }
+    } finally {
+      setScenarioBusy(false)
+    }
+  }
+
+  async function toggleScenarioAutomation(scenario: ScenarioAutomation) {
+    if (scenarioBusy) return
+    setScenarioBusy(true)
+    try {
+      const saved = await updateScenarioAutomation(scenario.id, { active: !scenario.active })
+      if (saved) setPrototypeNotice(`Scenario automation ${scenario.active ? 'paused' : 'activated'}.`)
+    } finally {
+      setScenarioBusy(false)
     }
   }
 
@@ -10548,6 +10615,123 @@ function OmniApp() {
                         onClick={() => void toggleEmailNotification(notification)}
                       >
                         {notification.active ? 'Pause' : 'Activate'}
+                      </button>
+                    </div>
+                  </article>
+                ))
+              )}
+            </div>
+          </div>
+          <div className="automation-settings-panel scenario-automations-panel">
+            <div className="panel-head compact">
+              <div>
+                <span>Scenario automations</span>
+                <h2>One-click action bundles agents run on a ticket</h2>
+              </div>
+              <Workflow size={18} />
+            </div>
+            <form className="user-create-form canned-response-form" onSubmit={handleCreateScenarioAutomation}>
+              <div className="canned-form-row">
+                <label>
+                  <span>Name</span>
+                  <input
+                    required
+                    value={scenarioDraft.name}
+                    onChange={(event) => setScenarioDraft((current) => ({ ...current, name: event.target.value }))}
+                    placeholder="Start refund flow"
+                    disabled={!canManageUsers || scenarioBusy}
+                  />
+                </label>
+                <label>
+                  <span>Description</span>
+                  <input
+                    value={scenarioDraft.description}
+                    onChange={(event) => setScenarioDraft((current) => ({ ...current, description: event.target.value }))}
+                    placeholder="Tag, prioritise, and route refunds"
+                    disabled={!canManageUsers || scenarioBusy}
+                  />
+                </label>
+              </div>
+              <div className="scenario-action-builder">
+                <span className="scenario-builder-label">Actions</span>
+                {scenarioActions.length > 0 ? (
+                  <ul className="scenario-action-list">
+                    {scenarioActions.map((action, index) => (
+                      <li key={`${action.type}-${index}`}>
+                        <span>{scenarioActionLabel(action.type)}: <b>{action.value}</b></span>
+                        <button type="button" aria-label="Remove action" onClick={() => removeScenarioAction(index)}>
+                          <X size={13} />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                <div className="scenario-action-row">
+                  <select
+                    value={scenarioActionDraft.type}
+                    onChange={(event) => setScenarioActionDraft((current) => ({ ...current, type: event.target.value }))}
+                    disabled={!canManageUsers || scenarioBusy}
+                    aria-label="Action type"
+                  >
+                    {scenarioActionTypes.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                  <input
+                    value={scenarioActionDraft.value}
+                    onChange={(event) => setScenarioActionDraft((current) => ({ ...current, value: event.target.value }))}
+                    placeholder="Value (e.g. refund, high, Refund Desk)"
+                    disabled={!canManageUsers || scenarioBusy}
+                    aria-label="Action value"
+                  />
+                  <button
+                    type="button"
+                    className="secondary-action"
+                    onClick={addScenarioAction}
+                    disabled={!canManageUsers || scenarioBusy || scenarioActionDraft.value.trim().length === 0}
+                  >
+                    <Plus size={14} />
+                    Add action
+                  </button>
+                </div>
+              </div>
+              <button
+                type="submit"
+                className="primary-action"
+                disabled={!canManageUsers || scenarioBusy || scenarioDraft.name.trim().length < 2 || scenarioActions.length === 0}
+              >
+                <Plus size={16} />
+                Add scenario
+              </button>
+            </form>
+            <div className="canned-response-list">
+              {state.scenarioAutomations.length === 0 ? (
+                <p className="setup-module-hint">No scenario automations yet. Build a one-click action bundle.</p>
+              ) : (
+                state.scenarioAutomations.map((scenario) => (
+                  <article className={`canned-response-card ${scenario.active ? '' : 'inactive'}`} key={scenario.id}>
+                    <div className="canned-card-head">
+                      <div>
+                        <strong>{scenario.name}</strong>
+                        <span className="template-priority">{scenario.actions.length} actions</span>
+                      </div>
+                    </div>
+                    {scenario.description ? <p className="canned-card-body">{scenario.description}</p> : null}
+                    <div className="tag-list compact-tags">
+                      {scenario.actions.map((action, index) => (
+                        <span key={`${action.type}-${index}`}>
+                          {scenarioActionLabel(action.type)}: {action.value}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="canned-card-actions">
+                      <button
+                        type="button"
+                        className="secondary-action"
+                        disabled={!canManageUsers || scenarioBusy}
+                        onClick={() => void toggleScenarioAutomation(scenario)}
+                      >
+                        {scenario.active ? 'Pause' : 'Activate'}
                       </button>
                     </div>
                   </article>

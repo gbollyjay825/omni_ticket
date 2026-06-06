@@ -1627,6 +1627,45 @@ def test_admin_manages_email_notifications(client: TestClient) -> None:
     assert any(event["action"] == "email_notification.update" for event in audit)
 
 
+def test_admin_manages_scenario_automations(client: TestClient) -> None:
+    suffix = uuid4().hex[:8]
+    created = client.post(
+        "/api/v1/scenario-automations",
+        json={
+            "name": f"Refund flow {suffix}",
+            "description": "Tag and route refunds",
+            "actions": [
+                {"type": "add_tag", "value": "refund"},
+                {"type": "set_priority", "value": "high"},
+                {"type": "", "value": "ignored"},
+            ],
+        },
+    )
+    assert created.status_code == 201
+    scenario = created.json()
+    assert len(scenario["actions"]) == 2  # blank-type action dropped
+    assert scenario["actions"][0]["type"] == "add_tag"
+
+    listing = client.get("/api/v1/scenario-automations")
+    assert listing.status_code == 200
+    assert any(item["id"] == scenario["id"] for item in listing.json())
+
+    updated = client.patch(
+        f"/api/v1/scenario-automations/{scenario['id']}",
+        json={"active": False},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["active"] is False
+
+    snapshot = client.get("/api/v1/frontend/snapshot")
+    assert snapshot.status_code == 200
+    assert any(item["id"] == scenario["id"] for item in snapshot.json()["scenario_automations"])
+
+    audit = client.get("/api/v1/audit").json()
+    assert any(event["action"] == "scenario_automation.create" for event in audit)
+    assert any(event["action"] == "scenario_automation.update" for event in audit)
+
+
 def test_role_policy_blocks_agent_from_admin_and_supervisor_controls(
     client: TestClient,
     login_as: Callable[..., dict[str, str]],

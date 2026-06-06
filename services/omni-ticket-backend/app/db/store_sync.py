@@ -12,6 +12,7 @@ from app.db.mappers import (
     channel_from_record,
     csat_survey_from_record,
     email_notification_from_record,
+    scenario_automation_from_record,
     company_from_record,
     connector_event_from_record,
     customer_from_record,
@@ -39,6 +40,7 @@ from app.db.models import (
     ChannelRecord,
     CsatSurveyRecord,
     EmailNotificationRecord,
+    ScenarioAutomationRecord,
     CompanyRecord,
     ConnectorEventRecord,
     CustomerRecord,
@@ -223,6 +225,10 @@ def hydrate_store_state(db: Session, state: InMemoryStore) -> None:
     state.email_notifications = {
         notification.id: email_notification_from_record(notification)
         for notification in db.scalars(select(EmailNotificationRecord)).all()
+    }
+    state.scenario_automations = {
+        scenario.id: scenario_automation_from_record(scenario)
+        for scenario in db.scalars(select(ScenarioAutomationRecord)).all()
     }
     state.companies = {
         company.id: company_from_record(company) for company in db.scalars(select(CompanyRecord)).all()

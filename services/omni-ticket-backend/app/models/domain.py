@@ -607,6 +607,22 @@ class EmailNotification(BaseModel):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class ScenarioAction(BaseModel):
+    type: str = Field(max_length=40)
+    value: str = Field(default="", max_length=300)
+
+
+class ScenarioAutomation(BaseModel):
+    id: str
+    market_id: str = "market-ng"
+    name: str
+    description: str = ""
+    actions: list[ScenarioAction] = Field(default_factory=list)
+    active: bool = True
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 class TicketTask(BaseModel):
     id: str
     label: str
@@ -1424,6 +1440,20 @@ class UpdateEmailNotificationRequest(BaseModel):
     recipients: list[str] | None = None
     subject: str | None = Field(default=None, max_length=300)
     body: str | None = Field(default=None, max_length=5000)
+    active: bool | None = None
+
+
+class CreateScenarioAutomationRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=180)
+    description: str = Field(default="", max_length=500)
+    actions: list[ScenarioAction] = Field(default_factory=list)
+    active: bool = True
+
+
+class UpdateScenarioAutomationRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=180)
+    description: str | None = Field(default=None, max_length=500)
+    actions: list[ScenarioAction] | None = None
     active: bool | None = None
 
 

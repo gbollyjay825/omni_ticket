@@ -13,6 +13,8 @@ from app.models.domain import (
     BusinessHoursDay,
     CsatSurvey,
     EmailNotification,
+    ScenarioAction,
+    ScenarioAutomation,
     Tag,
     TicketTemplate,
     Channel,
@@ -83,6 +85,7 @@ class InMemoryStore:
         self.tags: dict[str, Tag] = {}
         self.csat_surveys: dict[str, CsatSurvey] = {}
         self.email_notifications: dict[str, EmailNotification] = {}
+        self.scenario_automations: dict[str, ScenarioAutomation] = {}
         self.rules: dict[str, AutomationRule] = {}
         self.connector_events: dict[str, ConnectorEvent] = {}
         self.outbound_messages: dict[str, OutboundMessage] = {}
@@ -604,6 +607,34 @@ class InMemoryStore:
                     subject="SLA breached on an open ticket",
                     body="A ticket assigned to your group has breached its SLA and needs "
                     "immediate attention.",
+                ),
+            }
+
+            self.scenario_automations = {
+                "scenario-ng-refund": ScenarioAutomation(
+                    id="scenario-ng-refund",
+                    market_id="market-ng",
+                    name="Start refund flow",
+                    description="Tag, prioritise, and route a refund request to the Refund Desk.",
+                    actions=[
+                        ScenarioAction(type="add_tag", value="refund"),
+                        ScenarioAction(type="set_priority", value="high"),
+                        ScenarioAction(type="assign_group", value="Refund Desk"),
+                        ScenarioAction(
+                            type="add_note", value="Refund flow started; confirm booking reference."
+                        ),
+                    ],
+                ),
+                "scenario-ng-escalate": ScenarioAutomation(
+                    id="scenario-ng-escalate",
+                    market_id="market-ng",
+                    name="Escalate to supervisor",
+                    description="Raise priority and flag the ticket for supervisor review.",
+                    actions=[
+                        ScenarioAction(type="set_priority", value="urgent"),
+                        ScenarioAction(type="add_tag", value="escalated"),
+                        ScenarioAction(type="set_status", value="open"),
+                    ],
                 ),
             }
 

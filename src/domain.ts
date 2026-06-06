@@ -312,6 +312,20 @@ export interface EmailNotification {
   updatedAt: string
 }
 
+export interface ScenarioAction {
+  type: string
+  value: string
+}
+
+export interface ScenarioAutomation {
+  id: string
+  name: string
+  description: string
+  actions: ScenarioAction[]
+  active: boolean
+  updatedAt: string
+}
+
 export interface OutboxItem {
   id: string
   conversationId: string
@@ -412,6 +426,7 @@ export interface OmniState {
   tags: Tag[]
   csatSurveys: CsatSurvey[]
   emailNotifications: EmailNotification[]
+  scenarioAutomations: ScenarioAutomation[]
   handoffs: HandoffRecord[]
   outbox: OutboxItem[]
   settings: WorkspaceSettings
