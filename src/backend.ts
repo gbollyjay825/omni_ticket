@@ -528,6 +528,7 @@ export interface BackendSnapshot {
   customFieldDefinitions: BackendCustomFieldDefinition[]
   customObjects: BackendCustomObject[]
   products: BackendProduct[]
+  savedReports: BackendSavedReport[]
   companies: BackendCompany[]
   customers: BackendCustomer[]
   tickets: BackendTicketContext[]
@@ -1189,6 +1190,40 @@ export interface BackendUpdateProductInput {
   active?: boolean
 }
 
+export interface BackendSavedReport {
+  id: string
+  market_id: string
+  name: string
+  report_type: string
+  description: string
+  filters: Record<string, unknown>
+  cadence: string
+  recipients: string[]
+  active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface BackendCreateSavedReportInput {
+  name: string
+  report_type?: string
+  description?: string
+  filters?: Record<string, unknown>
+  cadence?: string
+  recipients?: string[]
+  active?: boolean
+}
+
+export interface BackendUpdateSavedReportInput {
+  name?: string
+  report_type?: string
+  description?: string
+  filters?: Record<string, unknown>
+  cadence?: string
+  recipients?: string[]
+  active?: boolean
+}
+
 export interface BackendCompany {
   id: string
   market_id: string
@@ -1580,6 +1615,7 @@ interface BackendFrontendSnapshot {
   custom_field_definitions: BackendCustomFieldDefinition[]
   custom_objects: BackendCustomObject[]
   products: BackendProduct[]
+  saved_reports: BackendSavedReport[]
   companies: BackendCompany[]
   customers: BackendCustomer[]
   tickets: BackendTicketContext[]
@@ -1747,6 +1783,7 @@ export async function fetchBackendSnapshot(
     scenarioAutomations: frontendSnapshot.scenario_automations ?? [],
     customFieldDefinitions: frontendSnapshot.custom_field_definitions ?? [],
     customObjects: frontendSnapshot.custom_objects ?? [],
+    savedReports: frontendSnapshot.saved_reports ?? [],
     connectorAccounts: frontendSnapshot.connector_accounts,
     outboundMessages: frontendSnapshot.outbound_messages,
     outboundProviderConfig: frontendSnapshot.outbound_provider_config ?? [],
@@ -2259,6 +2296,35 @@ export async function patchBackendProduct(
 ): Promise<BackendProduct> {
   return fetchJson<BackendProduct>(
     `/products/${productId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    },
+    session,
+  )
+}
+
+export async function createBackendSavedReport(
+  input: BackendCreateSavedReportInput,
+  session: BackendSession,
+): Promise<BackendSavedReport> {
+  return fetchJson<BackendSavedReport>(
+    '/saved-reports',
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+    session,
+  )
+}
+
+export async function patchBackendSavedReport(
+  reportId: string,
+  patch: BackendUpdateSavedReportInput,
+  session: BackendSession,
+): Promise<BackendSavedReport> {
+  return fetchJson<BackendSavedReport>(
+    `/saved-reports/${reportId}`,
     {
       method: 'PATCH',
       body: JSON.stringify(patch),

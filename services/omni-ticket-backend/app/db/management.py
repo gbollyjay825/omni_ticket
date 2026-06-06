@@ -17,6 +17,7 @@ from app.db.mappers import (
     custom_object_from_record,
     email_notification_from_record,
     product_from_record,
+    saved_report_from_record,
     scenario_automation_from_record,
     knowledge_article_from_record,
     response_macro_from_record,
@@ -38,6 +39,7 @@ from app.db.models import (
     EmailNotificationRecord,
     HandoffRecord,
     ProductRecord,
+    SavedReportRecord,
     KnowledgeArticleRecord,
     ResponseMacroRecord,
     ScenarioAutomationRecord,
@@ -60,6 +62,7 @@ from app.models.domain import (
     CreateCustomObjectRequest,
     CreateEmailNotificationRequest,
     CreateProductRequest,
+    CreateSavedReportRequest,
     CreateKnowledgeArticleRequest,
     CreateResponseMacroRequest,
     CreateScenarioAutomationRequest,
@@ -78,6 +81,7 @@ from app.models.domain import (
     KnowledgeArticleStatus,
     ResponseMacro,
     ResponseMacroSuggestion,
+    SavedReport,
     ScenarioAutomation,
     SlaPolicy,
     SupportGroup,
@@ -96,6 +100,7 @@ from app.models.domain import (
     UpdateProductRequest,
     UpdateKnowledgeArticleRequest,
     UpdateResponseMacroRequest,
+    UpdateSavedReportRequest,
     UpdateScenarioAutomationRequest,
     UpdateSlaPolicyRequest,
     UpdateSupportGroupRequest,
@@ -668,6 +673,38 @@ def _product_payload(request: CreateProductRequest | UpdateProductRequest) -> di
         payload["code"] = payload["code"].strip()
     if "description" in payload and payload["description"] is not None:
         payload["description"] = payload["description"].strip()
+    return payload
+
+
+_SAVED_REPORT_CADENCES = {"none", "daily", "weekly", "monthly"}
+
+
+def _saved_report_payload(request: CreateSavedReportRequest | UpdateSavedReportRequest) -> dict:
+    payload = request.model_dump(exclude_unset=True, mode="json")
+    if "name" in payload and payload["name"] is not None:
+        payload["name"] = _clean_group_name(payload["name"])
+        if not payload["name"]:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Saved report name is required",
+            )
+    if "cadence" in payload and payload["cadence"] is not None:
+        cadence = payload["cadence"].strip().lower() or "none"
+        if cadence not in _SAVED_REPORT_CADENCES:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Cadence must be none, daily, weekly, or monthly",
+            )
+        payload["cadence"] = cadence
+    if "recipients" in payload and payload["recipients"] is not None:
+        seen: set[str] = set()
+        recipients: list[str] = []
+        for recipient in payload["recipients"]:
+            cleaned = str(recipient).strip()
+            if cleaned and cleaned.lower() not in seen:
+                seen.add(cleaned.lower())
+                recipients.append(cleaned)
+        payload["recipients"] = recipients
     return payload
 
 
@@ -1930,6 +1967,105 @@ class ManagementRepository:
         product = product_from_record(record)
         state.products[product.id] = product
         return product
+
+    def list_saved_reports(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        market_id: str,
+    ) -> list[SavedReport]:
+        records = db.scalars(
+            select(SavedReportRecord).where(SavedReportRecord.market_id == market_id)
+        ).all()
+        reports = [saved_report_from_record(record) for record in records]
+        reports.sort(key=lambda report: (not report.active, report.name.lower()))
+        state.saved_reports = {
+            **{
+                key: value
+                for key, value in state.saved_reports.items()
+                if value.market_id != market_id
+            },
+            **{report.id: report for report in reports},
+        }
+        return reports
+
+    def create_saved_report(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        request: CreateSavedReportRequest,
+        market_id: str,
+        actor: str,
+    ) -> SavedReport:
+        payload = _saved_report_payload(request)
+        name = payload["name"]
+        duplicate = db.scalar(
+            select(SavedReportRecord).where(
+                SavedReportRecord.market_id == market_id,
+                SavedReportRecord.name == name,
+            )
+        )
+        if duplicate is not None:
+            raise HTTPException(status.HTTP_409_CONFLICT, detail="Saved report already exists")
+        record = SavedReportRecord(id=_new_id("report"), market_id=market_id, **payload)
+        db.add(record)
+        db.flush()
+        _audit(
+            db,
+            state,
+            actor=actor,
+            action="saved_report.create",
+            entity_type="saved_report",
+            entity_id=record.id,
+            market_id=market_id,
+            details={"name": record.name, "cadence": record.cadence, "active": record.active},
+        )
+        db.commit()
+        db.refresh(record)
+        report = saved_report_from_record(record)
+        state.saved_reports[report.id] = report
+        return report
+
+    def update_saved_report(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        report_id: str,
+        request: UpdateSavedReportRequest,
+        market_id: str,
+        actor: str,
+    ) -> SavedReport:
+        record = db.get(SavedReportRecord, report_id)
+        if record is None or record.market_id != market_id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Saved report not found")
+        patch = _saved_report_payload(request)
+        if "name" in patch and patch["name"] != record.name:
+            duplicate = db.scalar(
+                select(SavedReportRecord).where(
+                    SavedReportRecord.market_id == market_id,
+                    SavedReportRecord.name == patch["name"],
+                    SavedReportRecord.id != report_id,
+                )
+            )
+            if duplicate is not None:
+                raise HTTPException(status.HTTP_409_CONFLICT, detail="Saved report already exists")
+        for key, value in patch.items():
+            setattr(record, key, value)
+        _audit(
+            db,
+            state,
+            actor=actor,
+            action="saved_report.update",
+            entity_type="saved_report",
+            entity_id=report_id,
+            market_id=market_id,
+            details=patch,
+        )
+        db.commit()
+        db.refresh(record)
+        report = saved_report_from_record(record)
+        state.saved_reports[report.id] = report
+        return report
 
     def list_knowledge(
         self,

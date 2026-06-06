@@ -367,6 +367,18 @@ export interface Product {
   updatedAt: string
 }
 
+export interface SavedReport {
+  id: string
+  name: string
+  reportType: string
+  description: string
+  filters: Record<string, unknown>
+  cadence: string
+  recipients: string[]
+  active: boolean
+  updatedAt: string
+}
+
 export interface OutboxItem {
   id: string
   conversationId: string
@@ -471,6 +483,7 @@ export interface OmniState {
   customFieldDefinitions: CustomFieldDefinition[]
   customObjects: CustomObject[]
   products: Product[]
+  savedReports: SavedReport[]
   handoffs: HandoffRecord[]
   outbox: OutboxItem[]
   settings: WorkspaceSettings

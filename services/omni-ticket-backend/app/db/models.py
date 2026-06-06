@@ -361,6 +361,24 @@ class ProductRecord(TimestampMixin, Base):
     )
 
 
+class SavedReportRecord(TimestampMixin, Base):
+    __tablename__ = "saved_reports"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    market_id: Mapped[str] = mapped_column(ForeignKey("markets.id"), index=True)
+    name: Mapped[str] = mapped_column(String(180), nullable=False)
+    report_type: Mapped[str] = mapped_column(String(40), default="tickets")
+    description: Mapped[str] = mapped_column(String(500), default="")
+    filters: Mapped[dict] = mapped_column(JSON, default=dict)
+    cadence: Mapped[str] = mapped_column(String(20), default="none", index=True)
+    recipients: Mapped[list] = mapped_column(JSON, default=list)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+
+    __table_args__ = (
+        UniqueConstraint("market_id", "name", name="uq_saved_report_market_name"),
+    )
+
+
 class ChannelRecord(TimestampMixin, Base):
     __tablename__ = "channels"
 

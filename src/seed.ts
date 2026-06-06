@@ -1787,6 +1787,7 @@ export const initialOmniState: OmniState = {
   customFieldDefinitions: [],
   customObjects: [],
   products: [],
+  savedReports: [],
   handoffs: seedHandoffs,
   outbox: [],
   settings: {

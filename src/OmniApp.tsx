@@ -77,6 +77,7 @@ import type {
   CustomObject,
   CustomObjectField,
   Product,
+  SavedReport,
   TicketField,
   TicketFieldType,
   TicketTemplate,
@@ -909,6 +910,8 @@ function OmniApp() {
     updateCustomObject,
     createProduct,
     updateProduct,
+    createSavedReport,
+    updateSavedReport,
     createTicketField,
     updateTicketField,
     changePassword,
@@ -980,6 +983,8 @@ function OmniApp() {
   }
   const [channelConsoleView, setChannelConsoleView] = useState<ChannelConsoleView>('inbox')
   const [analyticsReportGroup, setAnalyticsReportGroup] = useState<AnalyticsReportGroup>('catalog')
+  const [reportDraft, setReportDraft] = useState({ name: '', reportType: 'tickets' })
+  const [reportBusy, setReportBusy] = useState(false)
   const [loginEmail, setLoginEmail] = useState('gbolahan@omniticket.example.com')
   const [loginPassword, setLoginPassword] = useState('')
   const [loginMfaCode, setLoginMfaCode] = useState('')
@@ -3502,6 +3507,82 @@ function OmniApp() {
       if (saved) setPrototypeNotice(`Product ${product.active ? 'paused' : 'activated'}.`)
     } finally {
       setProductBusy(false)
+    }
+  }
+
+  function exportAnalyticsRollupsCsv() {
+    if (typeof window === 'undefined') return
+    const rollups = backendSnapshot?.analyticsRollups ?? backendSnapshot?.analytics_rollups ?? []
+    const header = [
+      'Period start',
+      'Period end',
+      'Open',
+      'At risk',
+      'Breached',
+      'Active agents',
+      'Avg occupancy',
+      'Avg CSAT',
+    ]
+    const body = rollups.map((rollup) => [
+      rollup.period_start,
+      rollup.period_end,
+      rollup.open_tickets,
+      rollup.at_risk_tickets,
+      rollup.breached_tickets,
+      rollup.active_agents,
+      rollup.avg_occupancy,
+      rollup.avg_csat ?? '',
+    ])
+    const csv = [header, ...body]
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      .join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `omni-analytics-${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    announcePrototype(`Exported ${rollups.length} analytics rollup${rollups.length === 1 ? '' : 's'} to CSV.`)
+  }
+
+  async function handleCreateSavedReport(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const name = reportDraft.name.trim()
+    if (name.length < 1 || reportBusy) return
+    setReportBusy(true)
+    try {
+      const saved = await createSavedReport({ name, report_type: reportDraft.reportType })
+      if (saved) {
+        setReportDraft({ name: '', reportType: 'tickets' })
+        setPrototypeNotice('Saved report created.')
+      }
+    } finally {
+      setReportBusy(false)
+    }
+  }
+
+  async function toggleSavedReport(report: SavedReport) {
+    if (reportBusy) return
+    setReportBusy(true)
+    try {
+      const saved = await updateSavedReport(report.id, { active: !report.active })
+      if (saved) setPrototypeNotice(`Report ${report.active ? 'paused' : 'activated'}.`)
+    } finally {
+      setReportBusy(false)
+    }
+  }
+
+  async function setSavedReportCadence(report: SavedReport, cadence: string) {
+    if (reportBusy) return
+    setReportBusy(true)
+    try {
+      await updateSavedReport(report.id, { cadence })
+      setPrototypeNotice(cadence === 'none' ? 'Report unscheduled.' : `Report scheduled ${cadence}.`)
+    } finally {
+      setReportBusy(false)
     }
   }
 
@@ -6682,37 +6763,106 @@ function OmniApp() {
               </button>
             ))}
           </div>
-          <div className="report-card-grid">
-            {analyticsReportCatalog[analyticsReportGroup].map((report) => (
-              <article key={report.title}>
-                <div>
-                  <strong>{report.title}</strong>
-                  <span>{report.detail}</span>
+          {analyticsReportGroup === 'catalog' ? (
+            <div className="report-card-grid">
+              {analyticsReportCatalog.catalog.map((report) => (
+                <article key={report.title}>
+                  <div>
+                    <strong>{report.title}</strong>
+                    <span>{report.detail}</span>
+                  </div>
+                  <em className="chip status-done">{report.badge}</em>
+                  <div className="report-card-actions">
+                    <button type="button" onClick={exportAnalyticsRollupsCsv}>
+                      <Download size={13} />
+                      Export CSV
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <>
+              <form className="user-create-form canned-response-form report-create-form" onSubmit={handleCreateSavedReport}>
+                <div className="canned-form-row">
+                  <label>
+                    <span>Report name</span>
+                    <input
+                      required
+                      value={reportDraft.name}
+                      onChange={(event) => setReportDraft((current) => ({ ...current, name: event.target.value }))}
+                      placeholder="Executive service review"
+                      disabled={reportBusy}
+                    />
+                  </label>
+                  <label>
+                    <span>Type</span>
+                    <select
+                      value={reportDraft.reportType}
+                      onChange={(event) => setReportDraft((current) => ({ ...current, reportType: event.target.value }))}
+                      disabled={reportBusy}
+                    >
+                      {['tickets', 'chat', 'csat', 'team', 'ai'].map((type) => (
+                        <option key={type} value={type}>{titleCase(type)}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <button type="submit" className="primary-action" disabled={reportBusy || reportDraft.name.trim().length < 1}>
+                    <Plus size={16} />
+                    Save report
+                  </button>
                 </div>
-                <em className="chip status-done">{report.badge}</em>
-                <div className="report-card-actions">
-                  <button
-                    type="button"
-                    onClick={() => announcePrototype(`${report.title} opened in the Insights workspace.`)}
-                  >
-                    View details
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => announcePrototype(`${report.title} export queued.`)}
-                  >
-                    Export
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => announcePrototype(`${report.title} schedule setup opened.`)}
-                  >
-                    Schedule
-                  </button>
-                </div>
-              </article>
-            ))}
-          </div>
+              </form>
+              <div className="report-card-grid">
+                {state.savedReports
+                  .filter((report) =>
+                    analyticsReportGroup === 'scheduled' ? report.cadence !== 'none' : report.cadence === 'none',
+                  )
+                  .map((report) => (
+                    <article key={report.id} className={report.active ? '' : 'inactive'}>
+                      <div>
+                        <strong>{report.name}</strong>
+                        <span>{report.description || `${titleCase(report.reportType)} report`}</span>
+                        {report.recipients.length > 0 ? (
+                          <span>Recipients: {report.recipients.join(', ')}</span>
+                        ) : null}
+                      </div>
+                      <em className="chip status-done">{titleCase(report.reportType)}</em>
+                      <div className="report-card-actions">
+                        <button type="button" onClick={exportAnalyticsRollupsCsv}>
+                          <Download size={13} />
+                          Export CSV
+                        </button>
+                        <label className="report-cadence">
+                          <span>Schedule</span>
+                          <select
+                            value={report.cadence}
+                            onChange={(event) => void setSavedReportCadence(report, event.target.value)}
+                            disabled={reportBusy}
+                          >
+                            {['none', 'daily', 'weekly', 'monthly'].map((cadence) => (
+                              <option key={cadence} value={cadence}>{titleCase(cadence)}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <button type="button" disabled={reportBusy} onClick={() => void toggleSavedReport(report)}>
+                          {report.active ? 'Pause' : 'Activate'}
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                {state.savedReports.filter((report) =>
+                  analyticsReportGroup === 'scheduled' ? report.cadence !== 'none' : report.cadence === 'none',
+                ).length === 0 ? (
+                  <p className="setup-module-hint">
+                    {analyticsReportGroup === 'scheduled'
+                      ? 'No scheduled exports yet. Save a report and set a schedule.'
+                      : 'No saved reports yet. Create one above.'}
+                  </p>
+                ) : null}
+              </div>
+            </>
+          )}
         </section>
         <section className="panel span-2">
           <div className="panel-head">

@@ -1791,6 +1791,50 @@ def test_admin_manages_products(client: TestClient) -> None:
     assert any(event["action"] == "product.update" for event in audit)
 
 
+def test_admin_manages_saved_reports(client: TestClient) -> None:
+    suffix = uuid4().hex[:6]
+    created = client.post(
+        "/api/v1/saved-reports",
+        json={
+            "name": f"Weekly board {suffix}",
+            "report_type": "csat",
+            "cadence": "weekly",
+            "recipients": ["quality@wakanow.com", "quality@wakanow.com"],
+            "filters": {"market": "ng"},
+        },
+    )
+    assert created.status_code == 201
+    report = created.json()
+    assert report["cadence"] == "weekly"
+    assert report["recipients"] == ["quality@wakanow.com"]  # de-duplicated
+
+    bad = client.post(
+        "/api/v1/saved-reports",
+        json={"name": f"Bad {suffix}", "cadence": "hourly"},
+    )
+    assert bad.status_code == 422
+
+    listing = client.get("/api/v1/saved-reports")
+    assert listing.status_code == 200
+    assert any(item["id"] == report["id"] for item in listing.json())
+
+    updated = client.patch(
+        f"/api/v1/saved-reports/{report['id']}",
+        json={"cadence": "none", "active": False},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["cadence"] == "none"
+    assert updated.json()["active"] is False
+
+    snapshot = client.get("/api/v1/frontend/snapshot")
+    assert snapshot.status_code == 200
+    assert any(item["id"] == report["id"] for item in snapshot.json()["saved_reports"])
+
+    audit = client.get("/api/v1/audit").json()
+    assert any(event["action"] == "saved_report.create" for event in audit)
+    assert any(event["action"] == "saved_report.update" for event in audit)
+
+
 def test_role_policy_blocks_agent_from_admin_and_supervisor_controls(
     client: TestClient,
     login_as: Callable[..., dict[str, str]],

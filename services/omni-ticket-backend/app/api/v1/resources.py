@@ -82,6 +82,7 @@ from app.models.domain import (
     CustomObject,
     EmailNotification,
     Product,
+    SavedReport,
     ScenarioAutomation,
     CreateAutomationRuleRequest,
     CreateAttachmentRequest,
@@ -103,6 +104,7 @@ from app.models.domain import (
     CreateCustomFieldDefinitionRequest,
     CreateCustomObjectRequest,
     CreateProductRequest,
+    CreateSavedReportRequest,
     CreateTicketFieldRequest,
     CreateTicketRequest,
     CreateTicketTemplateRequest,
@@ -175,6 +177,7 @@ from app.models.domain import (
     UpdateCustomFieldDefinitionRequest,
     UpdateCustomObjectRequest,
     UpdateProductRequest,
+    UpdateSavedReportRequest,
     UpdateTicketFieldRequest,
     UpdateTicketRequest,
     UpdateTicketTemplateRequest,
@@ -1604,6 +1607,51 @@ def update_product(
         db,
         state,
         product_id,
+        request,
+        context.market_id,
+        context.user.email,
+    )
+
+
+@router.get("/saved-reports", response_model=list[SavedReport])
+def list_saved_reports(
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> list[SavedReport]:
+    return management_repository.list_saved_reports(db, state, context.market_id)
+
+
+@router.post("/saved-reports", response_model=SavedReport, status_code=status.HTTP_201_CREATED)
+def create_saved_report(
+    request: CreateSavedReportRequest,
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> SavedReport:
+    require_admin(context)
+    return management_repository.create_saved_report(
+        db,
+        state,
+        request,
+        context.market_id,
+        context.user.email,
+    )
+
+
+@router.patch("/saved-reports/{report_id}", response_model=SavedReport)
+def update_saved_report(
+    report_id: str,
+    request: UpdateSavedReportRequest,
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> SavedReport:
+    require_admin(context)
+    return management_repository.update_saved_report(
+        db,
+        state,
+        report_id,
         request,
         context.market_id,
         context.user.email,
@@ -3417,6 +3465,7 @@ def read_frontend_snapshot(
         ),
         "custom_objects": management_repository.list_custom_objects(db, state, context.market_id),
         "products": management_repository.list_products(db, state, context.market_id),
+        "saved_reports": management_repository.list_saved_reports(db, state, context.market_id),
         "companies": companies,
         "customers": customers,
         "tickets": [

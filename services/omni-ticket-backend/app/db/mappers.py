@@ -24,6 +24,7 @@ from app.db.models import (
     OutboundMessageRecord,
     ProductRecord,
     ProductionAccountReferenceRecord,
+    SavedReportRecord,
     ResponseMacroRecord,
     ScenarioAutomationRecord,
     SlaPolicyRecord,
@@ -75,6 +76,7 @@ from app.models.domain import (
     OutboundMessageStatus,
     Product,
     ProductionAccountReference,
+    SavedReport,
     ResponseMacro,
     ScenarioAutomation,
     SlaPolicy,
@@ -287,6 +289,24 @@ def custom_field_definition_from_record(
             "options": record.options or [],
             "help_text": record.help_text,
             "position": record.position,
+            "created_at": record.created_at,
+            "updated_at": record.updated_at,
+        }
+    )
+
+
+def saved_report_from_record(record: SavedReportRecord) -> SavedReport:
+    return SavedReport.model_validate(
+        {
+            "id": record.id,
+            "market_id": record.market_id,
+            "name": record.name,
+            "report_type": record.report_type,
+            "description": record.description,
+            "filters": record.filters or {},
+            "cadence": record.cadence,
+            "recipients": record.recipients or [],
+            "active": record.active,
             "created_at": record.created_at,
             "updated_at": record.updated_at,
         }

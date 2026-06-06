@@ -670,6 +670,20 @@ class Product(BaseModel):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class SavedReport(BaseModel):
+    id: str
+    market_id: str = "market-ng"
+    name: str
+    report_type: str = "tickets"
+    description: str = ""
+    filters: dict[str, Any] = Field(default_factory=dict)
+    cadence: str = "none"
+    recipients: list[str] = Field(default_factory=list)
+    active: bool = True
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 class TicketTask(BaseModel):
     id: str
     label: str
@@ -1552,6 +1566,26 @@ class UpdateProductRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=180)
     code: str | None = Field(default=None, max_length=64)
     description: str | None = Field(default=None, max_length=500)
+    active: bool | None = None
+
+
+class CreateSavedReportRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=180)
+    report_type: str = Field(default="tickets", max_length=40)
+    description: str = Field(default="", max_length=500)
+    filters: dict[str, Any] = Field(default_factory=dict)
+    cadence: str = Field(default="none", max_length=20)
+    recipients: list[str] = Field(default_factory=list)
+    active: bool = True
+
+
+class UpdateSavedReportRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=180)
+    report_type: str | None = Field(default=None, max_length=40)
+    description: str | None = Field(default=None, max_length=500)
+    filters: dict[str, Any] | None = None
+    cadence: str | None = Field(default=None, max_length=20)
+    recipients: list[str] | None = None
     active: bool | None = None
 
 

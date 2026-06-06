@@ -17,6 +17,7 @@ from app.models.domain import (
     CustomObjectField,
     EmailNotification,
     Product,
+    SavedReport,
     ScenarioAction,
     ScenarioAutomation,
     Tag,
@@ -93,6 +94,7 @@ class InMemoryStore:
         self.custom_field_definitions: dict[str, CustomFieldDefinition] = {}
         self.custom_objects: dict[str, CustomObject] = {}
         self.products: dict[str, Product] = {}
+        self.saved_reports: dict[str, SavedReport] = {}
         self.rules: dict[str, AutomationRule] = {}
         self.connector_events: dict[str, ConnectorEvent] = {}
         self.outbound_messages: dict[str, OutboundMessage] = {}
@@ -748,6 +750,39 @@ class InMemoryStore:
                     name="Wakanow Hotels",
                     code="HOTELS",
                     description="Hotel reservations and stays.",
+                ),
+            }
+
+            self.saved_reports = {
+                "report-exec-review": SavedReport(
+                    id="report-exec-review",
+                    market_id="market-ng",
+                    name="Executive service review",
+                    report_type="tickets",
+                    description="Open work, breached promises, and resolution movement for leadership.",
+                    filters={"status": "open"},
+                    cadence="weekly",
+                    recipients=["leadership@wakanow.com"],
+                ),
+                "report-refund-backlog": SavedReport(
+                    id="report-refund-backlog",
+                    market_id="market-ng",
+                    name="Refund desk backlog",
+                    report_type="team",
+                    description="Refund group backlog, average handling time, and overdue work.",
+                    filters={"group": "Refund Desk"},
+                    cadence="daily",
+                    recipients=["refunds@wakanow.com"],
+                ),
+                "report-csat-board": SavedReport(
+                    id="report-csat-board",
+                    market_id="market-ng",
+                    name="Weekly CSAT board",
+                    report_type="csat",
+                    description="Ticket and chat CSAT with feedback themes.",
+                    filters={},
+                    cadence="weekly",
+                    recipients=["quality@wakanow.com"],
                 ),
             }
 
