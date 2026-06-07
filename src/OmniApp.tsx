@@ -436,6 +436,7 @@ const setupBuiltModules = new Set<string>([
   'Omnichat',
   'Forums',
   'Widgets',
+  'Canned forms',
 ])
 const analyticsReportCatalog: Record<AnalyticsReportGroup, { title: string; detail: string; badge: string }[]> = {
   catalog: [
