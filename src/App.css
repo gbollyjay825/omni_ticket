@@ -2935,6 +2935,78 @@ button:disabled {
   display: block;
 }
 
+/* Sidebar collapse/expand toggle */
+.sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sidebar-toggle {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line, #dce4ee);
+  border-radius: 8px;
+  background: #fff;
+  color: #506a82;
+  cursor: pointer;
+}
+
+.sidebar-toggle:hover {
+  border-color: #0b5eea;
+  color: #0b5eea;
+}
+
+@media (min-width: 861px) {
+  /* User-controlled expand — overrides the auto-collapse breakpoint below 1180px */
+  .app-shell.nav-expanded {
+    grid-template-columns: var(--rail-w, 232px) minmax(0, 1fr);
+  }
+  .app-shell.nav-expanded .brand-lockup div:last-child {
+    display: block;
+  }
+  .app-shell.nav-expanded .nav-item span {
+    display: inline;
+  }
+  .app-shell.nav-expanded .sidebar-footer {
+    display: grid;
+  }
+  .app-shell.nav-expanded .brand-lockup,
+  .app-shell.nav-expanded .nav-item {
+    justify-content: flex-start;
+  }
+
+  /* User-controlled collapse — icon-only rail even on wide screens */
+  .app-shell.nav-collapsed {
+    grid-template-columns: var(--rail-w-collapsed, 60px) minmax(0, 1fr);
+  }
+  .app-shell.nav-collapsed .brand-lockup div:last-child,
+  .app-shell.nav-collapsed .nav-item span,
+  .app-shell.nav-collapsed .sidebar-footer {
+    display: none;
+  }
+  .app-shell.nav-collapsed .brand-lockup,
+  .app-shell.nav-collapsed .nav-item {
+    justify-content: center;
+  }
+  .app-shell.nav-collapsed .sidebar-head {
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+}
+
+@media (max-width: 860px) {
+  .sidebar-toggle {
+    display: none;
+  }
+}
+
 /* Ticket detail back bar (master-detail navigation) */
 .desk-detail-backbar {
   display: flex;

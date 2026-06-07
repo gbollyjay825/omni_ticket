@@ -917,6 +917,11 @@ function OmniApp() {
   const [prototypeNotice, setPrototypeNotice] = useState('')
   const [announcementDismissed, setAnnouncementDismissed] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const [navExpanded, setNavExpanded] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true
+    const stored = window.localStorage.getItem('omni-nav-expanded')
+    return stored === null ? true : stored === 'true'
+  })
   const [directChatFilter, setDirectChatFilter] = useState<'all' | 'open' | 'resolved'>('all')
   const [quickCreateOpen, setQuickCreateOpen] = useState(false)
   const [notificationOpen, setNotificationOpen] = useState(false)
@@ -4295,6 +4300,18 @@ function OmniApp() {
     setQuickCreateOpen(false)
     setQuickTicket((current) => ({ ...current, subject: '', body: '', customFields: {} }))
     announcePrototype('New ticket created and opened in the Work Queue.')
+  }
+
+  function toggleNav() {
+    setNavExpanded((value) => {
+      const next = !value
+      try {
+        window.localStorage.setItem('omni-nav-expanded', String(next))
+      } catch {
+        /* ignore storage failures */
+      }
+      return next
+    })
   }
 
   function openConversation(conversation: OmniConversation) {
@@ -13165,22 +13182,34 @@ function OmniApp() {
   const pageSubtitle = currentMarket ? `${currentMarket.name} market. ${screenLead[currentScreen.id]}` : screenLead[currentScreen.id]
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${navExpanded ? 'nav-expanded' : 'nav-collapsed'}`}>
       <aside className="sidebar">
-        <a
-          className="brand-lockup"
-          href={routeHref({ screen: 'command' })}
-          onClick={(event) => handleAppLink(event, () => selectScreen('command'))}
-          aria-label="Go to Omni Command home"
-        >
-          <div className="brand-mark">
-            <LifeBuoy size={23} />
-          </div>
-          <div>
-            <strong>Omni Ticket</strong>
-            <span>Operations support</span>
-          </div>
-        </a>
+        <div className="sidebar-head">
+          <a
+            className="brand-lockup"
+            href={routeHref({ screen: 'command' })}
+            onClick={(event) => handleAppLink(event, () => selectScreen('command'))}
+            aria-label="Go to Omni Command home"
+          >
+            <div className="brand-mark">
+              <LifeBuoy size={23} />
+            </div>
+            <div>
+              <strong>Omni Ticket</strong>
+              <span>Operations support</span>
+            </div>
+          </a>
+          <button
+            type="button"
+            className="sidebar-toggle"
+            onClick={toggleNav}
+            aria-pressed={navExpanded}
+            aria-label={navExpanded ? 'Collapse navigation' : 'Expand navigation'}
+            title={navExpanded ? 'Collapse navigation' : 'Expand navigation'}
+          >
+            <ArrowRight className={navExpanded ? 'flip-x' : ''} size={16} />
+          </button>
+        </div>
         <nav className="side-nav" aria-label="Primary navigation">
           {screenConfig.map((item) => renderNavItem(item))}
         </nav>
