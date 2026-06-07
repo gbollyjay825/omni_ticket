@@ -37,6 +37,7 @@ from app.db.connectors import connector_account_repository
 from app.db.email_settings import email_provider_settings_repository
 from app.db.integration_credentials import integration_credential_settings_repository
 from app.db.sso_settings import sso_provider_settings_repository
+from app.db.widget_settings import widget_settings_repository
 from app.db.management import management_repository
 from app.db.mappers import (
     audit_event_from_record,
@@ -192,6 +193,8 @@ from app.models.domain import (
     UpdateTicketFieldRequest,
     UpdateTicketRequest,
     UpdateTicketTemplateRequest,
+    UpdateWidgetSettingsRequest,
+    WidgetSettings,
     WorkQueueItem,
     WorkQueueOverrideRequest,
     utc_now,
@@ -2690,6 +2693,34 @@ def update_sso_provider_settings(
     )
 
 
+@router.get("/widget-settings", response_model=WidgetSettings)
+def read_widget_settings(
+    context: RequestContext = Depends(require_context),
+    db: Session = Depends(get_db),
+) -> WidgetSettings:
+    require_supervisor(context)
+    result = widget_settings_repository.read(db, market_id=context.market_id)
+    db.commit()
+    return result
+
+
+@router.patch("/widget-settings", response_model=WidgetSettings)
+def update_widget_settings(
+    request: UpdateWidgetSettingsRequest,
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> WidgetSettings:
+    require_admin(context)
+    return widget_settings_repository.update(
+        db,
+        state,
+        request,
+        market_id=context.market_id,
+        actor=context.user.email,
+    )
+
+
 @router.get("/attachments/provider-config", response_model=AttachmentProviderConfig)
 def read_attachment_provider_config(
     context: RequestContext = Depends(require_context),
@@ -3590,6 +3621,7 @@ def read_frontend_snapshot(
     email_provider_settings = None
     integration_credential_settings = None
     sso_provider_settings = None
+    widget_settings = None
     if can_view_supervisor_controls:
         operational_alerts = operational_alert_repository.list_alerts(db, context.market_id)
         alert_deliveries = operational_alert_delivery_repository.list_deliveries(
@@ -3612,6 +3644,7 @@ def read_frontend_snapshot(
             db,
             market_id=context.market_id,
         )
+        widget_settings = widget_settings_repository.read(db, market_id=context.market_id)
         if context.user.role == "admin":
             sso_provider_settings = sso_provider_settings_repository.read(db)
     return {
@@ -3664,6 +3697,7 @@ def read_frontend_snapshot(
         "email_provider_settings": email_provider_settings,
         "integration_credential_settings": integration_credential_settings,
         "sso_provider_settings": sso_provider_settings,
+        "widget_settings": widget_settings,
         "connector_accounts": connector_account_repository.list_accounts(db, context.market_id),
         "knowledge": management_repository.list_knowledge(db, state, context.market_id),
         "macros": management_repository.list_response_macros(db, state, context.market_id),

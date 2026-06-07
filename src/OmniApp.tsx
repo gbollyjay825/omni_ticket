@@ -119,6 +119,7 @@ import type {
   BackendUpdateEmailProviderSettingsInput,
   BackendUpdateIntegrationCredentialSettingsInput,
   BackendUpdateSsoProviderSettingsInput,
+  BackendWidgetSettings,
 } from './backend'
 import {
   createBackendDiscussionComment,
@@ -141,6 +142,7 @@ import {
   patchBackendIntegrationCredentialSettings,
   patchBackendSettings,
   patchBackendSsoSettings,
+  patchBackendWidgetSettings,
   patchBackendProductionAccountReference,
   pruneBackendAttachmentRetention,
   pruneBackendAuditRetention,
@@ -433,6 +435,7 @@ const setupBuiltModules = new Set<string>([
   'Feedback form',
   'Omnichat',
   'Forums',
+  'Widgets',
 ])
 const analyticsReportCatalog: Record<AnalyticsReportGroup, { title: string; detail: string; badge: string }[]> = {
   catalog: [
@@ -1132,6 +1135,18 @@ function OmniApp() {
     portalWelcomeMessage: '',
   })
   const [brandingBusy, setBrandingBusy] = useState(false)
+  const [widgetDraft, setWidgetDraft] = useState({
+    enabled: false,
+    displayName: 'Chat with us',
+    welcomeMessage: '',
+    primaryColor: '#0b5eea',
+    launcherLabel: 'Support',
+    position: 'bottom-right',
+    autoOpenSeconds: 0,
+    collectEmail: true,
+    offlineMessage: '',
+  })
+  const [widgetBusy, setWidgetBusy] = useState(false)
   const [productionAccountPack, setProductionAccountPack] =
     useState<BackendProductionAccountRequestPack | null>(null)
   const [productionAccountBusy, setProductionAccountBusy] = useState(false)
@@ -1273,6 +1288,8 @@ function OmniApp() {
   const ssoProviderSettings: BackendSsoProviderSettings | null =
     backendSnapshot?.ssoProviderSettings ?? backendSnapshot?.sso_provider_settings ?? null
   const workspaceSettings = backendSnapshot?.settings ?? null
+  const widgetSettings: BackendWidgetSettings | null =
+    backendSnapshot?.widgetSettings ?? backendSnapshot?.widget_settings ?? null
   const availableMarkets = backendSession?.available_markets ?? []
   const operationalAlerts = backendSnapshot?.operationalAlerts ?? backendSnapshot?.operational_alerts ?? []
   const alertDeliveries = backendSnapshot?.alertDeliveries ?? backendSnapshot?.alert_deliveries ?? []
@@ -1467,6 +1484,25 @@ function OmniApp() {
     const timeoutId = window.setTimeout(syncDraft, 0)
     return () => window.clearTimeout(timeoutId)
   }, [workspaceSettings])
+
+  useEffect(() => {
+    function syncDraft() {
+      if (!widgetSettings) return
+      setWidgetDraft({
+        enabled: widgetSettings.enabled,
+        displayName: widgetSettings.display_name,
+        welcomeMessage: widgetSettings.welcome_message,
+        primaryColor: widgetSettings.primary_color || '#0b5eea',
+        launcherLabel: widgetSettings.launcher_label,
+        position: widgetSettings.position || 'bottom-right',
+        autoOpenSeconds: widgetSettings.auto_open_seconds,
+        collectEmail: widgetSettings.collect_email,
+        offlineMessage: widgetSettings.offline_message,
+      })
+    }
+    const timeoutId = window.setTimeout(syncDraft, 0)
+    return () => window.clearTimeout(timeoutId)
+  }, [widgetSettings])
 
   const operationalNotifications = activeOperationalAlerts.slice(0, 3).map((alert) => ({
     id: alert.id,
@@ -1885,6 +1921,34 @@ function OmniApp() {
       setPrototypeNotice(error instanceof Error ? error.message : 'Branding save failed.')
     } finally {
       setBrandingBusy(false)
+    }
+  }
+
+  async function handleWidgetSave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!backendSession || widgetBusy) return
+    setWidgetBusy(true)
+    try {
+      await patchBackendWidgetSettings(
+        {
+          enabled: widgetDraft.enabled,
+          display_name: widgetDraft.displayName.trim() || 'Chat with us',
+          welcome_message: widgetDraft.welcomeMessage.trim(),
+          primary_color: widgetDraft.primaryColor.trim() || '#0b5eea',
+          launcher_label: widgetDraft.launcherLabel.trim() || 'Support',
+          position: widgetDraft.position,
+          auto_open_seconds: widgetDraft.autoOpenSeconds,
+          collect_email: widgetDraft.collectEmail,
+          offline_message: widgetDraft.offlineMessage.trim(),
+        },
+        backendSession,
+      )
+      setPrototypeNotice('Chat widget settings saved.')
+      await refreshBackend()
+    } catch (error) {
+      setPrototypeNotice(error instanceof Error ? error.message : 'Widget save failed.')
+    } finally {
+      setWidgetBusy(false)
     }
   }
 
@@ -10461,6 +10525,116 @@ function OmniApp() {
           ) : null}
           {setupSection === 'connectors' ? (
           <>
+          <div className="automation-settings-panel widget-settings-panel" id="widget-settings">
+            <div className="panel-head compact">
+              <div>
+                <span>Chat widget</span>
+                <h2>Embeddable web chat configuration</h2>
+              </div>
+              <MessageCircle size={18} />
+            </div>
+            {widgetSettings ? (
+              <form className="sso-settings-form" onSubmit={handleWidgetSave}>
+                <label className="toggle-row compact-toggle">
+                  <input
+                    type="checkbox"
+                    checked={widgetDraft.enabled}
+                    onChange={(event) => setWidgetDraft((current) => ({ ...current, enabled: event.target.checked }))}
+                    disabled={widgetBusy}
+                  />
+                  <span>Enable the web chat widget</span>
+                </label>
+                <div className="sso-settings-grid">
+                  <label>
+                    <span>Header title</span>
+                    <input
+                      value={widgetDraft.displayName}
+                      onChange={(event) => setWidgetDraft((current) => ({ ...current, displayName: event.target.value }))}
+                      placeholder="Chat with us"
+                      disabled={widgetBusy}
+                    />
+                  </label>
+                  <label>
+                    <span>Launcher label</span>
+                    <input
+                      value={widgetDraft.launcherLabel}
+                      onChange={(event) => setWidgetDraft((current) => ({ ...current, launcherLabel: event.target.value }))}
+                      placeholder="Support"
+                      disabled={widgetBusy}
+                    />
+                  </label>
+                  <label>
+                    <span>Primary color</span>
+                    <input
+                      type="color"
+                      value={widgetDraft.primaryColor}
+                      onChange={(event) => setWidgetDraft((current) => ({ ...current, primaryColor: event.target.value }))}
+                      disabled={widgetBusy}
+                    />
+                  </label>
+                  <label>
+                    <span>Position</span>
+                    <select
+                      value={widgetDraft.position}
+                      onChange={(event) => setWidgetDraft((current) => ({ ...current, position: event.target.value }))}
+                      disabled={widgetBusy}
+                    >
+                      <option value="bottom-right">Bottom right</option>
+                      <option value="bottom-left">Bottom left</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Auto-open after (seconds, 0 = off)</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="600"
+                      value={widgetDraft.autoOpenSeconds}
+                      onChange={(event) =>
+                        setWidgetDraft((current) => ({ ...current, autoOpenSeconds: Number(event.target.value || 0) }))
+                      }
+                      disabled={widgetBusy}
+                    />
+                  </label>
+                </div>
+                <label className="sso-settings-full">
+                  <span>Welcome message</span>
+                  <textarea
+                    rows={2}
+                    value={widgetDraft.welcomeMessage}
+                    onChange={(event) => setWidgetDraft((current) => ({ ...current, welcomeMessage: event.target.value }))}
+                    placeholder="Hi! How can we help you today?"
+                    disabled={widgetBusy}
+                  />
+                </label>
+                <label className="sso-settings-full">
+                  <span>Offline message</span>
+                  <textarea
+                    rows={2}
+                    value={widgetDraft.offlineMessage}
+                    onChange={(event) => setWidgetDraft((current) => ({ ...current, offlineMessage: event.target.value }))}
+                    placeholder="We're offline right now — leave a message and we'll reply by email."
+                    disabled={widgetBusy}
+                  />
+                </label>
+                <label className="toggle-row compact-toggle">
+                  <input
+                    type="checkbox"
+                    checked={widgetDraft.collectEmail}
+                    onChange={(event) => setWidgetDraft((current) => ({ ...current, collectEmail: event.target.checked }))}
+                    disabled={widgetBusy}
+                  />
+                  <span>Ask visitors for their email before chatting</span>
+                </label>
+                <button type="submit" className="primary-action" disabled={widgetBusy}>
+                  <MessageCircle size={16} />
+                  Save widget settings
+                </button>
+              </form>
+            ) : (
+              <p className="setup-module-hint">Sign in as an administrator to configure the chat widget.</p>
+            )}
+          </div>
           <form className="automation-settings-panel credential-settings-panel" onSubmit={handleIntegrationCredentialSave}>
             <div className="panel-head compact">
               <div>

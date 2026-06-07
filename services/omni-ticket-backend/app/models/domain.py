@@ -449,6 +449,32 @@ class UpdateIntegrationCredentialSettingsRequest(BaseModel):
     clear_instagram_access_token: bool = False
 
 
+class WidgetSettings(BaseModel):
+    market_id: str = "market-ng"
+    enabled: bool = False
+    display_name: str = "Chat with us"
+    welcome_message: str = "Hi! How can we help you today?"
+    primary_color: str = "#0b5eea"
+    launcher_label: str = "Support"
+    position: str = "bottom-right"
+    auto_open_seconds: int = Field(default=0, ge=0, le=600)
+    collect_email: bool = True
+    offline_message: str = "We're offline right now — leave a message and we'll reply by email."
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class UpdateWidgetSettingsRequest(BaseModel):
+    enabled: bool | None = None
+    display_name: str | None = Field(default=None, max_length=120)
+    welcome_message: str | None = Field(default=None, max_length=500)
+    primary_color: str | None = Field(default=None, max_length=20)
+    launcher_label: str | None = Field(default=None, max_length=80)
+    position: str | None = Field(default=None, max_length=20)
+    auto_open_seconds: int | None = Field(default=None, ge=0, le=600)
+    collect_email: bool | None = None
+    offline_message: str | None = Field(default=None, max_length=500)
+
+
 class SsoProviderSettings(BaseModel):
     enabled: bool = False
     provider_name: str = "Enterprise SSO"

@@ -17,7 +17,7 @@ from app.db.models import (
 )
 from app.db.session import create_database_engine
 
-ALEMBIC_HEAD = "20260607_0039"
+ALEMBIC_HEAD = "20260607_0040"
 
 
 def test_database_schema_and_seed_are_postgres_ready_with_local_sqlite(tmp_path: Path) -> None:
@@ -46,6 +46,7 @@ def test_database_schema_and_seed_are_postgres_ready_with_local_sqlite(tmp_path:
     assert "service_appointments" in tables
     assert "discussion_topics" in tables
     assert "discussion_comments" in tables
+    assert "widget_settings" in tables
     assert "customers" in tables
     assert "attachments" in tables
     assert "csat_feedback" in tables

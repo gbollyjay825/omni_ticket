@@ -449,6 +449,32 @@ export interface BackendIntegrationCredentialSettings {
   updated_at: string
 }
 
+export interface BackendWidgetSettings {
+  market_id: string
+  enabled: boolean
+  display_name: string
+  welcome_message: string
+  primary_color: string
+  launcher_label: string
+  position: string
+  auto_open_seconds: number
+  collect_email: boolean
+  offline_message: string
+  updated_at: string
+}
+
+export interface BackendUpdateWidgetSettingsInput {
+  enabled?: boolean
+  display_name?: string
+  welcome_message?: string
+  primary_color?: string
+  launcher_label?: string
+  position?: string
+  auto_open_seconds?: number
+  collect_email?: boolean
+  offline_message?: string
+}
+
 export interface BackendSsoProviderSettings {
   enabled: boolean
   provider_name: string
@@ -552,6 +578,7 @@ export interface BackendSnapshot {
   emailProviderSettings: BackendEmailProviderSettings | null
   integrationCredentialSettings: BackendIntegrationCredentialSettings | null
   ssoProviderSettings: BackendSsoProviderSettings | null
+  widgetSettings: BackendWidgetSettings | null
   operationalAlerts: BackendOperationalAlert[]
   alertDeliveries: BackendOperationalAlertDelivery[]
   alertDeliveryConfig: BackendOperationalAlertDeliveryConfig
@@ -585,6 +612,7 @@ export interface BackendSnapshot {
   email_provider_settings: BackendEmailProviderSettings | null
   integration_credential_settings: BackendIntegrationCredentialSettings | null
   sso_provider_settings: BackendSsoProviderSettings | null
+  widget_settings: BackendWidgetSettings | null
   operational_alerts: BackendOperationalAlert[]
   alert_deliveries: BackendOperationalAlertDelivery[]
   alert_delivery_config: BackendOperationalAlertDeliveryConfig
@@ -1798,6 +1826,7 @@ interface BackendFrontendSnapshot {
   email_provider_settings: BackendEmailProviderSettings | null
   integration_credential_settings: BackendIntegrationCredentialSettings | null
   sso_provider_settings: BackendSsoProviderSettings | null
+  widget_settings: BackendWidgetSettings | null
   operational_alerts: BackendOperationalAlert[]
   alert_deliveries: BackendOperationalAlertDelivery[]
   alert_delivery_config: BackendOperationalAlertDeliveryConfig
@@ -1962,6 +1991,7 @@ export async function fetchBackendSnapshot(
     emailProviderSettings: frontendSnapshot.email_provider_settings ?? null,
     integrationCredentialSettings: frontendSnapshot.integration_credential_settings ?? null,
     ssoProviderSettings: frontendSnapshot.sso_provider_settings ?? null,
+    widgetSettings: frontendSnapshot.widget_settings ?? null,
     operationalAlerts: frontendSnapshot.operational_alerts,
     alertDeliveries: frontendSnapshot.alert_deliveries,
     alertDeliveryConfig: frontendSnapshot.alert_delivery_config,
@@ -2019,6 +2049,16 @@ export async function patchBackendSsoSettings(
   session: BackendSession,
 ): Promise<BackendSsoProviderSettings> {
   return fetchJson<BackendSsoProviderSettings>('/sso/settings', {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  }, session)
+}
+
+export async function patchBackendWidgetSettings(
+  patch: BackendUpdateWidgetSettingsInput,
+  session: BackendSession,
+): Promise<BackendWidgetSettings> {
+  return fetchJson<BackendWidgetSettings>('/widget-settings', {
     method: 'PATCH',
     body: JSON.stringify(patch),
   }, session)

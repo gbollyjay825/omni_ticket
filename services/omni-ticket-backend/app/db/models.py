@@ -186,6 +186,23 @@ class SsoProviderSettingsRecord(TimestampMixin, Base):
     require_email_verified: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
+class WidgetSettingsRecord(TimestampMixin, Base):
+    __tablename__ = "widget_settings"
+
+    market_id: Mapped[str] = mapped_column(ForeignKey("markets.id"), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    display_name: Mapped[str] = mapped_column(String(120), default="Chat with us")
+    welcome_message: Mapped[str] = mapped_column(
+        Text, default="Hi! How can we help you today?"
+    )
+    primary_color: Mapped[str] = mapped_column(String(20), default="#0b5eea")
+    launcher_label: Mapped[str] = mapped_column(String(80), default="Support")
+    position: Mapped[str] = mapped_column(String(20), default="bottom-right")
+    auto_open_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    collect_email: Mapped[bool] = mapped_column(Boolean, default=True)
+    offline_message: Mapped[str] = mapped_column(Text, default="")
+
+
 class AgentRecord(TimestampMixin, Base):
     __tablename__ = "agents"
 

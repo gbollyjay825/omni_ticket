@@ -3429,6 +3429,39 @@ def test_admin_manages_portal_branding_settings(client: TestClient) -> None:
     assert reread["portal_welcome_message"] == "How can we help you travel better today?"
 
 
+def test_admin_manages_widget_settings(client: TestClient) -> None:
+    initial = client.get("/api/v1/widget-settings")
+    assert initial.status_code == 200
+    assert initial.json()["position"] == "bottom-right"
+
+    bad = client.patch("/api/v1/widget-settings", json={"position": "floating"})
+    assert bad.status_code == 422
+
+    updated = client.patch(
+        "/api/v1/widget-settings",
+        json={
+            "enabled": True,
+            "display_name": "Talk to Wakanow",
+            "welcome_message": "Need help with a booking?",
+            "primary_color": "#0f766e",
+            "position": "bottom-left",
+            "auto_open_seconds": 15,
+            "collect_email": True,
+        },
+    )
+    assert updated.status_code == 200
+    saved = updated.json()
+    assert saved["enabled"] is True
+    assert saved["position"] == "bottom-left"
+    assert saved["auto_open_seconds"] == 15
+
+    snapshot = client.get("/api/v1/frontend/snapshot").json()
+    assert snapshot["widget_settings"]["display_name"] == "Talk to Wakanow"
+
+    audit = client.get("/api/v1/audit").json()
+    assert any(event["action"] == "widget_settings.update" for event in audit)
+
+
 def test_sms_outbound_uses_configured_http_adapter(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
