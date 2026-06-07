@@ -1129,6 +1129,40 @@ class InMemoryStore:
                 action="Confirm transaction reference and start duplicate payment reversal checklist.",
             )
             self._seed_ticket(
+                market_id="market-ng",
+                subject="Refund not received after flight cancellation",
+                description=(
+                    "Email to billing-support@omniticket.example.com: customer says the refund "
+                    "for a cancelled Lagos-Abuja flight has not arrived after 10 business days."
+                ),
+                customer_id="cust-leo",
+                channel=ChannelType.email,
+                priority=Priority.high,
+                sentiment=Sentiment.frustrated,
+                assignee_id="agent-amara",
+                team="Billing Support",
+                tags=["email", "refund", "billing", "ai-routed"],
+                summary="Email refund chase routed to Billing Support via billing-support@.",
+                action="Confirm refund reference and send settlement date or escalate to finance.",
+            )
+            self._seed_ticket(
+                market_id="market-ng",
+                subject="Booking confirmation not received by email",
+                description=(
+                    "Email to fulfillment@omniticket.example.com: customer paid for a hotel "
+                    "booking but never received the confirmation email and itinerary."
+                ),
+                customer_id="cust-sofia",
+                channel=ChannelType.email,
+                priority=Priority.normal,
+                sentiment=Sentiment.neutral,
+                assignee_id="agent-zara",
+                team="Fulfillment",
+                tags=["email", "booking", "fulfillment", "ai-routed"],
+                summary="Missing booking confirmation routed to Fulfillment via fulfillment@.",
+                action="Re-issue the confirmation email and verify the partner booking reference.",
+            )
+            self._seed_ticket(
                 market_id="market-gh",
                 subject="WhatsApp refund status request",
                 description="Customer in Ghana asked for refund status after a mobile money hold.",

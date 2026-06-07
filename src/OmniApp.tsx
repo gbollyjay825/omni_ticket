@@ -9818,7 +9818,7 @@ function OmniApp() {
                       />
                     </label>
                     <label>
-                      <span>Team inbox</span>
+                      <span>Team inbox (per-function email)</span>
                       <input
                         type="email"
                         value={supportGroupDraft.teamEmail}
@@ -9828,6 +9828,10 @@ function OmniApp() {
                         placeholder="refunds@wakanow.com"
                         disabled={!canManageUsers || groupActionBusy}
                       />
+                      <small className="field-hint">
+                        Email to this address routes to this team; replies send from it. The shared
+                        mailbox transport is set in Setup → Connectors → Email.
+                      </small>
                     </label>
                     <label>
                       <span>Skills</span>
@@ -11616,6 +11620,12 @@ function OmniApp() {
               </div>
               <Mail size={18} />
             </div>
+            <p className="setup-module-hint">
+              This is the shared mailbox <b>transport</b> (IMAP intake + SMTP delivery) for this
+              market. Per-team / per-function addresses are set on each team's <b>Team email</b> in
+              People → Groups (e.g. billing-support@, fulfillment@). Inbound mail addressed to a
+              team routes to that team's queue, and replies send from the team address.
+            </p>
             <div className="email-settings-status" aria-label="Email setup readiness">
               <article>
                 <span className={`channel-health-dot ${emailInboundConfig?.live_intake ? 'healthy' : 'degraded'}`} />

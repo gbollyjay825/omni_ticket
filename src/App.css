@@ -2935,6 +2935,15 @@ button:disabled {
   display: block;
 }
 
+.field-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: #6a809a;
+}
+
 /* Sidebar collapse/expand toggle */
 .sidebar-head {
   display: flex;
