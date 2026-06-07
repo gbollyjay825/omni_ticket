@@ -2935,6 +2935,47 @@ button:disabled {
   display: block;
 }
 
+/* Ticket detail back bar (master-detail navigation) */
+.desk-detail-backbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 16px;
+  border-bottom: 1px solid #e1eaf3;
+  background: #fff;
+}
+
+.desk-detail-backbar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #d5e0ec;
+  background: #fff;
+  border-radius: 8px;
+  padding: 7px 12px;
+  font: inherit;
+  font-weight: 700;
+  font-size: 13px;
+  color: #0b5eea;
+  cursor: pointer;
+}
+
+.desk-detail-backbar button:hover {
+  background: #f1f6fb;
+}
+
+.desk-detail-backbar-title {
+  font-size: 13.5px;
+  color: #44586c;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desk-detail-backbar-title b {
+  color: #16324a;
+}
+
 /* Community forums */
 .forum-topic-list {
   display: grid;

@@ -941,6 +941,7 @@ function OmniApp() {
   const [inboxView, setInboxView] = useState('all-open')
   const [inboxSort, setInboxSort] = useState<'created' | 'updated' | 'priority'>('created')
   const [inboxLayout, setInboxLayout] = useState<'card' | 'table'>('card')
+  const [ticketDetailOpen, setTicketDetailOpen] = useState(false)
   const [inboxPage, setInboxPage] = useState(0)
   const [inboxFiltersOpen, setInboxFiltersOpen] = useState(true)
   const [inboxGroup, setInboxGroup] = useState('all')
@@ -4300,6 +4301,7 @@ function OmniApp() {
     setComposerChannel(conversation.channelId)
     setComposerText('')
     selectConversation(conversation.id)
+    setTicketDetailOpen(true)
   }
 
   function openConversationInInbox(conversation: OmniConversation) {
@@ -4445,7 +4447,12 @@ function OmniApp() {
         key={item.id}
         className={`nav-item ${active ? 'active' : ''}`}
         href={routeHref({ screen: item.id })}
-        onClick={(event) => handleAppLink(event, () => selectScreen(item.id))}
+        onClick={(event) =>
+          handleAppLink(event, () => {
+            if (item.id === 'inbox') setTicketDetailOpen(false)
+            selectScreen(item.id)
+          })
+        }
         title={item.label}
         aria-label={item.label}
         aria-current={active ? 'page' : undefined}
@@ -5902,6 +5909,23 @@ function OmniApp() {
   }
 
   function renderInbox() {
+    if (ticketDetailOpen) {
+      return (
+        <div className="desk-ticket-page">
+          <div className="desk-detail-backbar">
+            <button type="button" onClick={() => setTicketDetailOpen(false)}>
+              <ArrowRight className="flip-x" size={15} />
+              Back to tickets
+            </button>
+            <span className="desk-detail-backbar-title">
+              {selectedConversation.subject}
+              <b> #{selectedConversation.ticketNumber.replace(/\D/g, '') || selectedConversation.ticketNumber}</b>
+            </span>
+          </div>
+          {renderConversationDetail()}
+        </div>
+      )
+    }
     const now = Date.now()
     const DAY = 24 * 60 * 60 * 1000
     const PAGE_SIZE = 30
@@ -13125,7 +13149,6 @@ function OmniApp() {
   // Kept callable while the ticket list is the default Freshdesk-style inbox.
   void renderFilters
   void renderConversationRow
-  void renderConversationDetail
 
   const currentScreen = screenConfig.find((item) => item.id === state.selectedScreen) ?? screenConfig[0]
   const CurrentScreenIcon = currentScreen.icon
