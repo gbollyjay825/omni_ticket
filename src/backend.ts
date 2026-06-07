@@ -572,6 +572,7 @@ export interface BackendSnapshot {
   products: BackendProduct[]
   savedReports: BackendSavedReport[]
   serviceAppointments: BackendServiceAppointment[]
+  discussionTopics: BackendDiscussionTopic[]
   companies: BackendCompany[]
   customers: BackendCustomer[]
   tickets: BackendTicketContext[]
@@ -1305,6 +1306,51 @@ export interface BackendUpdateServiceAppointmentInput {
   notes?: string
 }
 
+export interface BackendDiscussionTopic {
+  id: string
+  market_id: string
+  title: string
+  category: string
+  body: string
+  status: string
+  pinned: boolean
+  author: string
+  reply_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface BackendDiscussionComment {
+  id: string
+  topic_id: string
+  market_id: string
+  author: string
+  body: string
+  created_at: string
+  updated_at: string
+}
+
+export interface BackendCreateDiscussionTopicInput {
+  title: string
+  category?: string
+  body?: string
+  status?: string
+  pinned?: boolean
+}
+
+export interface BackendUpdateDiscussionTopicInput {
+  title?: string
+  category?: string
+  body?: string
+  status?: string
+  pinned?: boolean
+}
+
+export interface BackendCreateDiscussionCommentInput {
+  author?: string
+  body: string
+}
+
 export interface BackendCompany {
   id: string
   market_id: string
@@ -1736,6 +1782,7 @@ interface BackendFrontendSnapshot {
   products: BackendProduct[]
   saved_reports: BackendSavedReport[]
   service_appointments: BackendServiceAppointment[]
+  discussion_topics: BackendDiscussionTopic[]
   companies: BackendCompany[]
   customers: BackendCustomer[]
   tickets: BackendTicketContext[]
@@ -1906,6 +1953,7 @@ export async function fetchBackendSnapshot(
     customObjects: frontendSnapshot.custom_objects ?? [],
     savedReports: frontendSnapshot.saved_reports ?? [],
     serviceAppointments: frontendSnapshot.service_appointments ?? [],
+    discussionTopics: frontendSnapshot.discussion_topics ?? [],
     connectorAccounts: frontendSnapshot.connector_accounts,
     outboundMessages: frontendSnapshot.outbound_messages,
     outboundProviderConfig: frontendSnapshot.outbound_provider_config ?? [],
@@ -2490,6 +2538,61 @@ export async function patchBackendServiceAppointment(
     {
       method: 'PATCH',
       body: JSON.stringify(patch),
+    },
+    session,
+  )
+}
+
+export async function createBackendDiscussionTopic(
+  input: BackendCreateDiscussionTopicInput,
+  session: BackendSession,
+): Promise<BackendDiscussionTopic> {
+  return fetchJson<BackendDiscussionTopic>(
+    '/forums/topics',
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+    session,
+  )
+}
+
+export async function patchBackendDiscussionTopic(
+  topicId: string,
+  patch: BackendUpdateDiscussionTopicInput,
+  session: BackendSession,
+): Promise<BackendDiscussionTopic> {
+  return fetchJson<BackendDiscussionTopic>(
+    `/forums/topics/${topicId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    },
+    session,
+  )
+}
+
+export async function fetchBackendDiscussionComments(
+  topicId: string,
+  session: BackendSession,
+): Promise<BackendDiscussionComment[]> {
+  return fetchJson<BackendDiscussionComment[]>(
+    `/forums/topics/${topicId}/comments`,
+    undefined,
+    session,
+  )
+}
+
+export async function createBackendDiscussionComment(
+  topicId: string,
+  input: BackendCreateDiscussionCommentInput,
+  session: BackendSession,
+): Promise<BackendDiscussionComment> {
+  return fetchJson<BackendDiscussionComment>(
+    `/forums/topics/${topicId}/comments`,
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
     },
     session,
   )

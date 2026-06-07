@@ -17,7 +17,7 @@ from app.db.models import (
 )
 from app.db.session import create_database_engine
 
-ALEMBIC_HEAD = "20260607_0038"
+ALEMBIC_HEAD = "20260607_0039"
 
 
 def test_database_schema_and_seed_are_postgres_ready_with_local_sqlite(tmp_path: Path) -> None:
@@ -44,6 +44,8 @@ def test_database_schema_and_seed_are_postgres_ready_with_local_sqlite(tmp_path:
     assert "products" in tables
     assert "saved_reports" in tables
     assert "service_appointments" in tables
+    assert "discussion_topics" in tables
+    assert "discussion_comments" in tables
     assert "customers" in tables
     assert "attachments" in tables
     assert "csat_feedback" in tables
@@ -223,3 +225,38 @@ def test_create_schema_repairs_legacy_knowledge_review_columns(tmp_path: Path) -
     inspector = inspect(engine)
     knowledge_columns = {column["name"] for column in inspector.get_columns("knowledge_articles")}
     assert {"submitted_for_review_at", "approved_at", "approved_by"} <= knowledge_columns
+
+
+def test_create_schema_repairs_legacy_workspace_settings_branding_columns(tmp_path: Path) -> None:
+    database_path = tmp_path / "omni-ticket-legacy-branding.db"
+    engine = create_database_engine(f"sqlite:///{database_path}")
+
+    with Session(engine) as session:
+        session.execute(
+            text(
+                """
+                CREATE TABLE workspace_settings (
+                    market_id VARCHAR(64) PRIMARY KEY,
+                    ai_work_queue_automation_enabled BOOLEAN NOT NULL DEFAULT 1,
+                    ai_can_send_customer_messages BOOLEAN NOT NULL DEFAULT 0,
+                    default_timezone VARCHAR(80) NOT NULL,
+                    business_hours VARCHAR(120) NOT NULL DEFAULT 'Mon-Fri 08:00-18:00',
+                    public_brand_name VARCHAR(160) NOT NULL DEFAULT 'Omni Ticket',
+                    created_at DATETIME NOT NULL,
+                    updated_at DATETIME NOT NULL
+                )
+                """
+            )
+        )
+        session.commit()
+
+    create_schema(engine)
+
+    inspector = inspect(engine)
+    workspace_columns = {column["name"] for column in inspector.get_columns("workspace_settings")}
+    assert {
+        "portal_logo_url",
+        "portal_primary_color",
+        "portal_support_name",
+        "portal_welcome_message",
+    } <= workspace_columns

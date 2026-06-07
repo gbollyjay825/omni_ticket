@@ -19,6 +19,8 @@ from app.db.models import (
     CsatSurveyRecord,
     CustomFieldDefinitionRecord,
     CustomObjectRecord,
+    DiscussionCommentRecord,
+    DiscussionTopicRecord,
     EmailNotificationRecord,
     ProductRecord,
     SavedReportRecord,
@@ -155,6 +157,27 @@ def _repair_legacy_schema(target_engine: Engine) -> None:
         handoff_columns = {column["name"] for column in inspector.get_columns("handoffs")}
         if "linked_ticket_id" not in handoff_columns:
             statements.append("ALTER TABLE handoffs ADD COLUMN linked_ticket_id VARCHAR(64)")
+
+    if inspector.has_table("workspace_settings"):
+        workspace_columns = {
+            column["name"] for column in inspector.get_columns("workspace_settings")
+        }
+        if "portal_logo_url" not in workspace_columns:
+            statements.append(
+                "ALTER TABLE workspace_settings ADD COLUMN portal_logo_url VARCHAR(500) NOT NULL DEFAULT ''"
+            )
+        if "portal_primary_color" not in workspace_columns:
+            statements.append(
+                "ALTER TABLE workspace_settings ADD COLUMN portal_primary_color VARCHAR(20) NOT NULL DEFAULT '#0b5eea'"
+            )
+        if "portal_support_name" not in workspace_columns:
+            statements.append(
+                "ALTER TABLE workspace_settings ADD COLUMN portal_support_name VARCHAR(160) NOT NULL DEFAULT ''"
+            )
+        if "portal_welcome_message" not in workspace_columns:
+            statements.append(
+                "ALTER TABLE workspace_settings ADD COLUMN portal_welcome_message TEXT NOT NULL DEFAULT ''"
+            )
 
     if not inspector.has_table("ticket_fields") and inspector.has_table("markets"):
         statements.append(
@@ -618,6 +641,18 @@ def seed_service_appointments(session: Session, source: InMemoryStore = store) -
     session.commit()
 
 
+def seed_discussion_topics(session: Session, source: InMemoryStore = store) -> None:
+    for topic in source.discussion_topics.values():
+        if session.get(DiscussionTopicRecord, topic.id) is not None:
+            continue
+        session.add(DiscussionTopicRecord(**_payload(topic)))
+    for comment in source.discussion_comments.values():
+        if session.get(DiscussionCommentRecord, comment.id) is not None:
+            continue
+        session.add(DiscussionCommentRecord(**_payload(comment)))
+    session.commit()
+
+
 def seed_reference_data(session: Session, source: InMemoryStore = store) -> None:
     if session.scalar(select(MarketRecord.id).limit(1)):
         seed_connector_accounts(session)
@@ -636,6 +671,7 @@ def seed_reference_data(session: Session, source: InMemoryStore = store) -> None
         seed_products(session, source)
         seed_saved_reports(session, source)
         seed_service_appointments(session, source)
+        seed_discussion_topics(session, source)
         return
 
     session.add_all(
@@ -752,11 +788,23 @@ def seed_reference_data(session: Session, source: InMemoryStore = store) -> None
     )
     session.add_all(
         [
+            DiscussionTopicRecord(**_payload(topic))
+            for topic in source.discussion_topics.values()
+        ]
+    )
+    session.add_all(
+        [
             CompanyRecord(**_payload(company))
             for company in source.companies.values()
         ]
     )
     session.flush()
+    session.add_all(
+        [
+            DiscussionCommentRecord(**_payload(comment))
+            for comment in source.discussion_comments.values()
+        ]
+    )
     session.add_all(
         [
             CustomerRecord(**_payload(customer))

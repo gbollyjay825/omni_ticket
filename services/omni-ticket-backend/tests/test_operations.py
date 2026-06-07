@@ -1878,6 +1878,59 @@ def test_admin_manages_service_appointments(client: TestClient) -> None:
     assert any(event["action"] == "service_appointment.update" for event in audit)
 
 
+def test_staff_manage_forum_topics_and_comments(client: TestClient) -> None:
+    suffix = uuid4().hex[:6]
+    created = client.post(
+        "/api/v1/forums/topics",
+        json={
+            "title": f"Refund policy questions {suffix}",
+            "category": "Billing & refunds",
+            "body": "Collecting common refund questions.",
+        },
+    )
+    assert created.status_code == 201
+    topic = created.json()
+    assert topic["status"] == "open"
+    assert topic["reply_count"] == 0
+    assert topic["author"]
+
+    bad = client.post(
+        "/api/v1/forums/topics",
+        json={"title": "Bad status topic", "status": "exploded"},
+    )
+    assert bad.status_code == 422
+
+    comment = client.post(
+        f"/api/v1/forums/topics/{topic['id']}/comments",
+        json={"body": "Card refunds settle in 5-10 business days."},
+    )
+    assert comment.status_code == 201
+    assert comment.json()["topic_id"] == topic["id"]
+
+    comments = client.get(f"/api/v1/forums/topics/{topic['id']}/comments")
+    assert comments.status_code == 200
+    assert len(comments.json()) == 1
+
+    resolved = client.patch(
+        f"/api/v1/forums/topics/{topic['id']}",
+        json={"status": "answered", "pinned": True},
+    )
+    assert resolved.status_code == 200
+    assert resolved.json()["status"] == "answered"
+    assert resolved.json()["pinned"] is True
+    assert resolved.json()["reply_count"] == 1
+
+    snapshot = client.get("/api/v1/frontend/snapshot").json()
+    listed = next(item for item in snapshot["discussion_topics"] if item["id"] == topic["id"])
+    assert listed["reply_count"] == 1
+    # pinned topics sort first
+    assert snapshot["discussion_topics"][0]["pinned"] is True
+
+    audit = client.get("/api/v1/audit").json()
+    assert any(event["action"] == "discussion_topic.create" for event in audit)
+    assert any(event["action"] == "discussion_comment.create" for event in audit)
+
+
 def test_role_policy_blocks_agent_from_admin_and_supervisor_controls(
     client: TestClient,
     login_as: Callable[..., dict[str, str]],

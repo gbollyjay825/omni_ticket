@@ -740,6 +740,30 @@ class ServiceAppointment(BaseModel):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class DiscussionTopic(BaseModel):
+    id: str
+    market_id: str = "market-ng"
+    title: str
+    category: str = "General"
+    body: str = ""
+    status: str = "open"
+    pinned: bool = False
+    author: str = ""
+    reply_count: int = 0
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class DiscussionComment(BaseModel):
+    id: str
+    topic_id: str
+    market_id: str = "market-ng"
+    author: str = ""
+    body: str
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 class TicketTask(BaseModel):
     id: str
     label: str
@@ -1665,6 +1689,27 @@ class UpdateServiceAppointmentRequest(BaseModel):
     status: str | None = Field(default=None, max_length=20)
     location: str | None = Field(default=None, max_length=300)
     notes: str | None = Field(default=None, max_length=1000)
+
+
+class CreateDiscussionTopicRequest(BaseModel):
+    title: str = Field(min_length=2, max_length=200)
+    category: str = Field(default="General", max_length=80)
+    body: str = Field(default="", max_length=5000)
+    status: str = Field(default="open", max_length=20)
+    pinned: bool = False
+
+
+class UpdateDiscussionTopicRequest(BaseModel):
+    title: str | None = Field(default=None, min_length=2, max_length=200)
+    category: str | None = Field(default=None, max_length=80)
+    body: str | None = Field(default=None, max_length=5000)
+    status: str | None = Field(default=None, max_length=20)
+    pinned: bool | None = None
+
+
+class CreateDiscussionCommentRequest(BaseModel):
+    author: str = Field(default="", max_length=160)
+    body: str = Field(min_length=1, max_length=5000)
 
 
 class UpdateTicketRequest(BaseModel):

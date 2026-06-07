@@ -15,6 +15,8 @@ from app.db.models import (
     CustomFieldDefinitionRecord,
     CustomObjectRecord,
     CustomerRecord,
+    DiscussionCommentRecord,
+    DiscussionTopicRecord,
     EmailNotificationRecord,
     HandoffRecord,
     KnowledgeArticleRecord,
@@ -64,6 +66,8 @@ from app.models.domain import (
     Customer,
     CustomFieldDefinition,
     CustomObject,
+    DiscussionComment,
+    DiscussionTopic,
     EmailNotification,
     Handoff,
     KnowledgeArticle,
@@ -310,6 +314,38 @@ def service_appointment_from_record(record: ServiceAppointmentRecord) -> Service
             "status": record.status,
             "location": record.location,
             "notes": record.notes,
+            "created_at": record.created_at,
+            "updated_at": record.updated_at,
+        }
+    )
+
+
+def discussion_topic_from_record(record: DiscussionTopicRecord) -> DiscussionTopic:
+    return DiscussionTopic.model_validate(
+        {
+            "id": record.id,
+            "market_id": record.market_id,
+            "title": record.title,
+            "category": record.category,
+            "body": record.body,
+            "status": record.status,
+            "pinned": record.pinned,
+            "author": record.author,
+            "reply_count": record.reply_count,
+            "created_at": record.created_at,
+            "updated_at": record.updated_at,
+        }
+    )
+
+
+def discussion_comment_from_record(record: DiscussionCommentRecord) -> DiscussionComment:
+    return DiscussionComment.model_validate(
+        {
+            "id": record.id,
+            "topic_id": record.topic_id,
+            "market_id": record.market_id,
+            "author": record.author,
+            "body": record.body,
             "created_at": record.created_at,
             "updated_at": record.updated_at,
         }

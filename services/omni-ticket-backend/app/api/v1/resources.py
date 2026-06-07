@@ -108,11 +108,15 @@ from app.models.domain import (
     CreateProductRequest,
     CreateSavedReportRequest,
     CreateServiceAppointmentRequest,
+    CreateDiscussionTopicRequest,
+    CreateDiscussionCommentRequest,
     CreateTicketFieldRequest,
     CreateTicketRequest,
     CreateTicketTemplateRequest,
     Customer,
     DeleteAttachmentRequest,
+    DiscussionComment,
+    DiscussionTopic,
     DuplicateTicketSuggestion,
     EmailProviderSettings,
     GlobalSearchResult,
@@ -183,6 +187,7 @@ from app.models.domain import (
     UpdateProductRequest,
     UpdateSavedReportRequest,
     UpdateServiceAppointmentRequest,
+    UpdateDiscussionTopicRequest,
     UpdateSsoProviderSettingsRequest,
     UpdateTicketFieldRequest,
     UpdateTicketRequest,
@@ -1710,6 +1715,88 @@ def update_service_appointment(
         request,
         context.market_id,
         context.user.email,
+    )
+
+
+@router.get("/forums/topics", response_model=list[DiscussionTopic])
+def list_discussion_topics(
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> list[DiscussionTopic]:
+    return management_repository.list_discussion_topics(db, state, context.market_id)
+
+
+@router.post(
+    "/forums/topics",
+    response_model=DiscussionTopic,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_discussion_topic(
+    request: CreateDiscussionTopicRequest,
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> DiscussionTopic:
+    require_operator(context)
+    return management_repository.create_discussion_topic(
+        db,
+        state,
+        request,
+        context.market_id,
+        context.user.name or context.user.email,
+    )
+
+
+@router.patch("/forums/topics/{topic_id}", response_model=DiscussionTopic)
+def update_discussion_topic(
+    topic_id: str,
+    request: UpdateDiscussionTopicRequest,
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> DiscussionTopic:
+    require_supervisor(context)
+    return management_repository.update_discussion_topic(
+        db,
+        state,
+        topic_id,
+        request,
+        context.market_id,
+        context.user.name or context.user.email,
+    )
+
+
+@router.get("/forums/topics/{topic_id}/comments", response_model=list[DiscussionComment])
+def list_discussion_comments(
+    topic_id: str,
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> list[DiscussionComment]:
+    return management_repository.list_discussion_comments(db, state, topic_id, context.market_id)
+
+
+@router.post(
+    "/forums/topics/{topic_id}/comments",
+    response_model=DiscussionComment,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_discussion_comment(
+    topic_id: str,
+    request: CreateDiscussionCommentRequest,
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> DiscussionComment:
+    require_operator(context)
+    return management_repository.create_discussion_comment(
+        db,
+        state,
+        topic_id,
+        request,
+        context.market_id,
+        context.user.name or context.user.email,
     )
 
 
@@ -3553,6 +3640,9 @@ def read_frontend_snapshot(
         "products": management_repository.list_products(db, state, context.market_id),
         "saved_reports": management_repository.list_saved_reports(db, state, context.market_id),
         "service_appointments": management_repository.list_service_appointments(
+            db, state, context.market_id
+        ),
+        "discussion_topics": management_repository.list_discussion_topics(
             db, state, context.market_id
         ),
         "companies": companies,

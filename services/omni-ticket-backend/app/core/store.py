@@ -15,6 +15,8 @@ from app.models.domain import (
     CustomFieldDefinition,
     CustomObject,
     CustomObjectField,
+    DiscussionComment,
+    DiscussionTopic,
     EmailNotification,
     Product,
     SavedReport,
@@ -97,6 +99,8 @@ class InMemoryStore:
         self.products: dict[str, Product] = {}
         self.saved_reports: dict[str, SavedReport] = {}
         self.service_appointments: dict[str, ServiceAppointment] = {}
+        self.discussion_topics: dict[str, DiscussionTopic] = {}
+        self.discussion_comments: dict[str, DiscussionComment] = {}
         self.rules: dict[str, AutomationRule] = {}
         self.connector_events: dict[str, ConnectorEvent] = {}
         self.outbound_messages: dict[str, OutboundMessage] = {}
@@ -825,6 +829,39 @@ class InMemoryStore:
                     duration_minutes=120,
                     status="scheduled",
                     location="Client HQ, Ikoyi",
+                ),
+            }
+
+            self.discussion_topics = {
+                "topic-refund-timeline": DiscussionTopic(
+                    id="topic-refund-timeline",
+                    market_id="market-ng",
+                    title="How long do flight refunds take?",
+                    category="Billing & refunds",
+                    body="Customers keep asking about refund turnaround. Sharing the current SLA so we answer consistently.",
+                    status="answered",
+                    pinned=True,
+                    author="Gbolahan Salami",
+                    reply_count=1,
+                ),
+                "topic-visa-checklist": DiscussionTopic(
+                    id="topic-visa-checklist",
+                    market_id="market-ng",
+                    title="Best practice: visa document checklist",
+                    category="Travel operations",
+                    body="Let's keep the canonical visa document checklist here so agents link customers to one source.",
+                    status="open",
+                    author="Amara Lee",
+                    reply_count=0,
+                ),
+            }
+            self.discussion_comments = {
+                "comment-refund-sla": DiscussionComment(
+                    id="comment-refund-sla",
+                    topic_id="topic-refund-timeline",
+                    market_id="market-ng",
+                    author="Kofi Mensah",
+                    body="Card refunds settle in 5-10 business days; wallet refunds are instant once approved.",
                 ),
             }
 

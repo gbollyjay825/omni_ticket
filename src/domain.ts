@@ -379,6 +379,26 @@ export interface SavedReport {
   updatedAt: string
 }
 
+export interface DiscussionTopic {
+  id: string
+  title: string
+  category: string
+  body: string
+  status: string
+  pinned: boolean
+  author: string
+  replyCount: number
+  updatedAt: string
+}
+
+export interface DiscussionComment {
+  id: string
+  topicId: string
+  author: string
+  body: string
+  createdAt: string
+}
+
 export interface ServiceAppointment {
   id: string
   title: string
@@ -498,6 +518,7 @@ export interface OmniState {
   products: Product[]
   savedReports: SavedReport[]
   serviceAppointments: ServiceAppointment[]
+  discussionTopics: DiscussionTopic[]
   handoffs: HandoffRecord[]
   outbox: OutboxItem[]
   settings: WorkspaceSettings

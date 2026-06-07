@@ -418,6 +418,32 @@ class ServiceAppointmentRecord(TimestampMixin, Base):
     notes: Mapped[str] = mapped_column(Text, default="")
 
 
+class DiscussionTopicRecord(TimestampMixin, Base):
+    __tablename__ = "discussion_topics"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    market_id: Mapped[str] = mapped_column(ForeignKey("markets.id"), index=True)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    category: Mapped[str] = mapped_column(String(80), default="General", index=True)
+    body: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(20), default="open", index=True)
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    author: Mapped[str] = mapped_column(String(160), default="")
+    reply_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class DiscussionCommentRecord(TimestampMixin, Base):
+    __tablename__ = "discussion_comments"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    topic_id: Mapped[str] = mapped_column(
+        ForeignKey("discussion_topics.id"), index=True, nullable=False
+    )
+    market_id: Mapped[str] = mapped_column(ForeignKey("markets.id"), index=True)
+    author: Mapped[str] = mapped_column(String(160), default="")
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+
+
 class ChannelRecord(TimestampMixin, Base):
     __tablename__ = "channels"
 

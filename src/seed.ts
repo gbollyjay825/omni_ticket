@@ -1789,6 +1789,7 @@ export const initialOmniState: OmniState = {
   products: [],
   savedReports: [],
   serviceAppointments: [],
+  discussionTopics: [],
   handoffs: seedHandoffs,
   outbox: [],
   settings: {

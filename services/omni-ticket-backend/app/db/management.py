@@ -15,6 +15,8 @@ from app.db.mappers import (
     csat_survey_from_record,
     custom_field_definition_from_record,
     custom_object_from_record,
+    discussion_comment_from_record,
+    discussion_topic_from_record,
     email_notification_from_record,
     product_from_record,
     saved_report_from_record,
@@ -37,6 +39,8 @@ from app.db.models import (
     CsatSurveyRecord,
     CustomFieldDefinitionRecord,
     CustomObjectRecord,
+    DiscussionCommentRecord,
+    DiscussionTopicRecord,
     EmailNotificationRecord,
     HandoffRecord,
     ProductRecord,
@@ -66,6 +70,8 @@ from app.models.domain import (
     CreateProductRequest,
     CreateSavedReportRequest,
     CreateServiceAppointmentRequest,
+    CreateDiscussionTopicRequest,
+    CreateDiscussionCommentRequest,
     CreateKnowledgeArticleRequest,
     CreateResponseMacroRequest,
     CreateScenarioAutomationRequest,
@@ -77,6 +83,8 @@ from app.models.domain import (
     CsatSurvey,
     CustomFieldDefinition,
     CustomObject,
+    DiscussionComment,
+    DiscussionTopic,
     EmailNotification,
     KnowledgeArticle,
     Product,
@@ -107,6 +115,7 @@ from app.models.domain import (
     UpdateSavedReportRequest,
     UpdateScenarioAutomationRequest,
     UpdateServiceAppointmentRequest,
+    UpdateDiscussionTopicRequest,
     UpdateSlaPolicyRequest,
     UpdateSupportGroupRequest,
     UpdateTagRequest,
@@ -741,6 +750,33 @@ def _service_appointment_payload(
                 detail="Invalid appointment status",
             )
         payload["status"] = appointment_status
+    return payload
+
+
+_DISCUSSION_TOPIC_STATUSES = {"open", "answered", "closed"}
+
+
+def _discussion_topic_payload(
+    request: CreateDiscussionTopicRequest | UpdateDiscussionTopicRequest,
+) -> dict:
+    payload = request.model_dump(exclude_unset=True, mode="json")
+    if "title" in payload and payload["title"] is not None:
+        payload["title"] = " ".join(payload["title"].split())
+        if not payload["title"]:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Topic title is required",
+            )
+    if "category" in payload and payload["category"] is not None:
+        payload["category"] = payload["category"].strip() or "General"
+    if "status" in payload and payload["status"] is not None:
+        topic_status = payload["status"].strip().lower() or "open"
+        if topic_status not in _DISCUSSION_TOPIC_STATUSES:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Topic status must be open, answered, or closed",
+            )
+        payload["status"] = topic_status
     return payload
 
 
@@ -2182,6 +2218,158 @@ class ManagementRepository:
         appointment = service_appointment_from_record(record)
         state.service_appointments[appointment.id] = appointment
         return appointment
+
+    def list_discussion_topics(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        market_id: str,
+    ) -> list[DiscussionTopic]:
+        records = db.scalars(
+            select(DiscussionTopicRecord).where(DiscussionTopicRecord.market_id == market_id)
+        ).all()
+        topics = [discussion_topic_from_record(record) for record in records]
+        topics.sort(key=lambda topic: (not topic.pinned, topic.updated_at), reverse=False)
+        # pinned first, then most-recently updated
+        topics.sort(key=lambda topic: topic.updated_at, reverse=True)
+        topics.sort(key=lambda topic: topic.pinned, reverse=True)
+        state.discussion_topics = {
+            **{
+                key: value
+                for key, value in state.discussion_topics.items()
+                if value.market_id != market_id
+            },
+            **{topic.id: topic for topic in topics},
+        }
+        return topics
+
+    def create_discussion_topic(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        request: CreateDiscussionTopicRequest,
+        market_id: str,
+        actor: str,
+    ) -> DiscussionTopic:
+        payload = _discussion_topic_payload(request)
+        record = DiscussionTopicRecord(
+            id=_new_id("topic"),
+            market_id=market_id,
+            author=actor,
+            reply_count=0,
+            **payload,
+        )
+        db.add(record)
+        db.flush()
+        _audit(
+            db,
+            state,
+            actor=actor,
+            action="discussion_topic.create",
+            entity_type="discussion_topic",
+            entity_id=record.id,
+            market_id=market_id,
+            details={"title": record.title, "status": record.status},
+        )
+        db.commit()
+        db.refresh(record)
+        topic = discussion_topic_from_record(record)
+        state.discussion_topics[topic.id] = topic
+        return topic
+
+    def update_discussion_topic(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        topic_id: str,
+        request: UpdateDiscussionTopicRequest,
+        market_id: str,
+        actor: str,
+    ) -> DiscussionTopic:
+        record = db.get(DiscussionTopicRecord, topic_id)
+        if record is None or record.market_id != market_id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Discussion topic not found")
+        patch = _discussion_topic_payload(request)
+        for key, value in patch.items():
+            setattr(record, key, value)
+        _audit(
+            db,
+            state,
+            actor=actor,
+            action="discussion_topic.update",
+            entity_type="discussion_topic",
+            entity_id=topic_id,
+            market_id=market_id,
+            details={"title": record.title, "status": record.status, "pinned": record.pinned},
+        )
+        db.commit()
+        db.refresh(record)
+        topic = discussion_topic_from_record(record)
+        state.discussion_topics[topic.id] = topic
+        return topic
+
+    def list_discussion_comments(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        topic_id: str,
+        market_id: str,
+    ) -> list[DiscussionComment]:
+        topic = db.get(DiscussionTopicRecord, topic_id)
+        if topic is None or topic.market_id != market_id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Discussion topic not found")
+        records = db.scalars(
+            select(DiscussionCommentRecord)
+            .where(DiscussionCommentRecord.topic_id == topic_id)
+            .order_by(DiscussionCommentRecord.created_at.asc())
+        ).all()
+        comments = [discussion_comment_from_record(record) for record in records]
+        state.discussion_comments = {
+            **{key: value for key, value in state.discussion_comments.items() if value.topic_id != topic_id},
+            **{comment.id: comment for comment in comments},
+        }
+        return comments
+
+    def create_discussion_comment(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        topic_id: str,
+        request: CreateDiscussionCommentRequest,
+        market_id: str,
+        actor: str,
+    ) -> DiscussionComment:
+        topic = db.get(DiscussionTopicRecord, topic_id)
+        if topic is None or topic.market_id != market_id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Discussion topic not found")
+        record = DiscussionCommentRecord(
+            id=_new_id("comment"),
+            topic_id=topic_id,
+            market_id=market_id,
+            author=request.author.strip() or actor,
+            body=request.body.strip(),
+        )
+        db.add(record)
+        topic.reply_count = (topic.reply_count or 0) + 1
+        topic.updated_at = utc_now()
+        db.flush()
+        _audit(
+            db,
+            state,
+            actor=actor,
+            action="discussion_comment.create",
+            entity_type="discussion_topic",
+            entity_id=topic_id,
+            market_id=market_id,
+            details={"comment_id": record.id},
+        )
+        db.commit()
+        db.refresh(record)
+        db.refresh(topic)
+        comment = discussion_comment_from_record(record)
+        state.discussion_comments[comment.id] = comment
+        state.discussion_topics[topic.id] = discussion_topic_from_record(topic)
+        return comment
 
     def list_knowledge(
         self,

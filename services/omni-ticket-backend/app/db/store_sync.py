@@ -13,6 +13,8 @@ from app.db.mappers import (
     csat_survey_from_record,
     custom_field_definition_from_record,
     custom_object_from_record,
+    discussion_comment_from_record,
+    discussion_topic_from_record,
     email_notification_from_record,
     product_from_record,
     saved_report_from_record,
@@ -46,6 +48,8 @@ from app.db.models import (
     CsatSurveyRecord,
     CustomFieldDefinitionRecord,
     CustomObjectRecord,
+    DiscussionCommentRecord,
+    DiscussionTopicRecord,
     EmailNotificationRecord,
     ProductRecord,
     SavedReportRecord,
@@ -259,6 +263,14 @@ def hydrate_store_state(db: Session, state: InMemoryStore) -> None:
     state.service_appointments = {
         appointment.id: service_appointment_from_record(appointment)
         for appointment in db.scalars(select(ServiceAppointmentRecord)).all()
+    }
+    state.discussion_topics = {
+        topic.id: discussion_topic_from_record(topic)
+        for topic in db.scalars(select(DiscussionTopicRecord)).all()
+    }
+    state.discussion_comments = {
+        comment.id: discussion_comment_from_record(comment)
+        for comment in db.scalars(select(DiscussionCommentRecord)).all()
     }
     state.companies = {
         company.id: company_from_record(company) for company in db.scalars(select(CompanyRecord)).all()

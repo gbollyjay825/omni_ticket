@@ -2935,6 +2935,152 @@ button:disabled {
   display: block;
 }
 
+/* Community forums */
+.forum-topic-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.forum-topic-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid #e1eaf3;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.forum-topic-card > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.forum-topic-card header div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.forum-topic-card header strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 800;
+  color: #16324a;
+}
+
+.forum-pin {
+  color: #d99a00;
+}
+
+.forum-topic-card header span {
+  font-size: 12px;
+  color: #6a809a;
+}
+
+.forum-topic-body {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #44586c;
+}
+
+.forum-topic-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.forum-topic-actions label {
+  display: grid;
+  gap: 3px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #8298ac;
+}
+
+.forum-topic-actions select {
+  height: 34px;
+  border: 1px solid #d5e0ec;
+  border-radius: 7px;
+  padding: 5px 8px;
+  font: inherit;
+  background: #fff;
+}
+
+.forum-topic-actions button {
+  height: 34px;
+  border: 1px solid #d5e0ec;
+  background: #fff;
+  border-radius: 7px;
+  padding: 0 12px;
+  font: inherit;
+  font-weight: 600;
+  font-size: 12.5px;
+  color: #506a82;
+  cursor: pointer;
+}
+
+.forum-topic-actions button:hover {
+  border-color: #0b5eea;
+  color: #0b5eea;
+}
+
+.forum-comment-thread {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  background: #f7fafd;
+  border: 1px solid #e8eef5;
+}
+
+.forum-comment {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  align-items: baseline;
+}
+
+.forum-comment strong {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #1d3953;
+}
+
+.forum-comment span {
+  font-size: 11px;
+  color: #8298ac;
+}
+
+.forum-comment p {
+  grid-column: 1 / -1;
+  margin: 2px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #3d5468;
+}
+
+.forum-comment-form {
+  display: flex;
+  gap: 8px;
+}
+
+.forum-comment-form input {
+  flex: 1;
+  height: 38px;
+  border: 1px solid #d5e0ec;
+  border-radius: 7px;
+  padding: 6px 10px;
+  font: inherit;
+  background: #fff;
+}
+
 .sso-settings-form input[type='color'] {
   padding: 2px;
   height: 38px;

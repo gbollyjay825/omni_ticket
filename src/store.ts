@@ -29,6 +29,7 @@ import type {
   ScenarioAutomation,
   CustomFieldDefinition,
   CustomObject,
+  DiscussionTopic,
   Product,
   SavedReport,
   ServiceAppointment,
@@ -57,6 +58,8 @@ import {
   createBackendProduct,
   createBackendSavedReport,
   createBackendServiceAppointment,
+  createBackendDiscussionTopic,
+  patchBackendDiscussionTopic,
   createBackendSupportGroup,
   createBackendTicketField,
   createBackendUser,
@@ -140,6 +143,9 @@ import {
   type BackendProduct,
   type BackendSavedReport,
   type BackendServiceAppointment,
+  type BackendDiscussionTopic,
+  type BackendCreateDiscussionTopicInput,
+  type BackendUpdateDiscussionTopicInput,
   type BackendSyncState,
   type BackendUpdateSlaPolicyInput,
   type BackendUpdateBusinessHoursInput,
@@ -322,6 +328,7 @@ function mergeReferenceData(state: OmniState): OmniState {
     products: state.products ?? initialOmniState.products,
     savedReports: state.savedReports ?? initialOmniState.savedReports,
     serviceAppointments: state.serviceAppointments ?? initialOmniState.serviceAppointments,
+    discussionTopics: state.discussionTopics ?? initialOmniState.discussionTopics,
     responseMacros: state.responseMacros ?? initialOmniState.responseMacros,
     epics: initialOmniState.epics,
     backlog: initialOmniState.backlog,
@@ -685,6 +692,20 @@ function mapServiceAppointment(appointment: BackendServiceAppointment): ServiceA
   }
 }
 
+function mapDiscussionTopic(topic: BackendDiscussionTopic): DiscussionTopic {
+  return {
+    id: topic.id,
+    title: topic.title,
+    category: topic.category,
+    body: topic.body,
+    status: topic.status,
+    pinned: topic.pinned,
+    author: topic.author,
+    replyCount: topic.reply_count,
+    updatedAt: topic.updated_at,
+  }
+}
+
 function mapAgent(agent: BackendAgent, ticketContexts: BackendTicketContext[]): AgentProfile {
   const assignedTickets = ticketContexts.filter((context) => context.ticket.assignee_id === agent.id)
   return {
@@ -1001,6 +1022,7 @@ function mergeBackendSnapshot(current: OmniState, snapshot: BackendSnapshot): Om
   const products = (snapshot.products ?? []).map(mapProduct)
   const savedReports = (snapshot.savedReports ?? []).map(mapSavedReport)
   const serviceAppointments = (snapshot.serviceAppointments ?? []).map(mapServiceAppointment)
+  const discussionTopics = (snapshot.discussionTopics ?? []).map(mapDiscussionTopic)
   const selectedConversationId =
     conversations.find((conversation) => conversation.id === current.selectedConversationId)?.id ??
     conversations[0]?.id ??
@@ -1045,6 +1067,7 @@ function mergeBackendSnapshot(current: OmniState, snapshot: BackendSnapshot): Om
     products,
     savedReports,
     serviceAppointments,
+    discussionTopics,
     articles: snapshot.knowledge.map(mapKnowledgeArticle),
     ticketFields: (snapshot.ticket_fields ?? snapshot.ticketFields ?? []).map(mapTicketField),
     responseMacros: snapshot.macros.map(mapResponseMacro),
@@ -2292,6 +2315,14 @@ export function useOmniStore() {
     )
   }
 
+  function createDiscussionTopic(input: BackendCreateDiscussionTopicInput) {
+    return syncBackendMutation((session) => createBackendDiscussionTopic(input, session))
+  }
+
+  function updateDiscussionTopic(topicId: string, patch: BackendUpdateDiscussionTopicInput) {
+    return syncBackendMutation((session) => patchBackendDiscussionTopic(topicId, patch, session))
+  }
+
   function createTicketField(input: BackendCreateTicketFieldInput) {
     return syncBackendMutation((session) => createBackendTicketField(input, session))
   }
@@ -2574,6 +2605,8 @@ export function useOmniStore() {
     updateSavedReport,
     createServiceAppointment,
     updateServiceAppointment,
+    createDiscussionTopic,
+    updateDiscussionTopic,
     createTicketField,
     updateTicketField,
     changePassword,

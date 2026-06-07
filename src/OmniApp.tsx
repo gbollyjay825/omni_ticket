@@ -60,6 +60,7 @@ import type {
   ComposerMode,
   ContactMethod,
   ConversationStatus,
+  DiscussionTopic,
   DuplicateTicketSuggestion,
   HandoffStatus,
   KnowledgeArticle,
@@ -95,6 +96,7 @@ import type {
   BackendCreateSlaPolicyInput,
   BackendCreatePortalTicketInput,
   BackendCustomer,
+  BackendDiscussionComment,
   BackendEmailProviderSettings,
   BackendGlobalSearchResult,
   BackendIntegrationCredentialSettings,
@@ -119,6 +121,8 @@ import type {
   BackendUpdateSsoProviderSettingsInput,
 } from './backend'
 import {
+  createBackendDiscussionComment,
+  fetchBackendDiscussionComments,
   createBackendPortalTicket,
   createBackendPortalTicketReply,
   exportBackendAudit,
@@ -428,6 +432,7 @@ const setupBuiltModules = new Set<string>([
   'Facebook',
   'Feedback form',
   'Omnichat',
+  'Forums',
 ])
 const analyticsReportCatalog: Record<AnalyticsReportGroup, { title: string; detail: string; badge: string }[]> = {
   catalog: [
@@ -870,6 +875,8 @@ function OmniApp() {
     updateSavedReport,
     createServiceAppointment,
     updateServiceAppointment,
+    createDiscussionTopic,
+    updateDiscussionTopic,
     createKnowledgeArticle,
     updateKnowledgeArticle,
     createCustomer,
@@ -969,6 +976,13 @@ function OmniApp() {
     body: '',
   })
   const [articleBusy, setArticleBusy] = useState(false)
+  const [forumDraft, setForumDraft] = useState({ title: '', category: '', body: '' })
+  const [forumBusy, setForumBusy] = useState(false)
+  const [forumOpen, setForumOpen] = useState(false)
+  const [expandedTopicId, setExpandedTopicId] = useState('')
+  const [topicComments, setTopicComments] = useState<BackendDiscussionComment[]>([])
+  const [topicCommentsBusy, setTopicCommentsBusy] = useState(false)
+  const [commentDraft, setCommentDraft] = useState('')
   const [customerFormOpen, setCustomerFormOpen] = useState(false)
   const [customerDraft, setCustomerDraft] = useState({
     name: '',
@@ -3825,6 +3839,89 @@ function OmniApp() {
       .split(',')
       .map((tag) => tag.trim())
       .filter((tag) => tag.length > 0)
+  }
+
+  async function handleCreateForumTopic(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const title = forumDraft.title.trim()
+    if (title.length < 2 || forumBusy) return
+    setForumBusy(true)
+    try {
+      const saved = await createDiscussionTopic({
+        title,
+        category: forumDraft.category.trim() || 'General',
+        body: forumDraft.body.trim(),
+      })
+      if (saved) {
+        setForumDraft({ title: '', category: '', body: '' })
+        setForumOpen(false)
+        setPrototypeNotice('Discussion topic created.')
+      }
+    } finally {
+      setForumBusy(false)
+    }
+  }
+
+  async function setForumTopicStatus(topic: DiscussionTopic, status: string) {
+    if (forumBusy || topic.status === status) return
+    setForumBusy(true)
+    try {
+      const saved = await updateDiscussionTopic(topic.id, { status })
+      if (saved) setPrototypeNotice(`Topic marked ${status}.`)
+    } finally {
+      setForumBusy(false)
+    }
+  }
+
+  async function toggleForumTopicPin(topic: DiscussionTopic) {
+    if (forumBusy) return
+    setForumBusy(true)
+    try {
+      const saved = await updateDiscussionTopic(topic.id, { pinned: !topic.pinned })
+      if (saved) setPrototypeNotice(topic.pinned ? 'Topic unpinned.' : 'Topic pinned.')
+    } finally {
+      setForumBusy(false)
+    }
+  }
+
+  async function toggleForumTopicComments(topic: DiscussionTopic) {
+    if (expandedTopicId === topic.id) {
+      setExpandedTopicId('')
+      setTopicComments([])
+      return
+    }
+    if (!backendSession) return
+    setExpandedTopicId(topic.id)
+    setTopicComments([])
+    setCommentDraft('')
+    setTopicCommentsBusy(true)
+    try {
+      const comments = await fetchBackendDiscussionComments(topic.id, backendSession)
+      setTopicComments(comments)
+    } catch (error) {
+      setPrototypeNotice(error instanceof Error ? error.message : 'Could not load comments.')
+    } finally {
+      setTopicCommentsBusy(false)
+    }
+  }
+
+  async function handleAddForumComment(event: FormEvent<HTMLFormElement>, topic: DiscussionTopic) {
+    event.preventDefault()
+    const body = commentDraft.trim()
+    if (body.length < 1 || topicCommentsBusy || !backendSession) return
+    setTopicCommentsBusy(true)
+    try {
+      await createBackendDiscussionComment(topic.id, { body }, backendSession)
+      const comments = await fetchBackendDiscussionComments(topic.id, backendSession)
+      setTopicComments(comments)
+      setCommentDraft('')
+      setPrototypeNotice('Reply posted.')
+      await refreshBackend()
+    } catch (error) {
+      setPrototypeNotice(error instanceof Error ? error.message : 'Reply failed.')
+    } finally {
+      setTopicCommentsBusy(false)
+    }
   }
 
   async function handleCreateCustomer(event: FormEvent<HTMLFormElement>) {
@@ -8810,6 +8907,151 @@ function OmniApp() {
           ) : null}
           {setupSection === 'governance' ? (
           <>
+          <div className="automation-settings-panel forums-panel" id="forums">
+            <div className="panel-head compact">
+              <div>
+                <span>Community forums</span>
+                <h2>Discussion topics & staff answers</h2>
+              </div>
+              <button
+                type="button"
+                className="primary-action"
+                aria-expanded={forumOpen}
+                onClick={() => setForumOpen((open) => !open)}
+              >
+                <Plus size={16} />
+                New topic
+              </button>
+            </div>
+            {forumOpen ? (
+              <form className="user-create-form canned-response-form" onSubmit={handleCreateForumTopic}>
+                <div className="canned-form-row">
+                  <label>
+                    <span>Title</span>
+                    <input
+                      required
+                      value={forumDraft.title}
+                      onChange={(event) => setForumDraft((current) => ({ ...current, title: event.target.value }))}
+                      placeholder="How do refunds work for partial cancellations?"
+                      disabled={forumBusy}
+                    />
+                  </label>
+                  <label>
+                    <span>Category</span>
+                    <input
+                      value={forumDraft.category}
+                      onChange={(event) => setForumDraft((current) => ({ ...current, category: event.target.value }))}
+                      placeholder="Billing & refunds"
+                      disabled={forumBusy}
+                    />
+                  </label>
+                </div>
+                <label className="canned-form-full">
+                  <span>Body</span>
+                  <textarea
+                    rows={2}
+                    value={forumDraft.body}
+                    onChange={(event) => setForumDraft((current) => ({ ...current, body: event.target.value }))}
+                    placeholder="Describe the discussion or question for the team."
+                    disabled={forumBusy}
+                  />
+                </label>
+                <button
+                  type="submit"
+                  className="primary-action"
+                  disabled={forumBusy || forumDraft.title.trim().length < 2}
+                >
+                  <Plus size={16} />
+                  Create topic
+                </button>
+              </form>
+            ) : null}
+            {state.discussionTopics.length === 0 ? (
+              <p className="setup-module-hint">No discussion topics yet. Start one to share answers with the team.</p>
+            ) : (
+              <div className="forum-topic-list">
+                {state.discussionTopics.map((topic) => (
+                  <article className="forum-topic-card" key={topic.id}>
+                    <header>
+                      <div>
+                        <strong>
+                          {topic.pinned ? <Star size={13} className="forum-pin" /> : null}
+                          {topic.title}
+                        </strong>
+                        <span>
+                          {topic.category} · {topic.author || 'Staff'} · {topic.replyCount} repl
+                          {topic.replyCount === 1 ? 'y' : 'ies'} · Updated {formatTime(topic.updatedAt)}
+                        </span>
+                      </div>
+                      <em
+                        className={`chip status-${
+                          topic.status === 'answered' ? 'done' : topic.status === 'closed' ? 'blocked' : 'pending'
+                        }`}
+                      >
+                        {titleCase(topic.status)}
+                      </em>
+                    </header>
+                    {topic.body ? <p className="forum-topic-body">{topic.body}</p> : null}
+                    <div className="forum-topic-actions">
+                      <label>
+                        <span>Status</span>
+                        <select
+                          value={topic.status}
+                          onChange={(event) => void setForumTopicStatus(topic, event.target.value)}
+                          disabled={forumBusy}
+                        >
+                          {['open', 'answered', 'closed'].map((status) => (
+                            <option key={status} value={status}>
+                              {titleCase(status)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <button type="button" disabled={forumBusy} onClick={() => void toggleForumTopicPin(topic)}>
+                        {topic.pinned ? 'Unpin' : 'Pin'}
+                      </button>
+                      <button type="button" onClick={() => void toggleForumTopicComments(topic)}>
+                        {expandedTopicId === topic.id ? 'Hide replies' : 'View replies'}
+                      </button>
+                    </div>
+                    {expandedTopicId === topic.id ? (
+                      <div className="forum-comment-thread">
+                        {topicCommentsBusy && topicComments.length === 0 ? (
+                          <p className="setup-module-hint">Loading replies…</p>
+                        ) : topicComments.length === 0 ? (
+                          <p className="setup-module-hint">No replies yet. Be the first to answer.</p>
+                        ) : (
+                          topicComments.map((comment) => (
+                            <div className="forum-comment" key={comment.id}>
+                              <strong>{comment.author || 'Staff'}</strong>
+                              <span>{formatTime(comment.created_at)}</span>
+                              <p>{comment.body}</p>
+                            </div>
+                          ))
+                        )}
+                        <form className="forum-comment-form" onSubmit={(event) => void handleAddForumComment(event, topic)}>
+                          <input
+                            value={commentDraft}
+                            onChange={(event) => setCommentDraft(event.target.value)}
+                            placeholder="Write a reply…"
+                            disabled={topicCommentsBusy}
+                          />
+                          <button
+                            type="submit"
+                            className="primary-action"
+                            disabled={topicCommentsBusy || commentDraft.trim().length < 1}
+                          >
+                            <Send size={14} />
+                            Reply
+                          </button>
+                        </form>
+                      </div>
+                    ) : null}
+                  </article>
+                ))}
+              </div>
+            )}
+          </div>
           <div className="automation-settings-panel audit-governance-panel" id="audit-controls">
             <div className="panel-head compact">
               <div>
