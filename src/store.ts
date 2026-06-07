@@ -892,8 +892,8 @@ function mapHandoff(
         ? 'completed'
         : handoff.status === 'cancelled'
           ? 'blocked'
-          : handoff.status === 'accepted'
-            ? 'accepted'
+          : handoff.status === 'in_progress'
+            ? 'in-progress'
             : handoff.status,
     priority: conversation?.priority ?? 'medium',
     dueAt: handoff.due_at,
@@ -2080,20 +2080,36 @@ export function useOmniStore() {
   }
 
   function toggleTask(conversationId: string, taskId: string) {
-    patchState((current) => ({
-      ...current,
-      conversations: current.conversations.map((conversation) =>
-        conversation.id === conversationId
-          ? {
-              ...conversation,
-              tasks: conversation.tasks.map((task) =>
-                task.id === taskId ? { ...task, done: !task.done } : task,
-              ),
-              updatedAt: new Date().toISOString(),
-            }
-          : conversation,
-      ),
-    }))
+    const conversation = state.conversations.find((item) => item.id === conversationId)
+    const nextDone = !conversation?.tasks.find((task) => task.id === taskId)?.done
+
+    const applyLocal = () =>
+      patchState((current) => ({
+        ...current,
+        conversations: current.conversations.map((item) =>
+          item.id === conversationId
+            ? {
+                ...item,
+                tasks: item.tasks.map((task) =>
+                  task.id === taskId ? { ...task, done: nextDone } : task,
+                ),
+                updatedAt: new Date().toISOString(),
+              }
+            : item,
+        ),
+      }))
+
+    // Optimistic update, then persist the checklist item to the backend.
+    applyLocal()
+    if (online && backendSession) {
+      void syncBackendMutation((session) =>
+        patchBackendTicket(
+          conversationId,
+          { task_item_id: taskId, task_item_complete: nextDone },
+          session,
+        ),
+      )
+    }
   }
 
   async function toggleChannelIntake(channelId: ChannelId) {
@@ -2447,7 +2463,7 @@ export function useOmniStore() {
 
   async function updateHandoffStatus(handoffId: string, status: HandoffStatus) {
     const backendStatusValue =
-      status === 'completed' ? 'resolved' : status === 'in-progress' ? 'accepted' : status
+      status === 'completed' ? 'resolved' : status === 'in-progress' ? 'in_progress' : status
 
     if (
       await syncBackendMutation((session) =>

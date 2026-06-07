@@ -1558,7 +1558,7 @@ export interface BackendHandoff {
   to_team: string
   requested_by: string
   reason: string
-  status: 'requested' | 'accepted' | 'blocked' | 'resolved' | 'cancelled'
+  status: 'requested' | 'accepted' | 'in_progress' | 'blocked' | 'resolved' | 'cancelled'
   due_at: string
   checklist: BackendTicketTask[]
   blocker: string | null
@@ -1677,6 +1677,8 @@ export interface BackendUpdateTicketInput {
   assignee_id?: string | null
   tags?: string[]
   custom_fields?: Record<string, unknown>
+  task_item_id?: string
+  task_item_complete?: boolean
 }
 
 export interface BackendCreateTicketFieldInput {

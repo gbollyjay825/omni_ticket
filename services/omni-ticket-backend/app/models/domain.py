@@ -88,6 +88,7 @@ class CsatSource(StrEnum):
 class HandoffStatus(StrEnum):
     requested = "requested"
     accepted = "accepted"
+    in_progress = "in_progress"
     blocked = "blocked"
     resolved = "resolved"
     cancelled = "cancelled"

@@ -2944,6 +2944,37 @@ button:disabled {
   color: #6a809a;
 }
 
+.desk-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 7px;
+  padding: 4px;
+  color: inherit;
+  cursor: pointer;
+}
+
+.desk-icon-button:hover {
+  background: rgba(11, 94, 234, 0.08);
+  color: #0b5eea;
+}
+
+button.freshchat-global-search {
+  border: 1px solid #d5e0ec;
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: #6a809a;
+}
+
+button.freshchat-global-search:hover {
+  border-color: #0b5eea;
+  color: #0b5eea;
+}
+
 /* Sidebar collapse/expand toggle */
 .sidebar-head {
   display: flex;

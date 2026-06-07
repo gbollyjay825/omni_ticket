@@ -4502,10 +4502,22 @@ function OmniApp() {
       { label: 'Overdue', value: dashboard.ticketTrends.overdue, action: () => openWorkQueueFocus({ sla: 'breached' }) },
       { label: 'Due today', value: dashboard.ticketTrends.dueToday, action: () => openWorkQueueFocus({}) },
     ]
-    const chatTrendRows: [string, number][] = [
-      ['Unassigned chats', dashboard.chatTrends.unassigned],
-      ['Assigned not replied', dashboard.chatTrends.assignedNotReplied],
-      ['Assigned chats', dashboard.chatTrends.assigned],
+    const chatTrendRows: { label: string; value: number; action: () => void }[] = [
+      {
+        label: 'Unassigned chats',
+        value: dashboard.chatTrends.unassigned,
+        action: () => openWorkQueueFocus({ status: 'new' }),
+      },
+      {
+        label: 'Assigned not replied',
+        value: dashboard.chatTrends.assignedNotReplied,
+        action: () => openWorkQueueFocus({ status: 'open' }),
+      },
+      {
+        label: 'Assigned chats',
+        value: dashboard.chatTrends.assigned,
+        action: () => openWorkQueueFocus({ status: 'pending' }),
+      },
     ]
     const chatPerformanceRows: [string, string][] = [
       ['Average first response time', dashboard.chatPerformance.firstResponse],
@@ -4618,18 +4630,10 @@ function OmniApp() {
             </header>
             <p className="desk-widget-note">Conversations unassigned or assigned and not replied for 15 mins</p>
             <div className="desk-trend-list">
-              {chatTrendRows.map(([label, value]) => (
-                <button
-                  type="button"
-                  key={label}
-                  onClick={() => {
-                    setChannelConsoleView('inbox')
-                    openDirectChannel('whatsapp')
-                    selectScreen('channels')
-                  }}
-                >
-                  <span>{label}</span>
-                  <strong>{value}</strong>
+              {chatTrendRows.map((row) => (
+                <button type="button" key={row.label} onClick={row.action}>
+                  <span>{row.label}</span>
+                  <strong>{row.value}</strong>
                 </button>
               ))}
             </div>
@@ -4737,7 +4741,15 @@ function OmniApp() {
           <article className="desk-widget desk-activity-widget">
             <header>
               <span>Recent activity</span>
-              <RefreshCw size={14} />
+              <button
+                type="button"
+                className="desk-icon-button"
+                onClick={() => refreshBackend()}
+                aria-label="Refresh recent activity"
+                title="Refresh"
+              >
+                <RefreshCw size={14} />
+              </button>
             </header>
             {dashboard.recentActivity.length === 0 ? (
               <span className="desk-todo-empty">No recent activity in this period.</span>
@@ -7072,11 +7084,15 @@ function OmniApp() {
               </button>
             ))}
           </div>
-          <div className="freshchat-global-search">
+          <button
+            type="button"
+            className="freshchat-global-search"
+            onClick={() => setGlobalSearchOpen(true)}
+            aria-label="Search conversations and people"
+          >
             <Search size={15} />
             <span>Search conversations and people</span>
-            <kbd>Cmd+/</kbd>
-          </div>
+          </button>
         </section>
         {renderFreshchatModulePanel()}
         <section className="channel-flow-grid" aria-label="Channel operating flow">
