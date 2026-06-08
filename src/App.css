@@ -3020,6 +3020,23 @@ button.freshchat-global-search:hover {
   .app-shell.nav-expanded .nav-item {
     justify-content: flex-start;
   }
+  /* The base "Freshdesk-aligned" pass hard-codes .sidebar width:64px and 42px
+     icon buttons; when expanded the sidebar must fill its 232px grid column and
+     the nav items must be full-width rows so labels are not clipped. */
+  .app-shell.nav-expanded .sidebar {
+    width: 100%;
+    padding: 16px 12px;
+  }
+  .app-shell.nav-expanded .side-nav {
+    justify-items: stretch;
+  }
+  .app-shell.nav-expanded .nav-item {
+    width: 100%;
+    height: auto;
+    min-height: 40px;
+    gap: 10px;
+    padding: 9px 12px;
+  }
 
   /* User-controlled collapse — icon-only rail even on wide screens */
   .app-shell.nav-collapsed {
