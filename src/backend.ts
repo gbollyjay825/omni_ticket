@@ -604,6 +604,7 @@ export interface BackendSnapshot {
   customers: BackendCustomer[]
   tickets: BackendTicketContext[]
   handoffs: BackendHandoff[]
+  cases: BackendCase[]
   connector_accounts: BackendConnectorAccount[]
   outbound_messages: BackendOutboundMessage[]
   outbound_provider_config: BackendOutboundProviderConfig[]
@@ -1529,6 +1530,24 @@ export interface BackendTicket {
   sla: BackendSla
   ai_summary: string
   recommended_action: string
+  case_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface BackendCase {
+  id: string
+  market_id: string
+  public_id: string
+  customer_id: string
+  title: string
+  status: 'open' | 'resolved' | 'closed'
+  priority: 'low' | 'normal' | 'high' | 'urgent'
+  summary: string
+  opened_by: string
+  ticket_ids: string[]
+  channels: string[]
+  ticket_count: number
   created_at: string
   updated_at: string
 }
@@ -1817,6 +1836,7 @@ interface BackendFrontendSnapshot {
   customers: BackendCustomer[]
   tickets: BackendTicketContext[]
   handoffs: BackendHandoff[]
+  cases: BackendCase[]
   connector_accounts: BackendConnectorAccount[]
   knowledge: BackendKnowledgeArticle[]
   macros: BackendResponseMacro[]
@@ -2830,6 +2850,65 @@ export async function mergeBackendTickets(
       method: 'POST',
       body: JSON.stringify(input),
     },
+    session,
+  )
+}
+
+export interface BackendCreateCaseInput {
+  customer_id: string
+  title: string
+  summary?: string
+  opened_by?: string
+  priority?: 'low' | 'normal' | 'high' | 'urgent'
+  ticket_ids?: string[]
+}
+
+export interface BackendUpdateCaseInput {
+  title?: string
+  status?: 'open' | 'resolved' | 'closed'
+  priority?: 'low' | 'normal' | 'high' | 'urgent'
+  summary?: string
+}
+
+export async function createBackendCase(
+  input: BackendCreateCaseInput,
+  session: BackendSession,
+): Promise<BackendCase> {
+  return fetchJson<BackendCase>('/cases', { method: 'POST', body: JSON.stringify(input) }, session)
+}
+
+export async function updateBackendCase(
+  caseId: string,
+  input: BackendUpdateCaseInput,
+  session: BackendSession,
+): Promise<BackendCase> {
+  return fetchJson<BackendCase>(
+    `/cases/${caseId}`,
+    { method: 'PATCH', body: JSON.stringify(input) },
+    session,
+  )
+}
+
+export async function attachBackendCaseTicket(
+  caseId: string,
+  ticketId: string,
+  session: BackendSession,
+): Promise<BackendCase> {
+  return fetchJson<BackendCase>(
+    `/cases/${caseId}/tickets`,
+    { method: 'POST', body: JSON.stringify({ ticket_id: ticketId }) },
+    session,
+  )
+}
+
+export async function detachBackendCaseTicket(
+  caseId: string,
+  ticketId: string,
+  session: BackendSession,
+): Promise<BackendCase> {
+  return fetchJson<BackendCase>(
+    `/cases/${caseId}/tickets/${ticketId}`,
+    { method: 'DELETE' },
     session,
   )
 }

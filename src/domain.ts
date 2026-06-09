@@ -131,6 +131,7 @@ export interface OmniConversation {
   intent: string
   group: string
   assigneeId: string
+  caseId?: string | null
   createdAt: string
   updatedAt: string
   firstResponseDue: string
@@ -445,6 +446,24 @@ export interface HandoffRecord {
   blockers: string[]
 }
 
+export type CaseStatus = 'open' | 'resolved' | 'closed'
+
+export interface CaseRecord {
+  id: string
+  publicId: string
+  customerId: string
+  title: string
+  status: CaseStatus
+  priority: Priority
+  summary: string
+  openedBy: string
+  ticketIds: string[]
+  channels: ChannelId[]
+  ticketCount: number
+  createdAt: string
+  updatedAt: string
+}
+
 export interface Epic {
   id: string
   title: string
@@ -520,6 +539,7 @@ export interface OmniState {
   serviceAppointments: ServiceAppointment[]
   discussionTopics: DiscussionTopic[]
   handoffs: HandoffRecord[]
+  cases: CaseRecord[]
   outbox: OutboxItem[]
   settings: WorkspaceSettings
   epics: Epic[]

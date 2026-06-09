@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { openDB, type DBSchema } from 'idb'
 import type {
   AgentProfile,
+  CaseRecord,
   Channel,
   ChannelId,
   ComposerInput,
@@ -63,7 +64,11 @@ import {
   createBackendSupportGroup,
   createBackendTicketField,
   createBackendUser,
+  attachBackendCaseTicket,
+  createBackendCase,
   createBackendHandoff,
+  detachBackendCaseTicket,
+  updateBackendCase,
   createBackendTicket,
   disableBackendMfa,
   enrollBackendMfa,
@@ -86,6 +91,7 @@ import {
   type BackendCreateUserInput,
   type BackendCustomer,
   type BackendDuplicateTicketSuggestion,
+  type BackendCase,
   type BackendHandoff,
   type BackendKnowledgeArticle,
   type BackendCreateKnowledgeInput,
@@ -329,6 +335,7 @@ function mergeReferenceData(state: OmniState): OmniState {
     savedReports: state.savedReports ?? initialOmniState.savedReports,
     serviceAppointments: state.serviceAppointments ?? initialOmniState.serviceAppointments,
     discussionTopics: state.discussionTopics ?? initialOmniState.discussionTopics,
+    cases: state.cases ?? initialOmniState.cases,
     responseMacros: state.responseMacros ?? initialOmniState.responseMacros,
     epics: initialOmniState.epics,
     backlog: initialOmniState.backlog,
@@ -837,6 +844,7 @@ function mapConversation(
     intent: context.ticket.tags[0] ?? 'Operational support',
     group: context.ticket.team,
     assigneeId: context.ticket.assignee_id ?? '',
+    caseId: context.ticket.case_id ?? null,
     createdAt: context.ticket.created_at,
     updatedAt: context.ticket.updated_at,
     firstResponseDue: context.ticket.sla.first_response_due_at,
@@ -905,6 +913,24 @@ function mapHandoff(
       done: task.complete,
     })),
     blockers: handoff.blocker ? [handoff.blocker] : [],
+  }
+}
+
+function mapCase(record: BackendCase): CaseRecord {
+  return {
+    id: record.id,
+    publicId: record.public_id,
+    customerId: record.customer_id,
+    title: record.title,
+    status: record.status,
+    priority: mapPriority(record.priority),
+    summary: record.summary,
+    openedBy: record.opened_by,
+    ticketIds: record.ticket_ids,
+    channels: record.channels.map(normalizeChannelId),
+    ticketCount: record.ticket_count,
+    createdAt: record.created_at,
+    updatedAt: record.updated_at,
   }
 }
 
@@ -995,6 +1021,7 @@ function mergeBackendSnapshot(current: OmniState, snapshot: BackendSnapshot): Om
   const customers = snapshot.customers.map((customer) => mapCustomer(customer, companiesById, snapshot.tickets))
   const agents = snapshot.agents.map((agent) => mapAgent(agent, snapshot.tickets))
   const handoffs = snapshot.handoffs.map((handoff) => mapHandoff(handoff, conversationsById))
+  const cases = (snapshot.cases ?? []).map(mapCase)
   const supportGroups = (snapshot.support_groups ?? snapshot.supportGroups ?? []).map(mapSupportGroup)
   const slaPolicies = (snapshot.sla_policies ?? snapshot.slaPolicies ?? []).map(mapSlaPolicy)
   const businessHours = (snapshot.business_hours ?? snapshot.businessHours ?? []).map(mapBusinessHours)
@@ -1073,6 +1100,7 @@ function mergeBackendSnapshot(current: OmniState, snapshot: BackendSnapshot): Om
     responseMacros: snapshot.macros.map(mapResponseMacro),
     rules: snapshot.rules.map(mapRule),
     handoffs,
+    cases,
     selectedConversationId,
     selectedCustomerId,
     selectedChannelId,
@@ -2534,6 +2562,37 @@ export function useOmniStore() {
     })
   }
 
+  async function createCase(input: {
+    customerId: string
+    title: string
+    ticketIds?: string[]
+    summary?: string
+  }) {
+    return syncBackendMutation((session) =>
+      createBackendCase(
+        {
+          customer_id: input.customerId,
+          title: input.title,
+          ticket_ids: input.ticketIds ?? [],
+          summary: input.summary ?? '',
+        },
+        session,
+      ),
+    )
+  }
+
+  async function attachCaseTicket(caseId: string, ticketId: string) {
+    return syncBackendMutation((session) => attachBackendCaseTicket(caseId, ticketId, session))
+  }
+
+  async function detachCaseTicket(caseId: string, ticketId: string) {
+    return syncBackendMutation((session) => detachBackendCaseTicket(caseId, ticketId, session))
+  }
+
+  async function setCaseStatus(caseId: string, status: CaseRecord['status']) {
+    return syncBackendMutation((session) => updateBackendCase(caseId, { status }, session))
+  }
+
   async function toggleHandoffChecklist(handoffId: string, taskId: string) {
     const handoff = state.handoffs.find((item) => item.id === handoffId)
     const task = handoff?.checklist.find((item) => item.id === taskId)
@@ -2653,6 +2712,10 @@ export function useOmniStore() {
     updateSettings,
     updateHandoffStatus,
     toggleHandoffChecklist,
+    createCase,
+    attachCaseTicket,
+    detachCaseTicket,
+    setCaseStatus,
     recordResponseMacroUse,
     createResponseMacro,
     updateResponseMacro,

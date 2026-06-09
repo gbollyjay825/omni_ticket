@@ -5671,6 +5671,90 @@ button.freshchat-global-search:hover {
   overflow-wrap: anywhere;
 }
 
+/* Case card (group a customer's tickets across channels) */
+.case-card {
+  gap: 8px;
+}
+
+.case-card > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.case-card > span svg {
+  color: var(--signal-ink);
+}
+
+.case-sibling-list {
+  display: grid;
+  gap: 6px;
+}
+
+.case-sibling-list button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--heading);
+  padding: 7px 9px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.case-sibling-list button:hover {
+  border-color: var(--signal-edge);
+  background: var(--signal-tint);
+  color: var(--signal-ink);
+}
+
+.case-sibling-list button em {
+  flex: none;
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.case-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.case-attach-row {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.case-attach-row select {
+  min-height: 34px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--heading);
+  padding: 0 8px;
+  font: inherit;
+  font-size: 13px;
+}
+
 .receiving-inbox-addr svg {
   flex: none;
   color: var(--signal-ink);

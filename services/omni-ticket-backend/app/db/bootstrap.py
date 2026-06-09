@@ -143,6 +143,8 @@ def _repair_legacy_schema(target_engine: Engine) -> None:
         ticket_columns = {column["name"] for column in inspector.get_columns("tickets")}
         if "custom_fields" not in ticket_columns:
             statements.append("ALTER TABLE tickets ADD COLUMN custom_fields JSON NOT NULL DEFAULT '{}'")
+        if "case_id" not in ticket_columns:
+            statements.append("ALTER TABLE tickets ADD COLUMN case_id VARCHAR(64)")
 
     if inspector.has_table("support_groups"):
         support_group_columns = {

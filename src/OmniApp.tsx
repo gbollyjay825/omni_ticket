@@ -28,6 +28,7 @@ import {
   Headphones,
   Inbox,
   Languages,
+  Layers,
   LifeBuoy,
   Lock,
   Mail,
@@ -977,6 +978,9 @@ function OmniApp() {
     updateSettings,
     updateHandoffStatus,
     toggleHandoffChecklist,
+    createCase,
+    attachCaseTicket,
+    detachCaseTicket,
     recordResponseMacroUse,
     resetDemo,
     backendSession,
@@ -5895,6 +5899,100 @@ function OmniApp() {
                 </div>
               </div>
             ) : null}
+            {(() => {
+              const linkedCase = selectedConversation.caseId
+                ? state.cases.find((item) => item.id === selectedConversation.caseId)
+                : undefined
+              if (linkedCase) {
+                const siblings = linkedCase.ticketIds
+                  .filter((id) => id !== selectedConversation.id)
+                  .map((id) => state.conversations.find((conv) => conv.id === id))
+                  .filter((conv): conv is OmniConversation => Boolean(conv))
+                return (
+                  <div className="property-card case-card">
+                    <span>
+                      <Layers size={14} />
+                      Case · {linkedCase.publicId}
+                    </span>
+                    <strong>{linkedCase.title}</strong>
+                    <small>
+                      {linkedCase.ticketCount} ticket{linkedCase.ticketCount === 1 ? '' : 's'} across{' '}
+                      {linkedCase.channels.length} channel{linkedCase.channels.length === 1 ? '' : 's'}
+                    </small>
+                    <div className="case-sibling-list">
+                      {siblings.length ? (
+                        siblings.map((conv) => (
+                          <button
+                            type="button"
+                            key={conv.id}
+                            onClick={() => selectConversation(conv.id)}
+                            title={conv.subject}
+                          >
+                            <em>{state.channels.find((c) => c.id === conv.channelId)?.shortLabel ?? conv.channelId}</em>
+                            {conv.ticketNumber} · {conv.subject}
+                          </button>
+                        ))
+                      ) : (
+                        <p className="case-empty">No other tickets linked yet.</p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      className="secondary-action"
+                      onClick={() => void detachCaseTicket(linkedCase.id, selectedConversation.id)}
+                    >
+                      Remove from case
+                    </button>
+                  </div>
+                )
+              }
+              const customerOpenCases = state.cases.filter(
+                (item) => item.customerId === selectedConversation.customerId,
+              )
+              return (
+                <div className="property-card case-card">
+                  <span>
+                    <Layers size={14} />
+                    Case
+                  </span>
+                  <small>Group this customer&rsquo;s communications across channels into one case.</small>
+                  <button
+                    type="button"
+                    className="secondary-action"
+                    onClick={() =>
+                      void createCase({
+                        customerId: selectedConversation.customerId,
+                        title: selectedConversation.subject,
+                        ticketIds: [selectedConversation.id],
+                      })
+                    }
+                  >
+                    <Plus size={14} />
+                    Start a case from this ticket
+                  </button>
+                  {customerOpenCases.length ? (
+                    <label className="case-attach-row">
+                      <span>Add to existing case</span>
+                      <select
+                        value=""
+                        onChange={(event) => {
+                          if (event.target.value) {
+                            void attachCaseTicket(event.target.value, selectedConversation.id)
+                          }
+                        }}
+                      >
+                        <option value="">Select a case…</option>
+                        {customerOpenCases.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.publicId} · {item.title}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+                </div>
+              )
+            })()}
             <label>
               Status
               <select

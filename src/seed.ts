@@ -1791,6 +1791,7 @@ export const initialOmniState: OmniState = {
   serviceAppointments: [],
   discussionTopics: [],
   handoffs: seedHandoffs,
+  cases: [],
   outbox: [],
   settings: {
     aiWorkQueueAutomationEnabled: true,
