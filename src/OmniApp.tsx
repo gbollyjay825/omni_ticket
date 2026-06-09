@@ -1016,6 +1016,7 @@ function OmniApp() {
   const [globalSearchError, setGlobalSearchError] = useState('')
   const [attachmentDraft, setAttachmentDraft] = useState<AttachmentDraft | null>(null)
   const [mergeTicketBusy, setMergeTicketBusy] = useState('')
+  const [caseLinkBusy, setCaseLinkBusy] = useState('')
   const [dashboardRange, setDashboardRange] = useState<DashboardRange>('all')
   const [dashboardTicketGroup, setDashboardTicketGroup] = useState('all')
   const [dashboardChatGroup, setDashboardChatGroup] = useState('all')
@@ -4239,6 +4240,35 @@ function OmniApp() {
     }
   }
 
+  // Group a related ticket with the current one into a case (instead of merging).
+  // Attaches to whichever case already exists, or creates a fresh case from both.
+  async function linkSuggestionIntoCase(suggestion: DuplicateTicketSuggestion) {
+    if (!backendSession) {
+      announcePrototype('Backend login is required before linking a case.')
+      return
+    }
+    const suggestionConversation = state.conversations.find((conv) => conv.id === suggestion.ticketId)
+    setCaseLinkBusy(suggestion.ticketId)
+    try {
+      if (selectedConversation.caseId) {
+        await attachCaseTicket(selectedConversation.caseId, suggestion.ticketId)
+        announcePrototype(`${suggestion.ticketNumber} added to this case.`)
+      } else if (suggestionConversation?.caseId) {
+        await attachCaseTicket(suggestionConversation.caseId, selectedConversation.id)
+        announcePrototype(`${selectedConversation.ticketNumber} added to ${suggestion.ticketNumber}'s case.`)
+      } else {
+        await createCase({
+          customerId: selectedConversation.customerId,
+          title: selectedConversation.subject,
+          ticketIds: [selectedConversation.id, suggestion.ticketId],
+        })
+        announcePrototype(`Grouped ${selectedConversation.ticketNumber} and ${suggestion.ticketNumber} into a case.`)
+      }
+    } finally {
+      setCaseLinkBusy('')
+    }
+  }
+
   function ticketFieldsForChannel(channelId: ChannelId) {
     return state.ticketFields
       .filter((field) => field.active && (field.channels.length === 0 || field.channels.includes(channelId)))
@@ -5872,30 +5902,49 @@ function OmniApp() {
                   Potential duplicates
                 </span>
                 <div className="duplicate-suggestion-list">
-                  {duplicateSuggestions.slice(0, 3).map((suggestion) => (
-                    <div className="duplicate-suggestion" key={suggestion.ticketId}>
-                      <div>
-                        <strong>{suggestion.ticketNumber}</strong>
-                        <small>{suggestion.score}% match · {titleCase(suggestion.status)}</small>
+                  {duplicateSuggestions.slice(0, 3).map((suggestion) => {
+                    const suggestionConversation = state.conversations.find(
+                      (conv) => conv.id === suggestion.ticketId,
+                    )
+                    const willGroup = !selectedConversation.caseId && !suggestionConversation?.caseId
+                    const linkBusy = caseLinkBusy === suggestion.ticketId
+                    return (
+                      <div className="duplicate-suggestion" key={suggestion.ticketId}>
+                        <div>
+                          <strong>{suggestion.ticketNumber}</strong>
+                          <small>{suggestion.score}% match · {titleCase(suggestion.status)}</small>
+                        </div>
+                        <p>{suggestion.subject}</p>
+                        <div className="duplicate-reasons">
+                          {suggestion.reasons.slice(0, 3).map((reason) => (
+                            <span key={reason}>{reason}</span>
+                          ))}
+                        </div>
+                        <div className="duplicate-suggestion-actions">
+                          <button
+                            type="button"
+                            className="primary-action"
+                            onClick={() => void linkSuggestionIntoCase(suggestion)}
+                            disabled={linkBusy || caseLinkBusy !== ''}
+                            aria-label={`Link ${suggestion.ticketNumber} with ${selectedConversation.ticketNumber} as one case`}
+                          >
+                            <Layers size={15} />
+                            {linkBusy ? 'Linking' : willGroup ? 'Group as case' : 'Add to case'}
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-action"
+                            onClick={() => mergeDuplicateTicket(suggestion)}
+                            disabled={mergeTicketBusy === suggestion.ticketId}
+                            aria-label={`Merge ${suggestion.ticketNumber} into ${selectedConversation.ticketNumber}`}
+                          >
+                            <ArrowRight size={15} />
+                            {mergeTicketBusy === suggestion.ticketId ? 'Merging' : 'Merge'}
+                          </button>
+                        </div>
                       </div>
-                      <p>{suggestion.subject}</p>
-                      <div className="duplicate-reasons">
-                        {suggestion.reasons.slice(0, 3).map((reason) => (
-                          <span key={reason}>{reason}</span>
-                        ))}
-                      </div>
-                      <button
-                        type="button"
-                        className="secondary-action"
-                        onClick={() => mergeDuplicateTicket(suggestion)}
-                        disabled={mergeTicketBusy === suggestion.ticketId}
-                        aria-label={`Merge ${suggestion.ticketNumber} into ${selectedConversation.ticketNumber}`}
-                      >
-                        <ArrowRight size={15} />
-                        {mergeTicketBusy === suggestion.ticketId ? 'Merging' : 'Merge'}
-                      </button>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
             ) : null}

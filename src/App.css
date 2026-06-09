@@ -5671,6 +5671,21 @@ button.freshchat-global-search:hover {
   overflow-wrap: anywhere;
 }
 
+/* Duplicate-suggestion actions: group-as-case (primary) beside merge */
+.duplicate-suggestion-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.duplicate-suggestion-actions button {
+  flex: 1 1 auto;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
 /* Case card (group a customer's tickets across channels) */
 .case-card {
   gap: 8px;
