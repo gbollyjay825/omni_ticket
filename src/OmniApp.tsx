@@ -4455,9 +4455,11 @@ function OmniApp() {
   function openWorkQueueFocus(
     filters: Partial<typeof state.filters>,
     conversation?: OmniConversation,
+    due?: 'today' | 'overdue',
   ) {
     resetFilters()
     if (Object.keys(filters).length > 0) setFilters(filters)
+    if (due) setInboxDue(due)
     if (conversation) {
       openConversationInInbox(conversation)
       return
@@ -4638,10 +4640,10 @@ function OmniApp() {
     ).length
 
     const ticketTrendRows = [
-      { label: 'Open', value: dashboard.ticketTrends.open, action: () => openWorkQueueFocus({}) },
+      { label: 'Open', value: dashboard.ticketTrends.open, action: () => openWorkQueueFocus({ status: 'open' }) },
       { label: 'Unassigned', value: dashboard.ticketTrends.unassigned, action: () => applyInboxView('unassigned') },
       { label: 'Overdue', value: dashboard.ticketTrends.overdue, action: () => openWorkQueueFocus({ sla: 'breached' }) },
-      { label: 'Due today', value: dashboard.ticketTrends.dueToday, action: () => openWorkQueueFocus({}) },
+      { label: 'Due today', value: dashboard.ticketTrends.dueToday, action: () => openWorkQueueFocus({}, undefined, 'today') },
     ]
     const chatTrendRows: { label: string; value: number; action: () => void }[] = [
       {
