@@ -1147,8 +1147,9 @@ function automatedAssigneeId(state: OmniState, input: NewTicketInput) {
   return rankedAgents[0]?.agent.id ?? input.assigneeId
 }
 
-function matchesSearch(conversation: OmniConversation, search: string) {
-  if (!search.trim()) return true
+function matchesSearch(conversation: OmniConversation, search: string, contactText = '') {
+  const query = search.trim().toLowerCase()
+  if (!query) return true
   const haystack = [
     conversation.ticketNumber,
     conversation.subject,
@@ -1156,13 +1157,18 @@ function matchesSearch(conversation: OmniConversation, search: string) {
     conversation.intent,
     conversation.group,
     conversation.tags.join(' '),
+    contactText, // customer email + phone + contact-point values
   ]
     .join(' ')
     .toLowerCase()
-  return haystack.includes(search.trim().toLowerCase())
+  if (haystack.includes(query)) return true
+  // Phone-style queries: compare digits-only so formatting (+, spaces, dashes) doesn't matter.
+  const queryDigits = query.replace(/\D/g, '')
+  if (queryDigits.length >= 6 && haystack.replace(/\D/g, '').includes(queryDigits)) return true
+  return false
 }
 
-function filterConversation(conversation: OmniConversation, filters: InboxFilters) {
+function filterConversation(conversation: OmniConversation, filters: InboxFilters, contactText = '') {
   return (
     (filters.channel === 'all' || conversation.channelId === filters.channel) &&
     (filters.status === 'all' || conversation.status === filters.status) &&
@@ -1170,7 +1176,7 @@ function filterConversation(conversation: OmniConversation, filters: InboxFilter
     (filters.sla === 'all' || conversation.slaState === filters.sla) &&
     (filters.assignee === 'all' || conversation.assigneeId === filters.assignee) &&
     (filters.sentiment === 'all' || conversation.sentiment === filters.sentiment) &&
-    matchesSearch(conversation, filters.search)
+    matchesSearch(conversation, filters.search, contactText)
   )
 }
 
@@ -1512,9 +1518,22 @@ export function useOmniStore() {
     state.customers.find((customer) => customer.id === selectedConversation?.customerId) ??
     state.customers[0]
 
+  const customerContactIndex = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const customer of state.customers) {
+      const parts = [customer.email, customer.phone, ...(customer.contactMethods ?? []).map((m) => m.value)]
+        .filter(Boolean)
+        .join(' ')
+      map.set(customer.id, parts)
+    }
+    return map
+  }, [state.customers])
+
   const filteredConversations = useMemo(() => {
     return state.conversations
-      .filter((conversation) => filterConversation(conversation, state.filters))
+      .filter((conversation) =>
+        filterConversation(conversation, state.filters, customerContactIndex.get(conversation.customerId) ?? ''),
+      )
       .sort((a, b) => {
         const priorityScore: Record<Priority, number> = { urgent: 4, high: 3, medium: 2, low: 1 }
         const slaScore: Record<SlaState, number> = { breached: 4, risk: 3, healthy: 2, paused: 1 }
@@ -1524,7 +1543,7 @@ export function useOmniStore() {
           new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
         )
       })
-  }, [state.conversations, state.filters])
+  }, [state.conversations, state.filters, customerContactIndex])
 
   const metrics = useMemo(() => {
     const open = state.conversations.filter((conversation) => conversation.status !== 'resolved')

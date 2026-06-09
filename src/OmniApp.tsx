@@ -6389,8 +6389,8 @@ function OmniApp() {
                 <input
                   value={state.filters.search}
                   onChange={(event) => setFilters({ search: event.target.value })}
-                  placeholder="Search fields"
-                  aria-label="Search fields"
+                  placeholder="Search subject, ticket #, email or phone"
+                  aria-label="Search tickets by subject, ticket number, customer email or phone"
                 />
               </label>
               <label>
@@ -7347,11 +7347,18 @@ function OmniApp() {
 
   function renderCustomers() {
     const query = state.filters.search.trim().toLowerCase()
+    const queryDigits = query.replace(/\D/g, '')
     const customers = query
       ? state.customers.filter(
           (customer) =>
             customer.name.toLowerCase().includes(query) ||
             customer.email.toLowerCase().includes(query) ||
+            customer.phone.toLowerCase().includes(query) ||
+            (queryDigits.length >= 6 &&
+              [customer.phone, ...customer.contactMethods.map((method) => method.value)]
+                .join(' ')
+                .replace(/\D/g, '')
+                .includes(queryDigits)) ||
             customer.company.toLowerCase().includes(query) ||
             customer.tags.some((tag) => tag.toLowerCase().includes(query)),
         )
@@ -7381,7 +7388,7 @@ function OmniApp() {
             <input
               value={state.filters.search}
               onChange={(event) => setFilters({ search: event.target.value })}
-              placeholder="Search customers by name, email, company, or tag"
+              placeholder="Search customers by name, email, phone, company, or tag"
               aria-label="Search customers"
             />
           </label>

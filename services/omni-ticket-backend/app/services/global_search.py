@@ -49,6 +49,30 @@ def _score(query: str, *parts: object, exact_boost: bool = False) -> int:
     return min(score, 100)
 
 
+def _contact_values(customer: CustomerRecord | None) -> list[str]:
+    """All contact-point values for a customer (phone, whatsapp, sms handles, etc.)."""
+    if customer is None:
+        return []
+    values: list[str] = []
+    for point in customer.contact_points or []:
+        value = str(point.get("value", "")).strip()
+        if value:
+            values.append(value)
+    return values
+
+
+def _phone_match(query_digits: str, customer: CustomerRecord | None) -> bool:
+    """True when a digits-only (phone-like) query substring-matches any contact value,
+    ignoring formatting differences like +, spaces, and dashes."""
+    if len(query_digits) < 6 or customer is None:
+        return False
+    for value in _contact_values(customer):
+        digits = re.sub(r"\D", "", value)
+        if len(digits) >= 6 and (query_digits in digits or digits in query_digits):
+            return True
+    return False
+
+
 def _result(
     *,
     result_type: GlobalSearchResultType,
@@ -85,6 +109,7 @@ class GlobalSearchService:
         term = query.strip()
         if len(term) < 2:
             return []
+        query_digits = re.sub(r"\D", "", term)
 
         customers = {
             customer.id: customer
@@ -102,6 +127,7 @@ class GlobalSearchService:
 
         for ticket in db.scalars(select(TicketRecord).where(TicketRecord.market_id == market_id)).all():
             customer = customers.get(ticket.customer_id)
+            contact_parts = _contact_values(customer)
             score = _score(
                 term,
                 ticket.public_id,
@@ -116,8 +142,11 @@ class GlobalSearchService:
                 " ".join(ticket.tags or []),
                 customer.name if customer else "",
                 customer.email if customer else "",
+                *contact_parts,
                 exact_boost=True,
             )
+            if _phone_match(query_digits, customer):
+                score = max(score, 78)
             if score:
                 results.append(
                     _result(
@@ -140,6 +169,7 @@ class GlobalSearchService:
 
         for customer in customers.values():
             company = companies.get(customer.company_id or "")
+            contact_parts = _contact_values(customer)
             score = _score(
                 term,
                 customer.name,
@@ -149,8 +179,11 @@ class GlobalSearchService:
                 customer.notes,
                 " ".join(customer.tags or []),
                 company.name if company else "",
+                *contact_parts,
                 exact_boost=True,
             )
+            if _phone_match(query_digits, customer):
+                score = max(score, 76)
             if score:
                 results.append(
                     _result(
