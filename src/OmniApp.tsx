@@ -4350,24 +4350,37 @@ function OmniApp() {
     if (viewId === 'whatsapp') setFilters({ channel: 'whatsapp' })
   }
 
+  function focusComposer() {
+    if (typeof document === 'undefined') return
+    window.requestAnimationFrame(() => {
+      const input = document.getElementById('ticket-composer-input') as HTMLTextAreaElement | null
+      input?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      input?.focus()
+    })
+  }
+
   function handleTicketAction(actionId: (typeof freshdeskTicketActionItems)[number]['id']) {
     if (actionId === 'reply') {
       setComposerMode('reply')
-      announcePrototype('Reply composer selected.')
+      focusComposer()
+      announcePrototype('Reply composer ready.')
       return
     }
     if (actionId === 'note') {
       setComposerMode('note')
-      announcePrototype('Private note composer selected.')
+      focusComposer()
+      announcePrototype('Private note composer ready.')
       return
     }
     if (actionId === 'forward') {
       setComposerMode('handoff')
-      announcePrototype('Forward/handoff composer selected with full case context.')
+      focusComposer()
+      announcePrototype('Forward/handoff composer ready with full case context.')
       return
     }
     if (actionId === 'child') {
       setComposerMode('handoff')
+      focusComposer()
       announcePrototype('Child service task will create a linked internal team ticket.')
       return
     }
@@ -5448,81 +5461,6 @@ function OmniApp() {
 
         <div className="detail-layout">
           <div className="timeline-column">
-            <article className="copilot-card">
-              <div className="copilot-head">
-                <span>
-                  <Bot size={18} />
-                  Agent assist
-                </span>
-                <strong>{selectedConversation.copilot.confidence}% match</strong>
-              </div>
-              <p>{selectedConversation.copilot.summary}</p>
-              <div className="copilot-grid">
-                <div>
-                  <span>Customer mood</span>
-                  <strong>{sentimentLabels[selectedConversation.copilot.sentiment]}</strong>
-                </div>
-                <div>
-                  <span>Best answer</span>
-                  <strong>{selectedConversation.copilot.suggestedArticle}</strong>
-                  {selectedConversation.copilot.knowledgeReasons?.length ? (
-                    <small>{selectedConversation.copilot.knowledgeReasons.slice(0, 2).join(' · ')}</small>
-                  ) : null}
-                </div>
-                <div>
-                  <span>Next decision</span>
-                  <strong>{selectedConversation.copilot.escalation}</strong>
-                </div>
-              </div>
-            </article>
-
-            <article className="resolution-plan">
-              <div className="panel-head compact">
-                <div>
-                  <span>Execution plan</span>
-                  <h2>Next best path</h2>
-                </div>
-                <CheckCircle2 size={18} />
-              </div>
-              <div className="resolution-steps">
-                {planSteps.map((step, index) => (
-                  <div className={`resolution-step ${step.state}`} key={step.label}>
-                    <span>{index + 1}</span>
-                    <div>
-                      <strong>{step.label}</strong>
-                      <small>{step.detail}</small>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </article>
-
-            <div className="timeline">
-              {selectedConversation.timeline.map((event) => {
-                const EventIcon = channelIcons[event.channelId]
-                return (
-                  <article className={`timeline-event ${event.type}`} key={event.id}>
-                    <div className="timeline-icon">
-                      <EventIcon size={16} />
-                    </div>
-                    <div>
-                      <div className="timeline-top">
-                        <strong>{event.author}</strong>
-                        <span>{titleCase(event.type)}</span>
-                        <small>{formatTime(event.timestamp)}</small>
-                      </div>
-                      <p>{event.body}</p>
-                      {event.deliveryState && (
-                        <em className={`delivery-state ${event.deliveryState}`}>
-                          {deliveryLabel(event.deliveryState)}
-                        </em>
-                      )}
-                    </div>
-                  </article>
-                )
-              })}
-            </div>
-
             <article className="composer">
               <div className="composer-toolbar">
                 <div className="segmented" role="group" aria-label="Composer mode">
@@ -5691,6 +5629,7 @@ function OmniApp() {
                 </div>
               )}
               <textarea
+                id="ticket-composer-input"
                 value={composerText}
                 onChange={(event) => setComposerText(event.target.value)}
                 placeholder={
@@ -5739,6 +5678,81 @@ function OmniApp() {
                 </button>
               </div>
             </article>
+            <article className="copilot-card">
+              <div className="copilot-head">
+                <span>
+                  <Bot size={18} />
+                  Agent assist
+                </span>
+                <strong>{selectedConversation.copilot.confidence}% match</strong>
+              </div>
+              <p>{selectedConversation.copilot.summary}</p>
+              <div className="copilot-grid">
+                <div>
+                  <span>Customer mood</span>
+                  <strong>{sentimentLabels[selectedConversation.copilot.sentiment]}</strong>
+                </div>
+                <div>
+                  <span>Best answer</span>
+                  <strong>{selectedConversation.copilot.suggestedArticle}</strong>
+                  {selectedConversation.copilot.knowledgeReasons?.length ? (
+                    <small>{selectedConversation.copilot.knowledgeReasons.slice(0, 2).join(' · ')}</small>
+                  ) : null}
+                </div>
+                <div>
+                  <span>Next decision</span>
+                  <strong>{selectedConversation.copilot.escalation}</strong>
+                </div>
+              </div>
+            </article>
+
+            <article className="resolution-plan">
+              <div className="panel-head compact">
+                <div>
+                  <span>Execution plan</span>
+                  <h2>Next best path</h2>
+                </div>
+                <CheckCircle2 size={18} />
+              </div>
+              <div className="resolution-steps">
+                {planSteps.map((step, index) => (
+                  <div className={`resolution-step ${step.state}`} key={step.label}>
+                    <span>{index + 1}</span>
+                    <div>
+                      <strong>{step.label}</strong>
+                      <small>{step.detail}</small>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </article>
+
+            <div className="timeline">
+              {[...selectedConversation.timeline].reverse().map((event) => {
+                const EventIcon = channelIcons[event.channelId]
+                return (
+                  <article className={`timeline-event ${event.type}`} key={event.id}>
+                    <div className="timeline-icon">
+                      <EventIcon size={16} />
+                    </div>
+                    <div>
+                      <div className="timeline-top">
+                        <strong>{event.author}</strong>
+                        <span>{titleCase(event.type)}</span>
+                        <small>{formatTime(event.timestamp)}</small>
+                      </div>
+                      <p>{event.body}</p>
+                      {event.deliveryState && (
+                        <em className={`delivery-state ${event.deliveryState}`}>
+                          {deliveryLabel(event.deliveryState)}
+                        </em>
+                      )}
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+
           </div>
 
           <aside className="properties-panel">
@@ -7015,23 +7029,6 @@ function OmniApp() {
                   </span>
                 </div>
 
-                <div className="direct-chat-messages">
-                  {channelEvents.map((event) => (
-                    <article className={`direct-message ${event.authorRole}`} key={event.id}>
-                      <div>
-                        <strong>{event.author}</strong>
-                        <small>{formatTime(event.timestamp)}</small>
-                      </div>
-                      <p>{event.body}</p>
-                      {event.deliveryState && (
-                        <em className={`delivery-state ${event.deliveryState}`}>
-                          {deliveryLabel(event.deliveryState)}
-                        </em>
-                      )}
-                    </article>
-                  ))}
-                </div>
-
                 <div className="direct-chat-composer">
                   <textarea
                     value={liveChatDraft}
@@ -7052,6 +7049,23 @@ function OmniApp() {
                     </button>
                   </div>
                 </div>
+                <div className="direct-chat-messages">
+                  {[...channelEvents].reverse().map((event) => (
+                    <article className={`direct-message ${event.authorRole}`} key={event.id}>
+                      <div>
+                        <strong>{event.author}</strong>
+                        <small>{formatTime(event.timestamp)}</small>
+                      </div>
+                      <p>{event.body}</p>
+                      {event.deliveryState && (
+                        <em className={`delivery-state ${event.deliveryState}`}>
+                          {deliveryLabel(event.deliveryState)}
+                        </em>
+                      )}
+                    </article>
+                  ))}
+                </div>
+
               </>
             ) : (
               <div className="empty-state">
