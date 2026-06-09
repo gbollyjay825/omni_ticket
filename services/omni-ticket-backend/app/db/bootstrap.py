@@ -16,6 +16,7 @@ from app.db.models import (
     ChannelRecord,
     ConnectorAccountRecord,
     CompanyRecord,
+    CaseRecord,
     CsatSurveyRecord,
     CustomFieldDefinitionRecord,
     CustomObjectRecord,
@@ -894,7 +895,53 @@ def seed_reference_data(session: Session, source: InMemoryStore = store) -> None
             for event in source.audit
         ]
     )
+    session.flush()
+    seed_demo_dashboard_data(session)
     session.commit()
+
+
+def seed_demo_dashboard_data(session: Session) -> None:
+    """Idempotently group one customer's multi-channel tickets into a demo Case so the
+    Phase-2 case feature is visible in a freshly-seeded workspace out of the box.
+
+    Deliberately seeds only this *structural* example — NOT fabricated CSAT scores or
+    resolution stats. Performance metrics (CSAT, resolution-within-SLA) stay honest and
+    populate from real activity rather than being faked by the seed."""
+    for market in session.scalars(select(MarketRecord)).all():
+        if session.scalar(
+            select(CaseRecord.id).where(CaseRecord.market_id == market.id).limit(1)
+        ):
+            continue
+        tickets = list(
+            session.scalars(
+                select(TicketRecord)
+                .where(TicketRecord.market_id == market.id)
+                .order_by(TicketRecord.public_id)
+            ).all()
+        )
+        by_customer: dict[str, list[TicketRecord]] = {}
+        for ticket in tickets:
+            by_customer.setdefault(ticket.customer_id, []).append(ticket)
+        for customer_id, customer_tickets in by_customer.items():
+            channels = {ticket.channel for ticket in customer_tickets}
+            if len(customer_tickets) >= 2 and len(channels) >= 2:
+                case_id = f"seed-case-{market.id}"
+                session.add(
+                    CaseRecord(
+                        id=case_id,
+                        market_id=market.id,
+                        public_id=f"CASE-{market.code.upper()}-1",
+                        customer_id=customer_id,
+                        title=customer_tickets[0].subject,
+                        status="open",
+                        priority=customer_tickets[0].priority,
+                        summary="Same customer reached out across multiple channels.",
+                        opened_by="seed",
+                    )
+                )
+                for ticket in customer_tickets:
+                    ticket.case_id = case_id
+                break
 
 
 def initialize_database(engine: Engine | None = None) -> None:
