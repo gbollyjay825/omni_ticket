@@ -370,7 +370,7 @@ const setupModuleCatalog: Record<SetupSectionId, { title: string; modules: strin
   ],
   automation: [
     { title: 'Workflows', modules: ['SLA policies', 'Automations', 'Email notifications', 'CSAT surveys', 'Proactive outreach'] },
-    { title: 'Productivity', modules: ['Canned responses', 'Ticket templates', 'Scenario automations', 'Canned forms', 'Threads'] },
+    { title: 'Productivity', modules: ['Canned responses', 'Ticket templates', 'Scenario automations', 'Canned forms', 'Tags', 'Threads'] },
   ],
 }
 // Admin-catalog modules that map to a real, configurable Setup panel today. Only these
@@ -438,6 +438,87 @@ const setupBuiltModules = new Set<string>([
   'Widgets',
   'Canned forms',
 ])
+// Focused-hub: maps each catalog tool to the in-page panel it opens (the panel's
+// data-setup-panel value). Tools absent here open a dedicated screen instead
+// (see screenRoutes in openSetupModule).
+const setupToolPanel: Record<string, string> = {
+  // People (one workspace panel with internal sub-views)
+  Agents: 'people',
+  Groups: 'people',
+  Roles: 'people',
+  'Business hours': 'people',
+  'Profile settings': 'people',
+  MFA: 'people',
+  'Enterprise SSO': 'people',
+  'Permission profiles': 'people',
+  'Market access': 'people',
+  'API status': 'people',
+  'Security controls': 'people',
+  // Ticket forms
+  'Ticket fields': 'forms-fields',
+  'Ticket forms': 'forms-fields',
+  'Contact fields': 'custom-fields',
+  'Company fields': 'custom-fields',
+  'Custom objects': 'custom-objects',
+  'Multiple products': 'products',
+  'Portal branding': 'branding',
+  'Helpdesk settings': 'branding',
+  // Governance
+  Forums: 'forums',
+  'Audit export': 'audit',
+  'Account exports': 'audit',
+  Retention: 'attachment',
+  'Attachment lifecycle': 'attachment',
+  'Operational alerts': 'alerts',
+  // Connectors
+  Widgets: 'widget',
+  'Provider credentials': 'credentials',
+  Phone: 'credentials',
+  WhatsApp: 'credentials',
+  Facebook: 'credentials',
+  'Marketplace apps': 'credentials',
+  Email: 'email',
+  'Team inboxes': 'email',
+  'Production account pack': 'production',
+  // Automation
+  'SLA policies': 'sla',
+  Automations: 'automations',
+  'Email notifications': 'email-notifications',
+  'CSAT surveys': 'csat',
+  'Feedback form': 'csat',
+  'Proactive outreach': 'scenario',
+  'Scenario automations': 'scenario',
+  'Canned responses': 'canned',
+  'Canned forms': 'templates',
+  'Ticket templates': 'templates',
+  Tags: 'tags',
+}
+// Which Setup section actually hosts each panel (a tool's tile may be listed under
+// a different section than where its panel renders).
+const setupPanelSection: Record<string, SetupSectionId> = {
+  people: 'people',
+  'forms-fields': 'forms',
+  'custom-fields': 'forms',
+  'custom-objects': 'forms',
+  products: 'forms',
+  branding: 'forms',
+  forums: 'governance',
+  audit: 'governance',
+  attachment: 'governance',
+  alerts: 'governance',
+  widget: 'connectors',
+  credentials: 'connectors',
+  email: 'connectors',
+  production: 'connectors',
+  sla: 'automation',
+  automations: 'automation',
+  'email-notifications': 'automation',
+  csat: 'automation',
+  scenario: 'automation',
+  canned: 'automation',
+  templates: 'automation',
+  tags: 'automation',
+}
 const analyticsReportCatalog: Record<AnalyticsReportGroup, { title: string; detail: string; badge: string }[]> = {
   catalog: [
     { title: 'Omnichannel Dashboard', detail: 'Tickets, chats, CSAT, available agents, and today filters.', badge: 'Live' },
@@ -1054,6 +1135,7 @@ function OmniApp() {
   })
   const [setupSection, setSetupSection] = useState<SetupSectionId>('people')
   const [setupModuleHint, setSetupModuleHint] = useState('')
+  const [activeSetupTool, setActiveSetupTool] = useState<string | null>(null)
   const [peopleView, setPeopleView] = useState<'users' | 'groups' | 'security' | 'hours'>('users')
   const [businessHoursName, setBusinessHoursName] = useState('')
   const [businessHoursTimezone, setBusinessHoursTimezone] = useState('Africa/Lagos')
@@ -1241,6 +1323,7 @@ function OmniApp() {
   const selectedAgent = state.agents.find((agent) => agent.id === selectedConversation.assigneeId)
   const selectedChannel =
     state.channels.find((channel) => channel.id === selectedConversation.channelId) ?? state.channels[0]
+  const receivingGroup = state.supportGroups.find((group) => group.name === selectedConversation.group)
   const focusedChannel =
     state.channels.find((channel) => channel.id === state.selectedChannelId) ?? undefined
 
@@ -4083,17 +4166,13 @@ function OmniApp() {
       selectScreen(screenRoutes[moduleName])
       return
     }
-    // Some tiles belong to a different Setup section than the one they are listed under.
-    const sectionRoutes: Record<string, SetupSectionId> = {
-      'Account exports': 'governance',
-      'Security controls': 'people',
-      'Helpdesk settings': 'forms',
-      'Feedback form': 'automation',
+    const panelId = setupToolPanel[moduleName]
+    if (!panelId) {
+      setSetupModuleHint(`${moduleName} settings are managed elsewhere.`)
+      return
     }
-    if (sectionRoutes[moduleName]) {
-      setSetupSection(sectionRoutes[moduleName])
-    }
-    // Route People modules to the right sub-view, then reveal the live settings panel.
+    // Route the right Setup section + People sub-view for the panel that hosts this tool.
+    setSetupSection(setupPanelSection[panelId] ?? setupSection)
     const peopleRoutes: Record<string, 'users' | 'groups' | 'security' | 'hours'> = {
       Agents: 'users',
       'Market access': 'users',
@@ -4112,14 +4191,18 @@ function OmniApp() {
     }
     if (moduleName === 'Contact fields') setCustomFieldEntity('contact')
     if (moduleName === 'Company fields') setCustomFieldEntity('company')
-    setSetupModuleHint(`Showing ${moduleName} settings below.`)
+    setActiveSetupTool(moduleName)
+    setSetupModuleHint('')
     if (typeof document !== 'undefined') {
       window.requestAnimationFrame(() => {
-        document
-          .getElementById('setup-section-panels')
-          ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        document.getElementById('setup-screen-top')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       })
     }
+  }
+
+  function closeSetupTool() {
+    setActiveSetupTool(null)
+    setSetupModuleHint('')
   }
 
   async function mergeDuplicateTicket(suggestion: DuplicateTicketSuggestion) {
@@ -5863,6 +5946,40 @@ function OmniApp() {
                 ))}
               </select>
             </label>
+            <label>
+              Team
+              <select
+                value={selectedConversation.group}
+                onChange={(event) => updateConversation(selectedConversation.id, { group: event.target.value })}
+              >
+                {state.supportGroups.some((group) => group.name === selectedConversation.group) ? null : (
+                  <option value={selectedConversation.group}>{selectedConversation.group || 'Unassigned'}</option>
+                )}
+                {state.supportGroups.map((group) => (
+                  <option value={group.name} key={group.id}>
+                    {group.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="property-card receiving-inbox-card">
+              <span>
+                <Inbox size={14} />
+                Receiving inbox
+              </span>
+              <strong>{selectedConversation.group || 'Unassigned team'}</strong>
+              <small className="receiving-inbox-addr">
+                {receivingGroup?.teamEmail ? (
+                  <>
+                    <Mail size={12} />
+                    {receivingGroup.teamEmail}
+                  </>
+                ) : (
+                  'No team inbox set'
+                )}
+              </small>
+              <small>Channel · {selectedChannel?.label ?? titleCase(selectedConversation.channelId)}</small>
+            </div>
             <div className="property-card">
               <span>Promise time</span>
               <strong className={`sla-text ${selectedConversation.slaState}`}>
@@ -8413,13 +8530,17 @@ function OmniApp() {
       ['MFA enabled', mfaPlatformUsers.length, `${platformUsers.length - mfaPlatformUsers.length} pending`],
       ['Groups', state.supportGroups.length, `${state.supportGroups.filter((group) => group.active).length} active`],
     ]
+    const activeToolPanel = activeSetupTool ? setupToolPanel[activeSetupTool] : ''
     return (
       <div className="management-grid">
-        <section className="panel span-2 setup-panel">
+        <section
+          id="setup-screen-top"
+          className={`panel span-2 setup-panel ${activeSetupTool ? `setup-focused show-${activeToolPanel}` : 'setup-landing'}`}
+        >
           <div className="panel-head">
             <div>
               <span>Setup</span>
-              <h2>Workspace controls</h2>
+              <h2>{activeSetupTool ? activeSetupTool : 'Workspace controls'}</h2>
             </div>
             <ShieldCheck size={20} />
           </div>
@@ -8435,51 +8556,61 @@ function OmniApp() {
                 Refresh
               </button>
             </div>
-            <div className="setup-summary-grid" aria-label="Setup summary">
-              {setupStats.map(([label, value, detail]) => (
-                <article key={label}>
-                  <span>{label}</span>
-                  <strong>{value}</strong>
-                  <small>{detail}</small>
-                </article>
-              ))}
-            </div>
-            <div className="setup-section-tabs" role="tablist" aria-label="Setup sections">
-              {setupSectionOptions.map((section) => (
-                <button
-                  key={section.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={setupSection === section.id}
-                  className={setupSection === section.id ? 'active' : ''}
-                  onClick={() => setSetupSection(section.id)}
-                >
-                  {section.label}
-                </button>
-              ))}
-            </div>
+            {!activeSetupTool ? (
+              <div className="setup-summary-grid" aria-label="Setup summary">
+                {setupStats.map(([label, value, detail]) => (
+                  <article key={label}>
+                    <span>{label}</span>
+                    <strong>{value}</strong>
+                    <small>{detail}</small>
+                  </article>
+                ))}
+              </div>
+            ) : null}
           </div>
-          <div className="freshworks-admin-catalog" aria-label="Omni admin module catalog">
-            {setupModuleCatalog[setupSection]
-              .map((category) => ({
-                ...category,
-                modules: category.modules.filter((module) => setupBuiltModules.has(module)),
-              }))
-              .filter((category) => category.modules.length > 0)
-              .map((category) => (
-                <article key={category.title}>
-                  <span>{category.title}</span>
-                  <div>
-                    {category.modules.map((module) => (
-                      <button type="button" key={module} onClick={() => openSetupModule(module)}>
-                        <CheckCircle2 size={14} />
-                        {module}
-                      </button>
+          {activeSetupTool ? (
+            <div className="setup-focus-bar">
+              <button type="button" className="secondary-action" onClick={closeSetupTool}>
+                <ArrowRight className="flip-x" size={15} />
+                All tools
+              </button>
+              <span className="setup-breadcrumb">
+                {setupSectionOptions.find((s) => s.id === setupSection)?.label}
+                <ChevronDown size={13} className="setup-bc-sep" />
+                <strong>{activeSetupTool}</strong>
+              </span>
+            </div>
+          ) : (
+            <div className="setup-tool-grid" aria-label="Setup tools">
+              {setupSectionOptions.map((section) => {
+                const categories = setupModuleCatalog[section.id]
+                  .map((category) => ({
+                    ...category,
+                    modules: category.modules.filter((module) => setupBuiltModules.has(module)),
+                  }))
+                  .filter((category) => category.modules.length > 0)
+                if (categories.length === 0) return null
+                return (
+                  <div className="setup-tool-group" key={section.id}>
+                    <h3>{section.label}</h3>
+                    {categories.map((category) => (
+                      <div className="setup-tool-cat" key={category.title}>
+                        <span>{category.title}</span>
+                        <div>
+                          {category.modules.map((module) => (
+                            <button type="button" key={module} onClick={() => openSetupModule(module)}>
+                              <CheckCircle2 size={14} />
+                              {module}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     ))}
                   </div>
-                </article>
-              ))}
-          </div>
+                )
+              })}
+            </div>
+          )}
           <div id="setup-section-panels" className="setup-section-anchor" />
           {setupModuleHint ? (
             <p className="setup-module-hint" role="status">
@@ -8488,7 +8619,7 @@ function OmniApp() {
           ) : null}
           {setupSection === 'forms' ? (
           <>
-          <div className="automation-settings-panel ticket-fields-panel">
+          <div data-setup-panel="forms-fields" className="automation-settings-panel ticket-fields-panel">
             <div className="panel-head compact">
               <div>
                 <span>Ticket forms</span>
@@ -8643,7 +8774,7 @@ function OmniApp() {
               ))}
             </div>
           </div>
-          <div className="automation-settings-panel custom-fields-panel">
+          <div data-setup-panel="custom-fields" className="automation-settings-panel custom-fields-panel">
             <div className="panel-head compact">
               <div>
                 <span>Contact &amp; company fields</span>
@@ -8771,7 +8902,7 @@ function OmniApp() {
               )}
             </div>
           </div>
-          <div className="automation-settings-panel custom-objects-panel">
+          <div data-setup-panel="custom-objects" className="automation-settings-panel custom-objects-panel">
             <div className="panel-head compact">
               <div>
                 <span>Custom objects</span>
@@ -8908,7 +9039,7 @@ function OmniApp() {
               )}
             </div>
           </div>
-          <div className="automation-settings-panel products-panel">
+          <div data-setup-panel="products" className="automation-settings-panel products-panel">
             <div className="panel-head compact">
               <div>
                 <span>Products</span>
@@ -8984,7 +9115,7 @@ function OmniApp() {
               )}
             </div>
           </div>
-          <div className="automation-settings-panel branding-settings-panel" id="portal-branding">
+          <div data-setup-panel="branding" className="automation-settings-panel branding-settings-panel" id="portal-branding">
             <div className="panel-head compact">
               <div>
                 <span>Portal branding</span>
@@ -9065,7 +9196,7 @@ function OmniApp() {
           ) : null}
           {setupSection === 'governance' ? (
           <>
-          <div className="automation-settings-panel forums-panel" id="forums">
+          <div data-setup-panel="forums" className="automation-settings-panel forums-panel" id="forums">
             <div className="panel-head compact">
               <div>
                 <span>Community forums</span>
@@ -9210,7 +9341,7 @@ function OmniApp() {
               </div>
             )}
           </div>
-          <div className="automation-settings-panel audit-governance-panel" id="audit-controls">
+          <div data-setup-panel="audit" className="automation-settings-panel audit-governance-panel" id="audit-controls">
             <div className="panel-head compact">
               <div>
                 <span>Audit governance</span>
@@ -9283,7 +9414,7 @@ function OmniApp() {
               </button>
             </div>
           </div>
-          <div className="automation-settings-panel attachment-governance-panel" id="attachment-controls">
+          <div data-setup-panel="attachment" className="automation-settings-panel attachment-governance-panel" id="attachment-controls">
             <div className="panel-head compact">
               <div>
                 <span>Attachment governance</span>
@@ -9385,7 +9516,7 @@ function OmniApp() {
           </>
           ) : null}
           {setupSection === 'people' ? (
-          <div className="automation-settings-panel user-management-panel people-workspace">
+          <div data-setup-panel="people" className="automation-settings-panel user-management-panel people-workspace">
             <div className="panel-head compact people-workspace-head">
               <div>
                 <span>People management</span>
@@ -10497,7 +10628,7 @@ function OmniApp() {
           </div>
           ) : null}
           {setupSection === 'governance' ? (
-          <div className="automation-settings-panel operational-alert-panel" id="operational-alerts">
+          <div data-setup-panel="alerts" className="automation-settings-panel operational-alert-panel" id="operational-alerts">
             <div className="panel-head compact">
               <div>
                 <span>Operational alerts</span>
@@ -10623,7 +10754,7 @@ function OmniApp() {
           ) : null}
           {setupSection === 'connectors' ? (
           <>
-          <div className="automation-settings-panel widget-settings-panel" id="widget-settings">
+          <div data-setup-panel="widget" className="automation-settings-panel widget-settings-panel" id="widget-settings">
             <div className="panel-head compact">
               <div>
                 <span>Chat widget</span>
@@ -10733,7 +10864,7 @@ function OmniApp() {
               <p className="setup-module-hint">Sign in as an administrator to configure the chat widget.</p>
             )}
           </div>
-          <form className="automation-settings-panel credential-settings-panel" onSubmit={handleIntegrationCredentialSave}>
+          <form data-setup-panel="credentials" className="automation-settings-panel credential-settings-panel" onSubmit={handleIntegrationCredentialSave}>
             <div className="panel-head compact">
               <div>
                 <span>Production credentials</span>
@@ -11265,7 +11396,7 @@ function OmniApp() {
               </button>
             </div>
           </form>
-          <section className="automation-settings-panel production-readiness-panel">
+          <section data-setup-panel="production" className="automation-settings-panel production-readiness-panel">
             <div className="panel-head compact">
               <div>
                 <span>Launch gate</span>
@@ -11341,7 +11472,7 @@ function OmniApp() {
               </button>
             </div>
           </section>
-          <section className="automation-settings-panel account-request-panel">
+          <section data-setup-panel="production" className="automation-settings-panel account-request-panel">
             <div className="panel-head compact">
               <div>
                 <span>Account requests</span>
@@ -11452,7 +11583,7 @@ function OmniApp() {
               </a>
             </div>
           </section>
-          <section className="automation-settings-panel account-reference-panel">
+          <section data-setup-panel="production" className="automation-settings-panel account-reference-panel">
             <div className="panel-head compact">
               <div>
                 <span>Account references</span>
@@ -11664,7 +11795,7 @@ function OmniApp() {
               </div>
             </form>
           </section>
-          <form className="automation-settings-panel email-settings-panel" onSubmit={handleEmailSettingsSave}>
+          <form data-setup-panel="email" className="automation-settings-panel email-settings-panel" onSubmit={handleEmailSettingsSave}>
             <div className="panel-head compact">
               <div>
                 <span>Email setup</span>
@@ -11955,7 +12086,66 @@ function OmniApp() {
               </button>
             </div>
           </form>
-          <div className="automation-settings-panel outbound-provider-panel">
+          <div data-setup-panel="email" className="automation-settings-panel team-inbox-overview">
+            <div className="panel-head compact">
+              <div>
+                <span>Team inboxes</span>
+                <h2>Where each team&rsquo;s mail lands</h2>
+              </div>
+              <Inbox size={18} />
+            </div>
+            <p className="setup-module-hint">
+              Mail addressed to a team routes to that team&rsquo;s queue, and replies send from the
+              team address. Set or change an address on each team in People &rarr; Groups.
+            </p>
+            <div className="team-inbox-table" role="table" aria-label="Team inboxes">
+              <div className="team-inbox-row team-inbox-head" role="row">
+                <span role="columnheader">Team</span>
+                <span role="columnheader">Inbox address</span>
+                <span role="columnheader">Channels</span>
+                <span role="columnheader">Open</span>
+              </div>
+              {state.supportGroups.map((group) => (
+                <div className={`team-inbox-row${group.teamEmail ? '' : ' unset'}`} role="row" key={group.id}>
+                  <span role="cell"><strong>{group.name}</strong></span>
+                  <span role="cell" className="team-inbox-addr">
+                    {group.teamEmail ? (
+                      <>
+                        <Mail size={13} />
+                        {group.teamEmail}
+                      </>
+                    ) : (
+                      <em>No inbox set</em>
+                    )}
+                  </span>
+                  <span role="cell" className="team-inbox-channels">
+                    {group.channels.length ? (
+                      group.channels.slice(0, 4).map((channel) => <span key={channel}>{titleCase(channel)}</span>)
+                    ) : (
+                      <em>&mdash;</em>
+                    )}
+                  </span>
+                  <span role="cell"><b>{group.openTicketCount}</b></span>
+                </div>
+              ))}
+              {state.supportGroups.length === 0 ? (
+                <div className="team-inbox-row" role="row">
+                  <span role="cell">No teams yet — add one in People &rarr; Groups.</span>
+                </div>
+              ) : null}
+            </div>
+            <div className="email-settings-actions">
+              <span>
+                {state.supportGroups.filter((group) => group.teamEmail).length} of {state.supportGroups.length} teams
+                have an inbox address.
+              </span>
+              <button className="secondary-action" type="button" onClick={() => openSetupModule('Groups')}>
+                <Users size={15} />
+                Manage in People &rarr; Groups
+              </button>
+            </div>
+          </div>
+          <div data-setup-panel="credentials" className="automation-settings-panel outbound-provider-panel">
             <div className="panel-head compact">
               <div>
                 <span>Inbound adapters</span>
@@ -12006,7 +12196,7 @@ function OmniApp() {
               ) : null}
             </div>
           </div>
-          <div className="automation-settings-panel outbound-provider-panel">
+          <div data-setup-panel="credentials" className="automation-settings-panel outbound-provider-panel">
             <div className="panel-head compact">
               <div>
                 <span>Outbound adapters</span>
@@ -12057,7 +12247,7 @@ function OmniApp() {
               ) : null}
             </div>
           </div>
-          <div className="automation-settings-panel connector-control-center">
+          <div data-setup-panel="credentials" className="automation-settings-panel connector-control-center">
             <div className="panel-head compact">
               <div>
                 <span>Connector control center</span>
@@ -12128,7 +12318,7 @@ function OmniApp() {
               })}
             </div>
           </div>
-          <div className="automation-settings-panel outbound-queue-panel" id="outbound-queue">
+          <div data-setup-panel="credentials" className="automation-settings-panel outbound-queue-panel" id="outbound-queue">
             <div className="panel-head compact">
               <div>
                 <span>Outbound queue</span>
@@ -12185,7 +12375,7 @@ function OmniApp() {
           ) : null}
           {setupSection === 'automation' ? (
           <>
-          <div className="automation-settings-panel">
+          <div data-setup-panel="automations" className="automation-settings-panel">
             <div className="panel-head compact">
               <div>
                 <span>AI queue control</span>
@@ -12224,7 +12414,7 @@ function OmniApp() {
               ))}
             </div>
 	          </div>
-	          <div className="automation-settings-panel sla-policy-panel">
+	          <div data-setup-panel="sla" className="automation-settings-panel sla-policy-panel">
 	            <div className="panel-head compact">
 	              <div>
 	                <span>SLA policies</span>
@@ -12429,7 +12619,7 @@ function OmniApp() {
 	              ))}
 	            </div>
 	          </div>
-          <div className="automation-settings-panel canned-responses-panel">
+          <div data-setup-panel="canned" className="automation-settings-panel canned-responses-panel">
             <div className="panel-head compact">
               <div>
                 <span>Canned responses</span>
@@ -12573,7 +12763,7 @@ function OmniApp() {
               )}
             </div>
           </div>
-          <div className="automation-settings-panel ticket-templates-panel">
+          <div data-setup-panel="templates" className="automation-settings-panel ticket-templates-panel">
             <div className="panel-head compact">
               <div>
                 <span>Ticket templates</span>
@@ -12704,7 +12894,7 @@ function OmniApp() {
               )}
             </div>
           </div>
-          <div className="automation-settings-panel tags-panel">
+          <div data-setup-panel="tags" className="automation-settings-panel tags-panel">
             <div className="panel-head compact">
               <div>
                 <span>Tags</span>
@@ -12775,7 +12965,7 @@ function OmniApp() {
               )}
             </div>
           </div>
-          <div className="automation-settings-panel csat-surveys-panel">
+          <div data-setup-panel="csat" className="automation-settings-panel csat-surveys-panel">
             <div className="panel-head compact">
               <div>
                 <span>CSAT surveys</span>
@@ -12860,7 +13050,7 @@ function OmniApp() {
               )}
             </div>
           </div>
-          <div className="automation-settings-panel email-notifications-panel">
+          <div data-setup-panel="email-notifications" className="automation-settings-panel email-notifications-panel">
             <div className="panel-head compact">
               <div>
                 <span>Email notifications</span>
@@ -12975,7 +13165,7 @@ function OmniApp() {
               )}
             </div>
           </div>
-          <div className="automation-settings-panel scenario-automations-panel">
+          <div data-setup-panel="scenario" className="automation-settings-panel scenario-automations-panel">
             <div className="panel-head compact">
               <div>
                 <span>Scenario automations</span>
