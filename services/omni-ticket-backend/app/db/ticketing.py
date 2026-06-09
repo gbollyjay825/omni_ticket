@@ -19,6 +19,7 @@ from app.db.mappers import (
     ai_decision_from_record,
     automation_rule_from_record,
     audit_event_from_record,
+    case_from_record,
     company_from_record,
     connector_event_from_record,
     csat_feedback_from_record,
@@ -34,6 +35,7 @@ from app.db.models import (
     AiDecisionRecord,
     AuditEventRecord,
     AutomationRuleRecord,
+    CaseRecord,
     CompanyRecord,
     ConnectorEventRecord,
     CsatFeedbackRecord,
@@ -53,10 +55,13 @@ from app.models.domain import (
     AttachmentLifecycleStatus,
     AttachmentRetentionPolicy,
     AttachmentScanStatus,
+    Case,
+    CaseStatus,
     ChannelType,
     ConnectorEvent,
     ConnectorDirection,
     ConnectorInboundRequest,
+    CreateCaseRequest,
     CreateCsatFeedbackRequest,
     CreateHandoffRequest,
     CreateAttachmentRequest,
@@ -76,6 +81,7 @@ from app.models.domain import (
     TimelineEvent,
     TimelineEventType,
     TicketFieldType,
+    UpdateCaseRequest,
     UpdateHandoffRequest,
     UpdateTicketRequest,
     WorkQueueOverrideRequest,
@@ -3049,3 +3055,215 @@ class TicketRepository:
 
 
 ticket_repository = TicketRepository()
+
+
+def _next_public_case_id(db: Session) -> str:
+    public_ids = db.scalars(select(CaseRecord.public_id)).all()
+    numbers = [
+        int(public_id.split("-")[-1])
+        for public_id in public_ids
+        if public_id.startswith("CASE-") and public_id.split("-")[-1].isdigit()
+    ]
+    return f"CASE-{max(numbers, default=1000) + 1}"
+
+
+def _case_record_or_404(db: Session, case_id: str, market_id: str) -> CaseRecord:
+    record = db.get(CaseRecord, case_id)
+    if record is None or record.market_id != market_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Case not found")
+    return record
+
+
+class CaseRepository:
+    """Cases group multiple tickets (across channels) for one customer."""
+
+    def list_cases(self, db: Session, market_id: str) -> list[Case]:
+        records = db.scalars(
+            select(CaseRecord)
+            .where(CaseRecord.market_id == market_id)
+            .order_by(CaseRecord.updated_at.desc())
+        ).all()
+        tickets_by_case: dict[str, list[TicketRecord]] = {}
+        for ticket in db.scalars(
+            select(TicketRecord).where(
+                TicketRecord.market_id == market_id,
+                TicketRecord.case_id.is_not(None),
+            )
+        ).all():
+            if ticket.case_id is not None:
+                tickets_by_case.setdefault(ticket.case_id, []).append(ticket)
+        return [case_from_record(record, tickets_by_case.get(record.id, [])) for record in records]
+
+    def get_case(self, db: Session, market_id: str, case_id: str) -> Case:
+        record = _case_record_or_404(db, case_id, market_id)
+        tickets = list(
+            db.scalars(
+                select(TicketRecord).where(
+                    TicketRecord.market_id == market_id,
+                    TicketRecord.case_id == case_id,
+                )
+            ).all()
+        )
+        return case_from_record(record, tickets)
+
+    def create_case(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        *,
+        market_id: str,
+        payload: CreateCaseRequest,
+        actor: str,
+    ) -> Case:
+        customer = _customer_record_or_404(db, payload.customer_id, market_id)
+        record = CaseRecord(
+            id=_new_id("case"),
+            market_id=market_id,
+            public_id=_next_public_case_id(db),
+            customer_id=customer.id,
+            title=payload.title.strip(),
+            status=CaseStatus.open.value,
+            priority=payload.priority.value,
+            summary=payload.summary.strip(),
+            opened_by=(payload.opened_by or actor).strip(),
+        )
+        db.add(record)
+        db.flush()
+        attached: list[TicketRecord] = []
+        for ticket_id in payload.ticket_ids:
+            ticket = db.get(TicketRecord, ticket_id)
+            if ticket is None or ticket.market_id != market_id:
+                continue
+            self._link_ticket(db, state, record, ticket, actor)
+            attached.append(ticket)
+        record.updated_at = utc_now()
+        db.flush()
+        self._audit_case(
+            db, state, record, actor, "case.create", {"ticket_ids": [t.id for t in attached]}
+        )
+        db.commit()
+        return case_from_record(record, attached)
+
+    def update_case(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        *,
+        market_id: str,
+        case_id: str,
+        payload: UpdateCaseRequest,
+        actor: str,
+    ) -> Case:
+        record = _case_record_or_404(db, case_id, market_id)
+        changes: dict[str, object] = {}
+        if payload.title is not None:
+            record.title = payload.title.strip()
+            changes["title"] = record.title
+        if payload.status is not None:
+            record.status = payload.status.value
+            changes["status"] = record.status
+        if payload.priority is not None:
+            record.priority = payload.priority.value
+            changes["priority"] = record.priority
+        if payload.summary is not None:
+            record.summary = payload.summary.strip()
+            changes["summary"] = record.summary
+        record.updated_at = utc_now()
+        db.flush()
+        self._audit_case(db, state, record, actor, "case.update", changes)
+        db.commit()
+        return self.get_case(db, market_id, case_id)
+
+    def attach_ticket(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        *,
+        market_id: str,
+        case_id: str,
+        ticket_id: str,
+        actor: str,
+    ) -> Case:
+        record = _case_record_or_404(db, case_id, market_id)
+        ticket = _ticket_record_or_404(db, ticket_id, market_id)
+        self._link_ticket(db, state, record, ticket, actor)
+        record.updated_at = utc_now()
+        db.flush()
+        self._audit_case(db, state, record, actor, "case.attach_ticket", {"ticket_id": ticket.id})
+        db.commit()
+        return self.get_case(db, market_id, case_id)
+
+    def detach_ticket(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        *,
+        market_id: str,
+        case_id: str,
+        ticket_id: str,
+        actor: str,
+    ) -> Case:
+        record = _case_record_or_404(db, case_id, market_id)
+        ticket = _ticket_record_or_404(db, ticket_id, market_id)
+        if ticket.case_id == record.id:
+            ticket.case_id = None
+            _add_timeline_record(
+                db,
+                state,
+                ticket,
+                event_type=TimelineEventType.internal_note,
+                channel=ChannelType(ticket.channel),
+                actor=actor,
+                body=f"Unlinked from case {record.public_id}.",
+                public=False,
+            )
+        record.updated_at = utc_now()
+        db.flush()
+        self._audit_case(db, state, record, actor, "case.detach_ticket", {"ticket_id": ticket.id})
+        db.commit()
+        return self.get_case(db, market_id, case_id)
+
+    def _link_ticket(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        record: CaseRecord,
+        ticket: TicketRecord,
+        actor: str,
+    ) -> None:
+        if ticket.case_id == record.id:
+            return
+        ticket.case_id = record.id
+        _add_timeline_record(
+            db,
+            state,
+            ticket,
+            event_type=TimelineEventType.internal_note,
+            channel=ChannelType(ticket.channel),
+            actor=actor,
+            body=f"Linked to case {record.public_id}: {record.title}.",
+            public=False,
+        )
+
+    def _audit_case(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        record: CaseRecord,
+        actor: str,
+        action: str,
+        details: dict,
+    ) -> None:
+        _audit(
+            db,
+            state,
+            actor=actor,
+            action=action,
+            entity_type="case",
+            entity_id=record.id,
+            market_id=record.market_id,
+            details=details,
+        )
+
+
+case_repository = CaseRepository()

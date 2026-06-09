@@ -526,6 +526,23 @@ class TicketRecord(TimestampMixin, Base):
     sla: Mapped[dict] = mapped_column(JSON, default=dict)
     ai_summary: Mapped[str] = mapped_column(Text, default="")
     recommended_action: Mapped[str] = mapped_column(Text, default="")
+    case_id: Mapped[str | None] = mapped_column(ForeignKey("cases.id"), index=True)
+
+
+class CaseRecord(TimestampMixin, Base):
+    """A case groups multiple tickets/communications (across channels) for one customer."""
+
+    __tablename__ = "cases"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    market_id: Mapped[str] = mapped_column(ForeignKey("markets.id"), index=True)
+    public_id: Mapped[str] = mapped_column(String(40), index=True)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("customers.id"), index=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="open", index=True)
+    priority: Mapped[str] = mapped_column(String(32), default="normal")
+    summary: Mapped[str] = mapped_column(Text, default="")
+    opened_by: Mapped[str] = mapped_column(String(180), default="")
 
 
 class TicketFieldRecord(TimestampMixin, Base):

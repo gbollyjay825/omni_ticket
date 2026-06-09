@@ -6,6 +6,7 @@ from app.db.models import (
     AuditEventRecord,
     AutomationRuleRecord,
     BusinessHoursRecord,
+    CaseRecord,
     ChannelRecord,
     ConnectorAccountRecord,
     CompanyRecord,
@@ -52,6 +53,7 @@ from app.models.domain import (
     AttachmentScanStatus,
     AutomationRule,
     BusinessHours,
+    Case,
     Channel,
     ChannelHealth,
     ChannelType,
@@ -498,6 +500,29 @@ def ticket_from_record(record: TicketRecord) -> Ticket:
             "sla": record.sla,
             "ai_summary": record.ai_summary,
             "recommended_action": record.recommended_action,
+            "case_id": record.case_id,
+            "created_at": record.created_at,
+            "updated_at": record.updated_at,
+        }
+    )
+
+
+def case_from_record(record: CaseRecord, tickets: "list[TicketRecord] | None" = None) -> Case:
+    members = tickets or []
+    return Case.model_validate(
+        {
+            "id": record.id,
+            "market_id": record.market_id,
+            "public_id": record.public_id,
+            "customer_id": record.customer_id,
+            "title": record.title,
+            "status": record.status,
+            "priority": record.priority,
+            "summary": record.summary,
+            "opened_by": record.opened_by,
+            "ticket_ids": [ticket.id for ticket in members],
+            "channels": sorted({ticket.channel for ticket in members}),
+            "ticket_count": len(members),
             "created_at": record.created_at,
             "updated_at": record.updated_at,
         }

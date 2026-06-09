@@ -54,7 +54,7 @@ from app.db.rate_limit import database_rate_limiter
 from app.db.session import get_db
 from app.db.settings import get_or_create_workspace_settings, workspace_settings_from_record
 from app.db.store_sync import persist_store_state
-from app.db.ticketing import ticket_repository
+from app.db.ticketing import case_repository, ticket_repository
 from app.models.domain import (
     Agent,
     AnalyticsRollup,
@@ -111,9 +111,13 @@ from app.models.domain import (
     CreateServiceAppointmentRequest,
     CreateDiscussionTopicRequest,
     CreateDiscussionCommentRequest,
+    CreateCaseRequest,
     CreateTicketFieldRequest,
     CreateTicketRequest,
     CreateTicketTemplateRequest,
+    Case,
+    CaseTicketRequest,
+    UpdateCaseRequest,
     Customer,
     DeleteAttachmentRequest,
     DiscussionComment,
@@ -2267,6 +2271,97 @@ def merge_ticket(
     return result
 
 
+@router.get("/cases", response_model=list[Case])
+def list_cases(
+    context: RequestContext = Depends(require_context),
+    db: Session = Depends(get_db),
+) -> list[Case]:
+    return case_repository.list_cases(db, context.market_id)
+
+
+@router.post("/cases", response_model=Case, status_code=status.HTTP_201_CREATED)
+def create_case(
+    request: CreateCaseRequest,
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> Case:
+    require_operator(context)
+    return case_repository.create_case(
+        db,
+        state,
+        market_id=context.market_id,
+        payload=request,
+        actor=str(context.user.email),
+    )
+
+
+@router.get("/cases/{case_id}", response_model=Case)
+def read_case(
+    case_id: str,
+    context: RequestContext = Depends(require_context),
+    db: Session = Depends(get_db),
+) -> Case:
+    return case_repository.get_case(db, context.market_id, case_id)
+
+
+@router.patch("/cases/{case_id}", response_model=Case)
+def update_case(
+    case_id: str,
+    request: UpdateCaseRequest,
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> Case:
+    require_operator(context)
+    return case_repository.update_case(
+        db,
+        state,
+        market_id=context.market_id,
+        case_id=case_id,
+        payload=request,
+        actor=str(context.user.email),
+    )
+
+
+@router.post("/cases/{case_id}/tickets", response_model=Case)
+def attach_case_ticket(
+    case_id: str,
+    request: CaseTicketRequest,
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> Case:
+    require_operator(context)
+    return case_repository.attach_ticket(
+        db,
+        state,
+        market_id=context.market_id,
+        case_id=case_id,
+        ticket_id=request.ticket_id,
+        actor=str(context.user.email),
+    )
+
+
+@router.delete("/cases/{case_id}/tickets/{ticket_id}", response_model=Case)
+def detach_case_ticket(
+    case_id: str,
+    ticket_id: str,
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> Case:
+    require_operator(context)
+    return case_repository.detach_ticket(
+        db,
+        state,
+        market_id=context.market_id,
+        case_id=case_id,
+        ticket_id=ticket_id,
+        actor=str(context.user.email),
+    )
+
+
 @router.patch("/tickets/{ticket_id}", response_model=Ticket)
 def update_ticket(
     ticket_id: str,
@@ -3690,6 +3785,7 @@ def read_frontend_snapshot(
             for ticket in tickets
         ],
         "handoffs": ticket_repository.list_handoffs(db, state, context.market_id),
+        "cases": case_repository.list_cases(db, context.market_id),
         "outbound_messages": outbound_repository.list_messages(db, state, context.market_id),
         "outbound_provider_config": outbound_provider_config,
         "inbound_provider_config": inbound_provider_config,

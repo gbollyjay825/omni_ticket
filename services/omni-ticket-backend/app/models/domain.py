@@ -840,6 +840,7 @@ class Ticket(BaseModel):
     sla: SlaState
     ai_summary: str = ""
     recommended_action: str = ""
+    case_id: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -1007,6 +1008,53 @@ class MergeTicketsResponse(BaseModel):
     target_timeline_event: TimelineEvent
     source_timeline_event: TimelineEvent
     audit_event_id: str | None = None
+
+
+class CaseStatus(StrEnum):
+    open = "open"
+    resolved = "resolved"
+    closed = "closed"
+
+
+class Case(BaseModel):
+    """Groups multiple tickets/communications (across channels) for one customer."""
+
+    id: str
+    market_id: str = "market-ng"
+    public_id: str
+    customer_id: str
+    title: str
+    status: CaseStatus = CaseStatus.open
+    priority: Priority = Priority.normal
+    summary: str = ""
+    opened_by: str = ""
+    ticket_ids: list[str] = Field(default_factory=list)
+    channels: list[ChannelType] = Field(default_factory=list)
+    ticket_count: int = 0
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class CreateCaseRequest(BaseModel):
+    customer_id: str = Field(min_length=1, max_length=64)
+    title: str = Field(min_length=2, max_length=255)
+    summary: str = Field(default="", max_length=4000)
+    opened_by: str = Field(default="", max_length=180)
+    priority: Priority = Priority.normal
+    ticket_ids: list[str] = Field(default_factory=list)
+
+
+class UpdateCaseRequest(BaseModel):
+    title: str | None = Field(default=None, min_length=2, max_length=255)
+    status: CaseStatus | None = None
+    priority: Priority | None = None
+    summary: str | None = Field(default=None, max_length=4000)
+    actor: str | None = Field(default=None, max_length=180)
+
+
+class CaseTicketRequest(BaseModel):
+    ticket_id: str = Field(min_length=1, max_length=64)
+    actor: str | None = Field(default=None, max_length=180)
 
 
 class TicketField(BaseModel):
