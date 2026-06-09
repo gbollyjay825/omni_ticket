@@ -3626,6 +3626,7 @@ button.freshchat-global-search:hover {
 .view-group button:hover,
 .view-group button.active,
 .ticket-action-bar button:hover,
+.ticket-action-bar button.active,
 .freshchat-console-tabs button:hover,
 .freshchat-console-tabs button.active,
 .report-library-tabs button:hover,
@@ -3634,6 +3635,18 @@ button.freshchat-global-search:hover {
   border-color: #0f766e;
   background: #f0fdfa;
   color: #115e59;
+}
+
+/* Single, unambiguous keyboard-focus indicator so navigating the action bar
+   always highlights exactly the focused button. */
+.ticket-action-bar button:focus-visible {
+  outline: 2px solid #0f766e;
+  outline-offset: 2px;
+}
+
+/* The currently-active action reads stronger than a transient hover. */
+.ticket-action-bar button.active {
+  box-shadow: inset 0 0 0 1px #0f766e;
 }
 
 .trend-metric-strip strong,

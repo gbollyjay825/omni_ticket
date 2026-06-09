@@ -339,7 +339,7 @@ const freshdeskTicketActionItems = [
   { id: 'note', label: 'Note', shortcut: 'n', icon: ClipboardList },
   { id: 'forward', label: 'Forward', shortcut: 'f', icon: Mail },
   { id: 'child', label: 'Child task', shortcut: '', icon: GitBranch },
-  { id: 'close-silent', label: 'Close no email', shortcut: 'shift', icon: CheckCircle2 },
+  { id: 'close-silent', label: 'Close no email', shortcut: 'c', icon: CheckCircle2 },
 ] as const
 const freshchatConsoleViews: { id: ChannelConsoleView; label: string; icon: LucideIcon }[] = [
   { id: 'inbox', label: 'Team Inbox', icon: Inbox },
@@ -1348,7 +1348,10 @@ function OmniApp() {
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if (state.selectedScreen !== 'inbox') return
-      if (event.metaKey || event.ctrlKey || event.altKey) return
+      // Ignore modifier combos and bare modifier/navigation keys (Shift, Tab, arrows…)
+      // so that holding Shift never triggers an action. Only plain single-character keys map.
+      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
+      if (event.key.length !== 1) return
       const target = event.target as HTMLElement | null
       if (
         target &&
@@ -1359,7 +1362,13 @@ function OmniApp() {
       ) {
         return
       }
-      const action = freshdeskTicketActionItems.find((item) => item.shortcut === event.key.toLowerCase())
+      const key = event.key.toLowerCase()
+      if (key === 'j' || key === 'k') {
+        event.preventDefault()
+        setGlobalSearchOpen(true)
+        return
+      }
+      const action = freshdeskTicketActionItems.find((item) => item.shortcut && item.shortcut === key)
       if (action) {
         event.preventDefault()
         ticketActionRef.current(action.id)
@@ -5270,12 +5279,23 @@ function OmniApp() {
         <div className="ticket-action-bar" aria-label="Ticket actions">
           {freshdeskTicketActionItems.map(({ id, label, shortcut, icon: ActionIcon }) => {
             const watching = id === 'watch' && watchedTicketIds.includes(selectedConversation.id)
+            const modeActive =
+              (id === 'reply' && composerMode === 'reply') ||
+              (id === 'note' && composerMode === 'note') ||
+              (id === 'forward' && composerMode === 'handoff')
+            const isActive = watching || modeActive
             return (
               <button
                 type="button"
                 key={id}
-                className={watching ? 'active' : ''}
-                aria-pressed={id === 'watch' ? watching : undefined}
+                className={isActive ? 'active' : ''}
+                aria-pressed={
+                  id === 'watch'
+                    ? watching
+                    : id === 'reply' || id === 'note' || id === 'forward'
+                      ? modeActive
+                      : undefined
+                }
                 onClick={() => handleTicketAction(id)}
               >
                 <ActionIcon size={15} />
