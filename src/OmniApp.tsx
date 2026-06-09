@@ -4388,9 +4388,11 @@ function OmniApp() {
       return
     }
     if (actionId === 'child') {
-      setComposerMode('handoff')
-      focusComposer()
-      announcePrototype('Child service task will create a linked internal team ticket.')
+      // Distinct from Forward (which opens the team-handoff composer): Child task
+      // opens the create-ticket panel pre-filled from this case so a linked child
+      // ticket can be raised.
+      openQuickCreate(selectedConversation.channelId)
+      announcePrototype('Child ticket draft opened.')
       return
     }
     if (actionId === 'close-silent') {
