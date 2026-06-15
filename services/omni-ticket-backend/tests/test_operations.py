@@ -726,6 +726,56 @@ def test_core_mutations_support_optional_etag_conflict_protection(client: TestCl
     assert stale_ticket_update.json()["detail"] == "Resource has changed; refresh before retrying."
 
 
+def test_resolving_a_ticket_stamps_lifecycle_and_freezes_sla(client: TestClient) -> None:
+    ticket_id = client.get("/api/v1/tickets").json()[0]["id"]
+
+    def detail() -> dict:
+        return client.get(f"/api/v1/tickets/{ticket_id}").json()["ticket"]
+
+    def etag() -> str:
+        return client.get(f"/api/v1/tickets/{ticket_id}").headers["ETag"]
+
+    # Resolve -> stamps resolved_at, freezes SLA outcome, leaves closed_at empty.
+    resolved = client.patch(
+        f"/api/v1/tickets/{ticket_id}",
+        headers={"If-Match": etag()},
+        json={"status": "solved"},
+    )
+    assert resolved.status_code == 200
+    after_resolve = detail()
+    assert after_resolve["resolved_at"] is not None
+    assert after_resolve["closed_at"] is None
+    # Seeded SLA due dates are in the future, so resolving now meets SLA.
+    assert after_resolve["sla_resolution_met"] is True
+
+    # Reopen -> clears the frozen lifecycle so the ticket is active again.
+    reopened = client.patch(
+        f"/api/v1/tickets/{ticket_id}",
+        headers={"If-Match": etag()},
+        json={"status": "open"},
+    )
+    assert reopened.status_code == 200
+    after_reopen = detail()
+    assert after_reopen["resolved_at"] is None
+    assert after_reopen["closed_at"] is None
+    assert after_reopen["sla_resolution_met"] is None
+
+    # Close -> stamps both closed_at and resolved_at.
+    closed = client.patch(
+        f"/api/v1/tickets/{ticket_id}",
+        headers={"If-Match": etag()},
+        json={"status": "closed"},
+    )
+    assert closed.status_code == 200
+    after_close = detail()
+    assert after_close["closed_at"] is not None
+    assert after_close["resolved_at"] is not None
+
+    # A status change writes a labelled timeline event + audit trail.
+    timeline = client.get(f"/api/v1/tickets/{ticket_id}").json()["timeline"]
+    assert any(event["body"] == "Ticket closed." for event in timeline)
+
+
 def test_ticket_knowledge_suggestions_rank_active_market_articles(client: TestClient) -> None:
     suffix = uuid4().hex
     article = client.post(

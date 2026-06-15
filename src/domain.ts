@@ -134,6 +134,9 @@ export interface OmniConversation {
   caseId?: string | null
   createdAt: string
   updatedAt: string
+  resolvedAt?: string | null
+  closedAt?: string | null
+  slaResolutionMet?: boolean | null
   firstResponseDue: string
   resolutionDue: string
   slaState: SlaState

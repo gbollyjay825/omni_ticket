@@ -527,6 +527,11 @@ class TicketRecord(TimestampMixin, Base):
     ai_summary: Mapped[str] = mapped_column(Text, default="")
     recommended_action: Mapped[str] = mapped_column(Text, default="")
     case_id: Mapped[str | None] = mapped_column(ForeignKey("cases.id"), index=True)
+    # Close-out lifecycle: stamped when the ticket is resolved/closed; sla_resolution_met
+    # freezes the SLA outcome at resolution time so wall-clock drift can't flip it.
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sla_resolution_met: Mapped[bool | None] = mapped_column(Boolean)
 
 
 class CaseRecord(TimestampMixin, Base):

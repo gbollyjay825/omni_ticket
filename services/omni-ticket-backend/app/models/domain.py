@@ -841,6 +841,9 @@ class Ticket(BaseModel):
     ai_summary: str = ""
     recommended_action: str = ""
     case_id: str | None = None
+    resolved_at: datetime | None = None
+    closed_at: datetime | None = None
+    sla_resolution_met: bool | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 

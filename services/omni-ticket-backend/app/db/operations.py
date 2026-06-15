@@ -99,11 +99,16 @@ def _resolution_within_sla_pct(tickets: list) -> int | None:
     resolved = [ticket for ticket in tickets if ticket.status in CLOSED_STATUSES]
     if not resolved:
         return None
-    within_sla = sum(
-        1
-        for ticket in resolved
-        if not ticket.sla.breached or _as_utc(ticket.updated_at) <= _as_utc(ticket.sla.resolution_due_at)
-    )
+    within_sla = 0
+    for ticket in resolved:
+        met = ticket.sla_resolution_met
+        if met is None:
+            # Tickets resolved before the frozen outcome existed: derive from the
+            # resolution moment vs the due date (resolved_at preferred over updated_at).
+            resolved_at = _as_utc(ticket.resolved_at) if ticket.resolved_at else _as_utc(ticket.updated_at)
+            met = not ticket.sla.breached or resolved_at <= _as_utc(ticket.sla.resolution_due_at)
+        if met:
+            within_sla += 1
     return round((within_sla / len(resolved)) * 100)
 
 

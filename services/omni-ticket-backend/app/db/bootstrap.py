@@ -146,6 +146,12 @@ def _repair_legacy_schema(target_engine: Engine) -> None:
             statements.append("ALTER TABLE tickets ADD COLUMN custom_fields JSON NOT NULL DEFAULT '{}'")
         if "case_id" not in ticket_columns:
             statements.append("ALTER TABLE tickets ADD COLUMN case_id VARCHAR(64)")
+        if "resolved_at" not in ticket_columns:
+            statements.append("ALTER TABLE tickets ADD COLUMN resolved_at DATETIME")
+        if "closed_at" not in ticket_columns:
+            statements.append("ALTER TABLE tickets ADD COLUMN closed_at DATETIME")
+        if "sla_resolution_met" not in ticket_columns:
+            statements.append("ALTER TABLE tickets ADD COLUMN sla_resolution_met BOOLEAN")
 
     if inspector.has_table("support_groups"):
         support_group_columns = {

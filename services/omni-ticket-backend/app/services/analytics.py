@@ -11,7 +11,8 @@ class AnalyticsService:
             if market_id is None or ticket.market_id == market_id
         ]
         for ticket in tickets:
-            ticket.sla = sla_service.refresh(ticket.sla)
+            if ticket.status not in {"solved", "closed"}:
+                ticket.sla = sla_service.refresh(ticket.sla)
         open_tickets = [ticket for ticket in tickets if ticket.status not in {"solved", "closed"}]
         channel_volume: dict[ChannelType, int] = {}
         for ticket in tickets:

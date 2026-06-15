@@ -1022,6 +1022,30 @@ def _apply_enabled_automation_rules(
     return applied
 
 
+_RESOLVED_STATUSES = {TicketStatus.solved.value, TicketStatus.closed.value}
+
+
+def _coerce_dt(value: object) -> datetime | None:
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    return None
+
+
+def _sla_met_at(record: TicketRecord, when: datetime) -> bool | None:
+    """Frozen SLA outcome: did the ticket meet its resolution target at moment `when`?
+    Returns None when no resolution target is known."""
+    sla = record.sla if isinstance(record.sla, dict) else {}
+    due = _coerce_dt(sla.get("resolution_due_at"))
+    if due is None:
+        return None
+    return when <= due
+
+
 def _audit(
     db: Session,
     state: InMemoryStore,
@@ -1091,10 +1115,17 @@ def _add_timeline_record(
     return event
 
 
+def _sla_is_frozen(ticket: TicketRecord) -> bool:
+    """Resolved/closed tickets keep the SLA state they had at close-out — wall-clock
+    drift must not flip a met ticket to breached after the fact."""
+    return ticket.status in _RESOLVED_STATUSES
+
+
 def _sync_ticket(db: Session, state: InMemoryStore, ticket: TicketRecord) -> Ticket:
     domain_ticket = ticket_from_record(ticket)
-    domain_ticket.sla = sla_service.refresh(domain_ticket.sla)
-    ticket.sla = domain_ticket.sla.model_dump(mode="json")
+    if not _sla_is_frozen(ticket):
+        domain_ticket.sla = sla_service.refresh(domain_ticket.sla)
+        ticket.sla = domain_ticket.sla.model_dump(mode="json")
     state.tickets[domain_ticket.id] = domain_ticket
     return domain_ticket
 
@@ -2032,6 +2063,7 @@ class TicketRepository:
         market_id: str,
     ) -> Ticket:
         record = _ticket_record_or_404(db, ticket_id, market_id)
+        previous_status = record.status
         patch = request.model_dump(exclude_unset=True, mode="json")
         task_item_id = patch.pop("task_item_id", None)
         task_item_complete = patch.pop("task_item_complete", None)
@@ -2059,7 +2091,37 @@ class TicketRepository:
                 tasks.append(next_item)
             if updated:
                 record.tasks = tasks
-        record.updated_at = utc_now()
+        now = utc_now()
+        record.updated_at = now
+
+        status_changed = previous_status != record.status
+        timeline_body = "Ticket fields updated."
+        if status_changed:
+            new_status = record.status
+            if new_status == TicketStatus.solved.value:
+                if record.resolved_at is None:
+                    record.resolved_at = now
+                    record.sla_resolution_met = _sla_met_at(record, now)
+                record.closed_at = None
+                timeline_body = "Ticket resolved."
+            elif new_status == TicketStatus.closed.value:
+                if record.resolved_at is None:
+                    record.resolved_at = now
+                    record.sla_resolution_met = _sla_met_at(record, now)
+                record.closed_at = now
+                timeline_body = "Ticket closed."
+            elif previous_status in _RESOLVED_STATUSES:
+                record.resolved_at = None
+                record.closed_at = None
+                record.sla_resolution_met = None
+                timeline_body = "Ticket reopened."
+            else:
+                timeline_body = f"Status changed to {new_status}."
+
+        event_metadata = dict(patch)
+        if status_changed:
+            event_metadata["previous_status"] = previous_status
+            event_metadata["new_status"] = record.status
         _add_timeline_record(
             db,
             state,
@@ -2067,10 +2129,26 @@ class TicketRepository:
             event_type=TimelineEventType.status_change,
             channel=ChannelType.internal,
             actor="api",
-            body="Ticket fields updated.",
+            body=timeline_body,
             public=False,
-            metadata=patch,
+            metadata=event_metadata,
         )
+        if status_changed:
+            _audit(
+                db,
+                state,
+                actor="api",
+                action="ticket.status_change",
+                entity_type="ticket",
+                entity_id=record.id,
+                market_id=market_id,
+                details={
+                    "previous_status": previous_status,
+                    "new_status": record.status,
+                    "resolved_at": record.resolved_at.isoformat() if record.resolved_at else None,
+                    "sla_resolution_met": record.sla_resolution_met,
+                },
+            )
         db.commit()
         db.refresh(record)
         return _sync_ticket(db, state, record)

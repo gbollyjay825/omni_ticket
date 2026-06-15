@@ -1583,6 +1583,9 @@ export interface BackendTicket {
   ai_summary: string
   recommended_action: string
   case_id: string | null
+  resolved_at?: string | null
+  closed_at?: string | null
+  sla_resolution_met?: boolean | null
   created_at: string
   updated_at: string
 }

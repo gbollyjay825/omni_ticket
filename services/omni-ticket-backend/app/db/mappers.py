@@ -501,6 +501,9 @@ def ticket_from_record(record: TicketRecord) -> Ticket:
             "ai_summary": record.ai_summary,
             "recommended_action": record.recommended_action,
             "case_id": record.case_id,
+            "resolved_at": record.resolved_at,
+            "closed_at": record.closed_at,
+            "sla_resolution_met": record.sla_resolution_met,
             "created_at": record.created_at,
             "updated_at": record.updated_at,
         }
