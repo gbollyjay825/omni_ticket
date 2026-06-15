@@ -38,6 +38,11 @@ export interface DashboardFilters {
   chatGroup: string // 'all' or a support-group name
 }
 
+export interface BackendTicketPerformanceSummary {
+  avg_first_response_seconds?: number | null
+  resolution_within_sla_pct?: number | null
+}
+
 export interface RecentActivityItem {
   id: string
   conversationId: string
@@ -174,6 +179,7 @@ export function computeDashboardMetrics(
   csatFeedback: CsatFeedbackRecord[],
   filters: DashboardFilters,
   now: number,
+  backendTicketPerformance?: BackendTicketPerformanceSummary,
 ): DashboardMetrics {
   const start = rangeStart(filters.range, now)
 
@@ -212,9 +218,20 @@ export function computeDashboardMetrics(
   )
   const resolvedTickets = ticketConversations.filter((conversation) => conversation.status === 'resolved')
   const withinSla = resolvedTickets.filter((conversation) => conversation.slaState !== 'breached').length
+  const hasBackendTicketPerformance = backendTicketPerformance != null
+  const backendFirstResponse = backendTicketPerformance?.avg_first_response_seconds
+  const backendResolutionWithinSla = backendTicketPerformance?.resolution_within_sla_pct
   const ticketPerformance = {
-    avgFirstResponse: formatDuration(ticketFrt),
-    resolutionWithinSla: resolvedTickets.length > 0 ? `${pct(withinSla, resolvedTickets.length)}%` : '—',
+    avgFirstResponse:
+      hasBackendTicketPerformance ? formatDuration(backendFirstResponse ?? null) : formatDuration(ticketFrt),
+    resolutionWithinSla:
+      hasBackendTicketPerformance
+        ? backendResolutionWithinSla == null
+          ? '—'
+          : `${Math.round(backendResolutionWithinSla)}%`
+        : resolvedTickets.length > 0
+          ? `${pct(withinSla, resolvedTickets.length)}%`
+          : '—',
     hasData: ticketConversations.length > 0,
   }
 

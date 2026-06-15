@@ -20,12 +20,15 @@ from app.db.models import (
     AnalyticsRollupRecord,
     AuditEventRecord,
     CustomerRecord,
+    MarketRecord,
     OidcLoginStateRecord,
     OutboundMessageRecord,
     SessionRecord,
     TicketRecord,
+    TimelineEventRecord,
     UserRecord,
 )
+from app.db.operations import operations_repository
 from app.db.session import get_engine
 from app.main import create_app
 from app.models.domain import OperationalAlertSeverity, utc_now
@@ -6583,6 +6586,152 @@ def test_analytics_and_work_queue_are_database_first_after_runtime_reset(
     body = analytics.json()
     assert body["open_tickets"] >= 1
     assert body["channel_volume"]["whatsapp"] >= 1
+    assert set(body["ticket_trends"]) == {"open", "unassigned", "overdue", "due_today"}
+    assert set(body["ticket_performance"]) == {
+        "avg_first_response_seconds",
+        "resolution_within_sla_pct",
+    }
+    assert set(body["chat_trends"]) == {"unassigned", "assigned_not_replied", "assigned"}
+    assert set(body["chat_performance"]) == {
+        "first_response_seconds",
+        "response_seconds",
+        "resolution_seconds",
+        "wait_seconds",
+    }
+
+    filtered = client.get(
+        "/api/v1/analytics/summary?range=7d&ticket_group=Metrics&chat_group=Metrics"
+    )
+    assert filtered.status_code == 200
+    assert "ticket_trends" in filtered.json()
+
+
+def test_ticket_performance_analytics_are_database_derived() -> None:
+    market_id = "market-metrics"
+    customer_id = "cust-metrics"
+    ticket_id = "ticket_metrics"
+    smoke_ticket_id = "ticket_metrics_smoke"
+    created_at = utc_now().replace(microsecond=0) - timedelta(hours=2)
+    first_reply_at = created_at + timedelta(minutes=12)
+    resolved_at = created_at + timedelta(hours=1)
+    first_response_due_at = created_at + timedelta(minutes=30)
+    resolution_due_at = created_at + timedelta(hours=4)
+
+    with Session(get_engine()) as session:
+        session.add(
+            MarketRecord(
+                id=market_id,
+                code="MT",
+                name="Metrics Test",
+                timezone="Africa/Accra",
+                currency="GHS",
+                support_email="metrics@example.com",
+            )
+        )
+        session.add(
+            CustomerRecord(
+                id=customer_id,
+                market_id=market_id,
+                name="Metrics Customer",
+                email="metrics.customer@example.com",
+            )
+        )
+        session.add(
+            TicketRecord(
+                id=ticket_id,
+                market_id=market_id,
+                public_id="OMNI-METRIC-1",
+                subject="Metrics check",
+                description="Customer needs a deterministic response-time test.",
+                customer_id=customer_id,
+                channel="email",
+                status="solved",
+                priority="normal",
+                sentiment="neutral",
+                assignee_id=None,
+                team="Metrics",
+                tags=[],
+                custom_fields={},
+                tasks=[],
+                sla={
+                    "first_response_due_at": first_response_due_at.isoformat(),
+                    "resolution_due_at": resolution_due_at.isoformat(),
+                    "risk": "on_track",
+                    "breached": False,
+                },
+                ai_summary="",
+                recommended_action="",
+                created_at=created_at,
+                updated_at=resolved_at,
+            )
+        )
+        session.add(
+            TimelineEventRecord(
+                id="event-metrics-reply",
+                market_id=market_id,
+                ticket_id=ticket_id,
+                type="public_reply",
+                channel="email",
+                actor="Metrics Agent",
+                body="We are checking this now.",
+                public=True,
+                event_metadata={},
+                created_at=first_reply_at,
+                updated_at=first_reply_at,
+            )
+        )
+        session.add(
+            TicketRecord(
+                id=smoke_ticket_id,
+                market_id=market_id,
+                public_id="OMNI-METRIC-SMOKE",
+                subject="Smoke test should not affect metrics",
+                description="This ticket is operational test data.",
+                customer_id=customer_id,
+                channel="email",
+                status="solved",
+                priority="normal",
+                sentiment="neutral",
+                assignee_id=None,
+                team="Metrics",
+                tags=["smoke"],
+                custom_fields={},
+                tasks=[],
+                sla={
+                    "first_response_due_at": first_response_due_at.isoformat(),
+                    "resolution_due_at": resolution_due_at.isoformat(),
+                    "risk": "breached",
+                    "breached": True,
+                },
+                ai_summary="",
+                recommended_action="",
+                created_at=created_at,
+                updated_at=resolution_due_at + timedelta(minutes=5),
+            )
+        )
+        session.add(
+            TimelineEventRecord(
+                id="event-metrics-smoke-reply",
+                market_id=market_id,
+                ticket_id=smoke_ticket_id,
+                type="public_reply",
+                channel="email",
+                actor="Metrics Agent",
+                body="Smoke reply should be ignored.",
+                public=True,
+                event_metadata={},
+                created_at=created_at + timedelta(hours=3),
+                updated_at=created_at + timedelta(hours=3),
+            )
+        )
+        session.commit()
+
+        analytics = operations_repository.analytics_summary(session, store, market_id)
+
+    assert analytics.avg_first_response_seconds == 720
+    assert analytics.resolution_within_sla_pct == 100
+    assert analytics.ticket_performance["avg_first_response_seconds"] == 720
+    assert analytics.ticket_performance["resolution_within_sla_pct"] == 100
 
 
 def test_csat_feedback_persists_and_feeds_analytics(

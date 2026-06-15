@@ -1435,6 +1435,16 @@ class AnalyticsSnapshot(BaseModel):
     active_agents: int
     avg_occupancy: int
     avg_csat: float | None = None
+    avg_first_response_seconds: float | None = None
+    resolution_within_sla_pct: int | None = None
+    ticket_trends: dict[str, int] = Field(default_factory=dict)
+    ticket_performance: dict[str, float | int | None] = Field(default_factory=dict)
+    ticket_csat: dict[str, int] = Field(default_factory=dict)
+    chat_trends: dict[str, int] = Field(default_factory=dict)
+    chat_performance: dict[str, float | None] = Field(default_factory=dict)
+    chat_csat: dict[str, float | int | None] = Field(default_factory=dict)
+    agent_availability: dict[str, int] = Field(default_factory=dict)
+    recent_activity: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class AnalyticsRollup(BaseModel):

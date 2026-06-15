@@ -87,7 +87,6 @@ import type {
   TicketField,
   TicketFieldType,
   TicketTemplate,
-  TimelineType,
 } from './domain'
 import type {
   BackendAuditExportFormat,
@@ -100,6 +99,7 @@ import type {
   BackendDiscussionComment,
   BackendEmailProviderSettings,
   BackendGlobalSearchResult,
+  BackendAnalyticsSummary,
   BackendIntegrationCredentialSettings,
   BackendMfaEnrollment,
   BackendOperationalAlert,
@@ -130,6 +130,7 @@ import {
   exportBackendAudit,
   createBackendProductionAccountReference,
   fetchBackendGlobalSearch,
+  fetchBackendAnalyticsSummary,
   fetchBackendAttachmentRetentionPolicy,
   fetchBackendAuditRetentionPolicy,
   fetchBackendProductionAccountReferenceDocs,
@@ -151,8 +152,8 @@ import {
   uploadBackendPortalAttachment,
 } from './backend'
 import { useOmniStore } from './store'
-import { DASHBOARD_RANGES, computeDashboardMetrics, formatDuration, resolutionSeconds } from './metrics'
-import type { CsatFeedbackRecord, DashboardRange } from './metrics'
+import { DASHBOARD_RANGES, formatDuration, resolutionSeconds } from './metrics'
+import type { DashboardRange } from './metrics'
 import './App.css'
 
 interface DashboardTodo {
@@ -162,19 +163,6 @@ interface DashboardTodo {
 }
 
 const TODO_STORAGE_PREFIX = 'omni.dashboard.todos:'
-
-const TIMELINE_LABELS: Record<TimelineType, string> = {
-  'customer-message': 'Customer message',
-  'agent-reply': 'Agent reply',
-  'internal-note': 'Internal note',
-  handoff: 'Handoff',
-  'voice-log': 'Voice log',
-  'chat-transcript': 'Chat transcript',
-  'social-dm': 'Social DM',
-  'portal-comment': 'Portal comment',
-  'api-event': 'API event',
-  automation: 'Automation',
-}
 
 function makeTodoId(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID()
@@ -1020,6 +1008,8 @@ function OmniApp() {
   const [dashboardRange, setDashboardRange] = useState<DashboardRange>('all')
   const [dashboardTicketGroup, setDashboardTicketGroup] = useState('all')
   const [dashboardChatGroup, setDashboardChatGroup] = useState('all')
+  const [dashboardAnalytics, setDashboardAnalytics] = useState<BackendAnalyticsSummary | null>(null)
+  const [dashboardAnalyticsError, setDashboardAnalyticsError] = useState('')
   const [todos, setTodos] = useState<DashboardTodo[]>(() =>
     loadDashboardTodos(backendSession?.user.id ?? 'local'),
   )
@@ -1423,6 +1413,38 @@ function OmniApp() {
   useEffect(() => {
     saveWatchedTickets(todoUserId, watchedTicketIds)
   }, [todoUserId, watchedTicketIds])
+  useEffect(() => {
+    if (!backendSession || !online) {
+      return
+    }
+    const controller = new AbortController()
+    fetchBackendAnalyticsSummary(
+      backendSession,
+      {
+        range: dashboardRange,
+        ticket_group: dashboardTicketGroup,
+        chat_group: dashboardChatGroup,
+      },
+      controller.signal,
+    )
+      .then((analytics) => {
+        setDashboardAnalytics(analytics)
+        setDashboardAnalyticsError('')
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return
+        setDashboardAnalytics(null)
+        setDashboardAnalyticsError(error instanceof Error ? error.message : 'Dashboard metrics failed to load')
+      })
+    return () => controller.abort()
+  }, [
+    backendSession,
+    backendSync.lastSyncAt,
+    dashboardChatGroup,
+    dashboardRange,
+    dashboardTicketGroup,
+    online,
+  ])
   useEffect(() => {
     saveTimeLogs(timeLogs)
   }, [timeLogs])
@@ -4452,12 +4474,22 @@ function OmniApp() {
     selectScreen('inbox')
   }
 
+  function resetInboxListControls() {
+    setInboxGroup('all')
+    setInboxCreated('all')
+    setInboxDue('any')
+    setInboxPage(0)
+  }
+
   function openWorkQueueFocus(
     filters: Partial<typeof state.filters>,
     conversation?: OmniConversation,
     due?: 'today' | 'overdue',
+    viewId = 'all-open',
   ) {
+    setInboxView(viewId)
     resetFilters()
+    resetInboxListControls()
     if (Object.keys(filters).length > 0) setFilters(filters)
     if (due) setInboxDue(due)
     if (conversation) {
@@ -4470,10 +4502,9 @@ function OmniApp() {
   function applyInboxView(viewId: string) {
     setInboxView(viewId)
     resetFilters()
-    if (viewId === 'my-open') setFilters({ assignee: selectedAgent?.id ?? 'all', status: 'open' })
-    if (viewId === 'unassigned') setFilters({ assignee: 'all', status: 'new' })
+    resetInboxListControls()
+    if (viewId === 'my-open') setFilters({ assignee: selectedAgent?.id ?? 'all' })
     if (viewId === 'overdue') setFilters({ sla: 'breached' })
-    if (viewId === 'resolved') setFilters({ status: 'resolved' })
     if (viewId === 'ai-escalations') setFilters({ sentiment: 'at-risk' })
     if (viewId === 'whatsapp') setFilters({ channel: 'whatsapp' })
   }
@@ -4624,55 +4655,63 @@ function OmniApp() {
   }
 
   function renderFreshworksDashboardMirror() {
-    const csatFeedback = (backendSnapshot?.csatFeedback ??
-      backendSnapshot?.csat_feedback ??
-      []) as CsatFeedbackRecord[]
     const groupOptions = state.supportGroups.map((group) => group.name)
-    const dashboard = computeDashboardMetrics(
-      state.conversations,
-      csatFeedback,
-      { range: dashboardRange, ticketGroup: dashboardTicketGroup, chatGroup: dashboardChatGroup },
-      Date.now(),
-    )
-    const activeAgents = state.agents.filter((agent) => agent.availability !== 'offline').length
-    const agentsOnChat = state.agents.filter((agent) =>
-      agent.skills.some((skill) => /chat|whatsapp|sms/i.test(skill)),
-    ).length
+    const isUnfilteredDashboard =
+      dashboardRange === 'all' && dashboardTicketGroup === 'all' && dashboardChatGroup === 'all'
+    const endpointDashboard = backendSession
+      ? dashboardAnalytics ?? (isUnfilteredDashboard ? backendSnapshot?.analytics : null)
+      : null
+    const ticketTrends = endpointDashboard?.ticket_trends ?? {}
+    const ticketPerformance = endpointDashboard?.ticket_performance ?? {}
+    const ticketCsat = endpointDashboard?.ticket_csat ?? {}
+    const chatTrends = endpointDashboard?.chat_trends ?? {}
+    const chatPerformance = endpointDashboard?.chat_performance ?? {}
+    const chatCsat = endpointDashboard?.chat_csat ?? {}
+    const agentAvailability = endpointDashboard?.agent_availability ?? {}
+    const recentActivity = endpointDashboard?.recent_activity ?? []
 
     const ticketTrendRows = [
-      { label: 'Open', value: dashboard.ticketTrends.open, action: () => openWorkQueueFocus({ status: 'open' }) },
-      { label: 'Unassigned', value: dashboard.ticketTrends.unassigned, action: () => applyInboxView('unassigned') },
-      { label: 'Overdue', value: dashboard.ticketTrends.overdue, action: () => openWorkQueueFocus({ sla: 'breached' }) },
-      { label: 'Due today', value: dashboard.ticketTrends.dueToday, action: () => openWorkQueueFocus({}, undefined, 'today') },
+      { label: 'Open', value: ticketTrends.open ?? 0, action: () => openWorkQueueFocus({}, undefined, undefined, 'all-open') },
+      { label: 'Unassigned', value: ticketTrends.unassigned ?? 0, action: () => openWorkQueueFocus({}, undefined, undefined, 'unassigned') },
+      { label: 'Overdue', value: ticketTrends.overdue ?? 0, action: () => openWorkQueueFocus({ sla: 'breached' }, undefined, undefined, 'overdue') },
+      { label: 'Due today', value: ticketTrends.due_today ?? 0, action: () => openWorkQueueFocus({}, undefined, 'today', 'all-open') },
     ]
     const chatTrendRows: { label: string; value: number; action: () => void }[] = [
       {
         label: 'Unassigned chats',
-        value: dashboard.chatTrends.unassigned,
+        value: chatTrends.unassigned ?? 0,
         action: () => openWorkQueueFocus({ status: 'new' }),
       },
       {
         label: 'Assigned not replied',
-        value: dashboard.chatTrends.assignedNotReplied,
+        value: chatTrends.assigned_not_replied ?? 0,
         action: () => openWorkQueueFocus({ status: 'open' }),
       },
       {
         label: 'Assigned chats',
-        value: dashboard.chatTrends.assigned,
+        value: chatTrends.assigned ?? 0,
         action: () => openWorkQueueFocus({ status: 'pending' }),
       },
     ]
     const chatPerformanceRows: [string, string][] = [
-      ['Average first response time', dashboard.chatPerformance.firstResponse],
-      ['Average response time', dashboard.chatPerformance.response],
-      ['Average resolution time', dashboard.chatPerformance.resolution],
-      ['Average wait time', dashboard.chatPerformance.wait],
+      ['Average first response time', formatDuration(chatPerformance.first_response_seconds ?? null)],
+      ['Average response time', formatDuration(chatPerformance.response_seconds ?? null)],
+      ['Average resolution time', formatDuration(chatPerformance.resolution_seconds ?? null)],
+      ['Average wait time', formatDuration(chatPerformance.wait_seconds ?? null)],
     ]
     const ticketCsatRows: [string, number, string][] = [
-      ['Negative', dashboard.ticketCsat.negativePct, 'bad'],
-      ['Neutral', dashboard.ticketCsat.neutralPct, 'neutral'],
-      ['Positive', dashboard.ticketCsat.positivePct, 'good'],
+      ['Negative', ticketCsat.negative_pct ?? 0, 'bad'],
+      ['Neutral', ticketCsat.neutral_pct ?? 0, 'neutral'],
+      ['Positive', ticketCsat.positive_pct ?? 0, 'good'],
     ]
+    const ticketAvgFirstResponse = formatDuration(ticketPerformance.avg_first_response_seconds ?? null)
+    const ticketResolutionWithinSla =
+      ticketPerformance.resolution_within_sla_pct == null
+        ? '—'
+        : `${Math.round(ticketPerformance.resolution_within_sla_pct)}%`
+    const chatAvgRating =
+      chatCsat.avg_rating == null ? '—' : `${Math.round(chatCsat.avg_rating * 10) / 10}/5`
+    const chatStars = chatCsat.avg_rating == null ? 0 : Math.round(chatCsat.avg_rating)
 
     return (
       <section className="omni-desk-dashboard" aria-label="Omnichannel Dashboard">
@@ -4718,6 +4757,11 @@ function OmniApp() {
         </div>
 
         <div className="desk-dashboard-grid">
+          {dashboardAnalyticsError && (
+            <div className="desk-dashboard-sync-note">
+              {dashboardAnalyticsError}
+            </div>
+          )}
           <article className="desk-widget">
             <header>
               <span>Ticket trends</span>
@@ -4739,11 +4783,11 @@ function OmniApp() {
             <div className="desk-performance-two">
               <div>
                 <span>Average First Response Time</span>
-                <strong>{dashboard.ticketPerformance.avgFirstResponse}</strong>
+                <strong>{ticketAvgFirstResponse}</strong>
               </div>
               <div>
                 <span>Resolution within SLA</span>
-                <strong>{dashboard.ticketPerformance.resolutionWithinSla}</strong>
+                <strong>{ticketResolutionWithinSla}</strong>
               </div>
             </div>
           </article>
@@ -4755,7 +4799,7 @@ function OmniApp() {
             <div className="desk-csat-grid">
               <div>
                 <span>Responses received</span>
-                <strong>{dashboard.ticketCsat.responses}</strong>
+                <strong>{ticketCsat.responses ?? 0}</strong>
               </div>
               {ticketCsatRows.map(([label, value, tone]) => (
                 <div className={`desk-csat-score ${tone}`} key={label}>
@@ -4803,27 +4847,27 @@ function OmniApp() {
             <div className="desk-chat-csat">
               <div
                 className="desk-star-row"
-                aria-label={`Average chat rating ${dashboard.chatCsat.avgRating}`}
+                aria-label={`Average chat rating ${chatAvgRating}`}
               >
                 {Array.from({ length: 5 }, (_, index) => (
                   <Star
                     size={24}
-                    fill={index < dashboard.chatCsat.stars ? 'currentColor' : 'none'}
+                    fill={index < chatStars ? 'currentColor' : 'none'}
                     key={index}
                   />
                 ))}
-                <strong>{dashboard.chatCsat.avgRating}</strong>
+                <strong>{chatAvgRating}</strong>
               </div>
               <span>Average rating based on all satisfactory interactions</span>
               <div className="desk-progress-row good">
                 <span>Yes</span>
-                <b><i style={{ width: `${dashboard.chatCsat.yesPct}%` }} /></b>
-                <strong>{dashboard.chatCsat.yesPct}% ({dashboard.chatCsat.yesCount})</strong>
+                <b><i style={{ width: `${chatCsat.yes_pct ?? 0}%` }} /></b>
+                <strong>{chatCsat.yes_pct ?? 0}% ({chatCsat.yes_count ?? 0})</strong>
               </div>
               <div className="desk-progress-row bad">
                 <span>No</span>
-                <b><i style={{ width: `${dashboard.chatCsat.noPct}%` }} /></b>
-                <strong>{dashboard.chatCsat.noPct}% ({dashboard.chatCsat.noCount})</strong>
+                <b><i style={{ width: `${chatCsat.no_pct ?? 0}%` }} /></b>
+                <strong>{chatCsat.no_pct ?? 0}% ({chatCsat.no_count ?? 0})</strong>
               </div>
             </div>
           </article>
@@ -4836,8 +4880,8 @@ function OmniApp() {
               </a>
             </header>
             <div className="desk-agent-counts">
-              <div><Users size={18} /><span>Agents on Tickets</span><strong>{activeAgents}</strong></div>
-              <div><MessageCircle size={18} /><span>Agents on Chat</span><strong>{agentsOnChat}</strong></div>
+              <div><Users size={18} /><span>Agents on Tickets</span><strong>{agentAvailability.agents_on_tickets ?? 0}</strong></div>
+              <div><MessageCircle size={18} /><span>Agents on Chat</span><strong>{agentAvailability.agents_on_chat ?? 0}</strong></div>
             </div>
           </article>
 
@@ -4894,12 +4938,12 @@ function OmniApp() {
                 <RefreshCw size={14} />
               </button>
             </header>
-            {dashboard.recentActivity.length === 0 ? (
+            {recentActivity.length === 0 ? (
               <span className="desk-todo-empty">No recent activity in this period.</span>
             ) : (
               <ul className="desk-activity-list">
-                {dashboard.recentActivity.map((item) => {
-                  const conversation = state.conversations.find((entry) => entry.id === item.conversationId)
+                {recentActivity.map((item) => {
+                  const conversation = state.conversations.find((entry) => entry.id === item.ticket_id)
                   return (
                     <li key={item.id}>
                       <a
@@ -4911,10 +4955,11 @@ function OmniApp() {
                         }
                       >
                         <div className="desk-activity-head">
-                          <strong>{item.ticketNumber}</strong>
-                          <span>{TIMELINE_LABELS[item.type]} · {item.actor}</span>
+                          <strong>{item.public_id}</strong>
+                          <span>{titleCase(item.type)} · {item.actor}</span>
                         </div>
                         <em>{item.body}</em>
+                        <small>{formatTime(item.created_at)}</small>
                       </a>
                     </li>
                   )
@@ -6278,9 +6323,27 @@ function OmniApp() {
       if (inboxDue === 'overdue') return due < now
       return due - now < DAY
     }
+    const viewOk = (conversation: OmniConversation) => {
+      if (inboxView === 'all-open') return conversation.status !== 'resolved'
+      if (inboxView === 'my-open') {
+        return conversation.assigneeId === selectedAgent?.id && conversation.status !== 'resolved'
+      }
+      if (inboxView === 'unassigned') {
+        return (
+          conversation.status !== 'resolved' &&
+          (conversation.status === 'new' || conversation.assigneeId === '')
+        )
+      }
+      if (inboxView === 'overdue') return conversation.slaState === 'breached'
+      if (inboxView === 'resolved') return conversation.status === 'resolved'
+      if (inboxView === 'whatsapp') return conversation.channelId === 'whatsapp'
+      if (inboxView === 'ai-escalations') return conversation.sentiment === 'at-risk'
+      return true
+    }
 
     const baseRows = filteredConversations.filter(
       (conversation) =>
+        viewOk(conversation) &&
         (inboxGroup === 'all' || conversation.group === inboxGroup) &&
         createdOk(conversation.createdAt) &&
         dueOk(conversation),

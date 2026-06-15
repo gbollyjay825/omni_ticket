@@ -23,6 +23,58 @@ export interface BackendAnalyticsSummary {
   active_agents?: number
   avg_occupancy?: number
   avg_csat?: number | null
+  avg_first_response_seconds?: number | null
+  resolution_within_sla_pct?: number | null
+  ticket_trends?: {
+    open?: number
+    unassigned?: number
+    overdue?: number
+    due_today?: number
+  }
+  ticket_performance?: {
+    avg_first_response_seconds?: number | null
+    resolution_within_sla_pct?: number | null
+  }
+  ticket_csat?: {
+    responses?: number
+    positive_pct?: number
+    neutral_pct?: number
+    negative_pct?: number
+  }
+  chat_trends?: {
+    unassigned?: number
+    assigned_not_replied?: number
+    assigned?: number
+  }
+  chat_performance?: {
+    first_response_seconds?: number | null
+    response_seconds?: number | null
+    resolution_seconds?: number | null
+    wait_seconds?: number | null
+  }
+  chat_csat?: {
+    responses?: number
+    avg_rating?: number | null
+    yes_count?: number
+    no_count?: number
+    yes_pct?: number
+    no_pct?: number
+  }
+  agent_availability?: {
+    agents_on_tickets?: number
+    agents_on_chat?: number
+  }
+  recent_activity?: BackendDashboardActivity[]
+}
+
+export interface BackendDashboardActivity {
+  id: string
+  ticket_id: string
+  public_id: string
+  type: string
+  actor: string
+  body: string
+  created_at: string
 }
 
 export interface BackendAnalyticsRollup {
@@ -2022,6 +2074,23 @@ export async function fetchBackendSnapshot(
     csatFeedback: frontendSnapshot.csat_feedback ?? [],
     ...frontendSnapshot,
   }
+}
+
+export async function fetchBackendAnalyticsSummary(
+  session: BackendSession,
+  filters: { range?: string; ticket_group?: string; chat_group?: string } = {},
+  signal?: AbortSignal,
+): Promise<BackendAnalyticsSummary> {
+  const params = new URLSearchParams()
+  appendDefinedQuery(params, 'range', filters.range)
+  appendDefinedQuery(params, 'ticket_group', filters.ticket_group)
+  appendDefinedQuery(params, 'chat_group', filters.chat_group)
+  const query = params.toString()
+  return fetchJson<BackendAnalyticsSummary>(
+    `/analytics/summary${query ? `?${query}` : ''}`,
+    { signal },
+    session,
+  )
 }
 
 export async function fetchBackendGlobalSearch(

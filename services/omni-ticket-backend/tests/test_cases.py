@@ -10,6 +10,15 @@ def _pick_two_tickets(tickets: list[dict]) -> tuple[str, list[str]]:
     return pair[0]["customer_id"], [pair[0]["id"], pair[1]["id"]]
 
 
+def _pick_cross_customer_tickets(tickets: list[dict]) -> tuple[dict, dict]:
+    first = tickets[0]
+    other = next(
+        (ticket for ticket in tickets if ticket["customer_id"] != first["customer_id"]), None
+    )
+    assert other is not None, "case tests need tickets from at least two customers"
+    return first, other
+
+
 def test_case_groups_tickets_and_supports_attach_detach(client: TestClient) -> None:
     tickets = client.get("/api/v1/tickets").json()
     assert len(tickets) >= 2
@@ -81,6 +90,34 @@ def test_case_and_ticket_case_id_appear_in_snapshot(client: TestClient) -> None:
         return item.get("ticket", item)
 
     assert any(ticket_of(item).get("case_id") == case["id"] for item in snapshot["tickets"])
+
+
+def test_case_rejects_tickets_from_a_different_customer(client: TestClient) -> None:
+    tickets = client.get("/api/v1/tickets").json()
+    first, other = _pick_cross_customer_tickets(tickets)
+
+    created = client.post(
+        "/api/v1/cases",
+        json={
+            "customer_id": first["customer_id"],
+            "title": "Wrong customer guard",
+            "ticket_ids": [first["id"], other["id"]],
+        },
+    )
+    assert created.status_code == 400, created.text
+    assert "different customer" in created.json()["detail"]
+
+    case = client.post(
+        "/api/v1/cases",
+        json={
+            "customer_id": first["customer_id"],
+            "title": "Single customer case",
+            "ticket_ids": [first["id"]],
+        },
+    ).json()
+    attached = client.post(f"/api/v1/cases/{case['id']}/tickets", json={"ticket_id": other["id"]})
+    assert attached.status_code == 400, attached.text
+    assert "different customer" in attached.json()["detail"]
 
 
 def test_case_404_for_unknown_id(client: TestClient) -> None:

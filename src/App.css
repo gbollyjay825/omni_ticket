@@ -8879,6 +8879,20 @@ button.freshchat-global-search:hover {
   gap: 14px;
 }
 
+.desk-dashboard-sync-note {
+  grid-column: 1 / -1;
+  min-height: 34px;
+  border: 1px solid #dce4ee;
+  border-radius: 4px;
+  background: #f6f8fb;
+  color: #506a82;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .desk-widget {
   min-width: 0;
   min-height: 206px;

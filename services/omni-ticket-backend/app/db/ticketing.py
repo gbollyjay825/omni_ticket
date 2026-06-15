@@ -3131,9 +3131,7 @@ class CaseRepository:
         db.flush()
         attached: list[TicketRecord] = []
         for ticket_id in payload.ticket_ids:
-            ticket = db.get(TicketRecord, ticket_id)
-            if ticket is None or ticket.market_id != market_id:
-                continue
+            ticket = _ticket_record_or_404(db, ticket_id, market_id)
             self._link_ticket(db, state, record, ticket, actor)
             attached.append(ticket)
         record.updated_at = utc_now()
@@ -3231,6 +3229,11 @@ class CaseRepository:
         ticket: TicketRecord,
         actor: str,
     ) -> None:
+        if ticket.customer_id != record.customer_id:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail="Ticket belongs to a different customer than the case",
+            )
         if ticket.case_id == record.id:
             return
         ticket.case_id = record.id

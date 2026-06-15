@@ -3235,20 +3235,40 @@ def update_automation_rule(
 
 @router.get("/analytics/summary", response_model=AnalyticsSnapshot)
 def read_analytics_summary(
+    range: str = Query("all", pattern="^(today|7d|30d|all)$"),
+    ticket_group: str | None = Query(None),
+    chat_group: str | None = Query(None),
     context: RequestContext = Depends(require_context),
     state: InMemoryStore = Depends(get_store),
     db: Session = Depends(get_db),
 ) -> AnalyticsSnapshot:
-    return operations_repository.analytics_summary(db, state, context.market_id)
+    return operations_repository.analytics_summary(
+        db,
+        state,
+        context.market_id,
+        period=range,
+        ticket_group=ticket_group,
+        chat_group=chat_group,
+    )
 
 
 @router.get("/analytics/overview", response_model=AnalyticsSnapshot)
 def read_analytics_overview(
+    range: str = Query("all", pattern="^(today|7d|30d|all)$"),
+    ticket_group: str | None = Query(None),
+    chat_group: str | None = Query(None),
     context: RequestContext = Depends(require_context),
     state: InMemoryStore = Depends(get_store),
     db: Session = Depends(get_db),
 ) -> AnalyticsSnapshot:
-    return operations_repository.analytics_summary(db, state, context.market_id)
+    return operations_repository.analytics_summary(
+        db,
+        state,
+        context.market_id,
+        period=range,
+        ticket_group=ticket_group,
+        chat_group=chat_group,
+    )
 
 
 @router.get("/analytics/rollups", response_model=list[AnalyticsRollup])
