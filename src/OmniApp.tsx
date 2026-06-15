@@ -1005,6 +1005,8 @@ function OmniApp() {
   const [attachmentDraft, setAttachmentDraft] = useState<AttachmentDraft | null>(null)
   const [mergeTicketBusy, setMergeTicketBusy] = useState('')
   const [caseLinkBusy, setCaseLinkBusy] = useState('')
+  const [resolveDialog, setResolveDialog] = useState<{ note: string; notify: boolean } | null>(null)
+  const [resolveBusy, setResolveBusy] = useState(false)
   const [dashboardRange, setDashboardRange] = useState<DashboardRange>('all')
   const [dashboardTicketGroup, setDashboardTicketGroup] = useState('all')
   const [dashboardChatGroup, setDashboardChatGroup] = useState('all')
@@ -4302,6 +4304,50 @@ function OmniApp() {
     return value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0)
   }
 
+  function requiredFieldsMissingForResolve(conversation: OmniConversation): TicketField[] {
+    return ticketFieldsForChannel(conversation.channelId)
+      .filter((field) => field.required && !field.system)
+      .filter((field) => customFieldIsMissing(field, conversation.customFields[field.key]))
+  }
+
+  // Quick resolve without a customer email (the "Close no email" action / shortcut).
+  async function resolveWithoutEmail(conversation: OmniConversation) {
+    const missing = requiredFieldsMissingForResolve(conversation)
+    if (missing.length > 0) {
+      announcePrototype(`Complete required fields before resolving: ${missing.map((f) => f.label).join(', ')}.`)
+      return
+    }
+    await updateConversation(
+      conversation.id,
+      { status: 'resolved', slaState: 'healthy' },
+      { resolutionNote: '', notifyCustomer: false },
+    )
+    announcePrototype('Ticket resolved without a customer notification email.')
+  }
+
+  async function submitResolve() {
+    if (!resolveDialog) return
+    const missing = requiredFieldsMissingForResolve(selectedConversation)
+    if (missing.length > 0) {
+      announcePrototype(`Complete required fields before resolving: ${missing.map((f) => f.label).join(', ')}.`)
+      return
+    }
+    setResolveBusy(true)
+    try {
+      await updateConversation(
+        selectedConversation.id,
+        { status: 'resolved', slaState: 'healthy' },
+        { resolutionNote: resolveDialog.note.trim(), notifyCustomer: resolveDialog.notify },
+      )
+      announcePrototype(
+        resolveDialog.notify ? 'Ticket resolved and customer notified.' : 'Ticket resolved.',
+      )
+      setResolveDialog(null)
+    } finally {
+      setResolveBusy(false)
+    }
+  }
+
   function normalizeTicketFieldKey(value: string) {
     return value
       .trim()
@@ -4546,8 +4592,7 @@ function OmniApp() {
       return
     }
     if (actionId === 'close-silent') {
-      updateConversation(selectedConversation.id, { status: 'resolved', slaState: 'healthy' })
-      announcePrototype('Ticket closed without a customer notification email.')
+      void resolveWithoutEmail(selectedConversation)
       return
     }
     // watch: toggle this operator's watch on the ticket (persisted per user)
@@ -5434,7 +5479,7 @@ function OmniApp() {
             <button
               className="primary-action"
               type="button"
-              onClick={() => updateConversation(selectedConversation.id, { status: 'resolved', slaState: 'healthy' })}
+              onClick={() => setResolveDialog({ note: '', notify: true })}
             >
               <Check size={17} />
               Resolve
@@ -6679,6 +6724,83 @@ function OmniApp() {
             </aside>
           )}
         </div>
+      </div>
+    )
+  }
+
+  function renderResolveDialog() {
+    if (!resolveDialog) return null
+    const missing = requiredFieldsMissingForResolve(selectedConversation)
+    return (
+      <div className="modal-backdrop" role="presentation" onMouseDown={() => setResolveDialog(null)}>
+        <section
+          className="quick-create-panel resolve-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="resolve-dialog-title"
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <div className="panel-head">
+            <div>
+              <span>Close out</span>
+              <h2 id="resolve-dialog-title">Resolve {selectedConversation.ticketNumber}</h2>
+            </div>
+            <button
+              className="icon-button"
+              type="button"
+              aria-label="Cancel resolve"
+              onClick={() => setResolveDialog(null)}
+            >
+              <X size={17} />
+            </button>
+          </div>
+          <form
+            className="quick-create-form resolve-form"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void submitResolve()
+            }}
+          >
+            {missing.length > 0 ? (
+              <p className="resolve-warning" role="alert">
+                <AlertTriangle size={15} />
+                Complete required fields before resolving: {missing.map((field) => field.label).join(', ')}.
+              </p>
+            ) : null}
+            <label className="span-all">
+              Resolution note
+              <textarea
+                value={resolveDialog.note}
+                onChange={(event) =>
+                  setResolveDialog((current) => (current ? { ...current, note: event.target.value } : current))
+                }
+                placeholder="Summarise how this was resolved — sent to the customer if you notify them."
+                rows={4}
+              />
+            </label>
+            <label className="toggle-row span-all">
+              <input
+                type="checkbox"
+                checked={resolveDialog.notify}
+                onChange={(event) =>
+                  setResolveDialog((current) =>
+                    current ? { ...current, notify: event.target.checked } : current,
+                  )
+                }
+              />
+              <span>Email the customer that their request is resolved</span>
+            </label>
+            <div className="quick-create-footer">
+              <button type="button" className="secondary-action" onClick={() => setResolveDialog(null)}>
+                Cancel
+              </button>
+              <button type="submit" className="primary-action" disabled={resolveBusy || missing.length > 0}>
+                <Check size={16} />
+                {resolveBusy ? 'Resolving…' : resolveDialog.notify ? 'Resolve & notify' : 'Resolve'}
+              </button>
+            </div>
+          </form>
+        </section>
       </div>
     )
   }
@@ -13860,6 +13982,7 @@ function OmniApp() {
       <nav className="mobile-nav" aria-label="Mobile navigation">
         {screenConfig.map((item) => renderNavItem(item))}
       </nav>
+      {renderResolveDialog()}
       {renderQuickCreatePanel()}
     </div>
   )

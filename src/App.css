@@ -5671,6 +5671,44 @@ button.freshchat-global-search:hover {
   overflow-wrap: anywhere;
 }
 
+/* Resolve / close-out dialog */
+.resolve-dialog {
+  max-width: 520px;
+}
+
+.resolve-form textarea {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--heading);
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 13px;
+}
+
+.resolve-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  border: 1px solid color-mix(in srgb, var(--warning, #b45309) 40%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--warning, #b45309) 9%, transparent);
+  padding: 10px 12px;
+  color: var(--heading);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.resolve-warning svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--warning, #b45309);
+}
+
 /* Duplicate-suggestion actions: group-as-case (primary) beside merge */
 .duplicate-suggestion-actions {
   display: flex;

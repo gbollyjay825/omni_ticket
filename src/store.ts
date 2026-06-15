@@ -2049,18 +2049,26 @@ export function useOmniStore() {
     })
   }
 
-  async function updateConversation(conversationId: string, patch: Partial<OmniConversation>) {
+  async function updateConversation(
+    conversationId: string,
+    patch: Partial<OmniConversation>,
+    options?: { resolutionNote?: string; notifyCustomer?: boolean },
+  ) {
     const backendPatch: {
       status?: BackendTicket['status']
       priority?: BackendTicket['priority']
       assignee_id?: string | null
       custom_fields?: Record<string, unknown>
+      resolution_note?: string
+      notify_customer?: boolean
     } = {}
 
     if (patch.status) backendPatch.status = backendStatus(patch.status)
     if (patch.priority) backendPatch.priority = backendPriority(patch.priority)
     if ('assigneeId' in patch) backendPatch.assignee_id = patch.assigneeId || null
     if ('customFields' in patch) backendPatch.custom_fields = patch.customFields
+    if (options?.resolutionNote !== undefined) backendPatch.resolution_note = options.resolutionNote
+    if (options?.notifyCustomer !== undefined) backendPatch.notify_customer = options.notifyCustomer
 
     if (
       Object.keys(backendPatch).length > 0 &&

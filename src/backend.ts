@@ -1753,6 +1753,8 @@ export interface BackendUpdateTicketInput {
   custom_fields?: Record<string, unknown>
   task_item_id?: string
   task_item_complete?: boolean
+  resolution_note?: string
+  notify_customer?: boolean
 }
 
 export interface BackendCreateTicketFieldInput {
