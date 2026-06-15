@@ -1809,6 +1809,9 @@ class UpdateTicketRequest(BaseModel):
     task_item_id: str | None = None
     task_item_complete: bool | None = None
     recommended_action: str | None = None
+    # Close-out extras (only meaningful on a resolve/close transition):
+    resolution_note: str | None = None
+    notify_customer: bool | None = None
 
 
 class CreateTicketFieldRequest(BaseModel):

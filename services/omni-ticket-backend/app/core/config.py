@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     initialize_database: bool = True
     worker_interval_seconds: int = 60
     worker_outbound_limit: int = 50
+    # Auto-close resolved tickets after this many hours with no further activity.
+    # Set to 0 to disable auto-close.
+    auto_close_resolved_after_hours: int = 72
     session_secret: str = "omni-ticket-local-dev-secret"
     session_ttl_minutes: int = 8 * 60
     webhook_signature_tolerance_seconds: int = 5 * 60

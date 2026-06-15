@@ -40,6 +40,7 @@ from app.db.models import (
     ConnectorEventRecord,
     CsatFeedbackRecord,
     CustomerRecord,
+    EmailNotificationRecord,
     HandoffRecord,
     OutboundMessageRecord,
     SlaPolicyRecord,
@@ -2068,6 +2069,8 @@ class TicketRepository:
         task_item_id = patch.pop("task_item_id", None)
         task_item_complete = patch.pop("task_item_complete", None)
         custom_fields_patch = patch.pop("custom_fields", None)
+        resolution_note = patch.pop("resolution_note", None)
+        notify_customer = patch.pop("notify_customer", None)
         for key, value in patch.items():
             if value is not None:
                 setattr(record, key, value)
@@ -2149,6 +2152,69 @@ class TicketRepository:
                     "sla_resolution_met": record.sla_resolution_met,
                 },
             )
+
+        resolved_now = status_changed and record.status in _RESOLVED_STATUSES
+        note_text = (resolution_note or "").strip()
+        if resolved_now and notify_customer:
+            customer = db.get(CustomerRecord, record.customer_id)
+            to_email = customer.email if customer else ""
+            body = note_text or (
+                "Your request has been resolved. Reply to this message if anything still "
+                "needs attention and we'll reopen it."
+            )
+            if to_email:
+                notification = db.scalar(
+                    select(EmailNotificationRecord).where(
+                        EmailNotificationRecord.market_id == market_id,
+                        EmailNotificationRecord.event == "ticket_resolved",
+                        EmailNotificationRecord.active.is_(True),
+                    )
+                )
+                subject = (notification.subject if notification else "") or (
+                    f"Your request {record.public_id} has been resolved"
+                )
+                note_event = _add_timeline_record(
+                    db,
+                    state,
+                    record,
+                    event_type=TimelineEventType.public_reply,
+                    channel=ChannelType.email,
+                    actor="api",
+                    body=body,
+                    public=True,
+                    metadata={"resolution_note": True, "notification_event": "ticket_resolved"},
+                )
+                timeline_record = db.get(TimelineEventRecord, note_event.id)
+                if timeline_record is not None:
+                    stamp = (record.resolved_at or now).isoformat()
+                    outbound_message = outbound_repository.queue_email(
+                        db,
+                        state,
+                        ticket=record,
+                        timeline_event=timeline_record,
+                        actor="api",
+                        to_email=to_email,
+                        subject=subject,
+                        body=body,
+                        source="ticket_resolved",
+                        idempotency_key=f"resolution-{record.id}-{stamp}",
+                    )
+                    outbound_repository.process_message(
+                        db, state, outbound_message.id, market_id, actor="outbound-queue"
+                    )
+        elif resolved_now and note_text:
+            _add_timeline_record(
+                db,
+                state,
+                record,
+                event_type=TimelineEventType.internal_note,
+                channel=ChannelType.internal,
+                actor="api",
+                body=note_text,
+                public=False,
+                metadata={"resolution_note": True},
+            )
+
         db.commit()
         db.refresh(record)
         return _sync_ticket(db, state, record)

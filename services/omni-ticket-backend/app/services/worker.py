@@ -21,8 +21,15 @@ from app.db.models import (
 )
 from app.db.operations import OPEN_STATUSES, operations_repository
 from app.db.outbound import outbound_repository
-from app.db.ticketing import ticket_repository
-from app.models.domain import OperationalAlertSeverity, OutboundMessageStatus, utc_now
+from app.db.ticketing import _add_timeline_record, ticket_repository
+from app.models.domain import (
+    ChannelType,
+    OperationalAlertSeverity,
+    OutboundMessageStatus,
+    TicketStatus,
+    TimelineEventType,
+    utc_now,
+)
 from app.services.alert_delivery import AlertWebhookTransport, alert_delivery_service
 from app.services.attachments import attachment_storage
 from app.services.escalation import escalation_service
@@ -408,6 +415,66 @@ class BackgroundWorkerService:
         db.commit()
         return result
 
+    def auto_close_resolved(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        market_id: str,
+        *,
+        actor: str = WORKER_ACTOR,
+    ) -> WorkerJobResult:
+        """Move resolved (solved) tickets to closed once they have sat untouched past the
+        configured window — Freshdesk's "automatically close resolved tickets" behaviour."""
+        after_hours = settings.auto_close_resolved_after_hours
+        result = WorkerJobResult(name="auto_close_resolved", market_id=market_id, processed=0)
+        if after_hours <= 0:
+            return result
+        cutoff = utc_now() - timedelta(hours=after_hours)
+        records = list(
+            db.scalars(
+                select(TicketRecord).where(
+                    TicketRecord.market_id == market_id,
+                    TicketRecord.status == TicketStatus.solved.value,
+                    TicketRecord.resolved_at.is_not(None),
+                    TicketRecord.resolved_at <= cutoff,
+                )
+            )
+        )
+        result.processed = len(records)
+        closed_ids: list[str] = []
+        now = utc_now()
+        for record in records:
+            record.status = TicketStatus.closed.value
+            record.closed_at = now
+            record.updated_at = now
+            _add_timeline_record(
+                db,
+                state,
+                record,
+                event_type=TimelineEventType.status_change,
+                channel=ChannelType.internal,
+                actor=actor,
+                body=f"Ticket auto-closed after {after_hours}h resolved with no further activity.",
+                public=False,
+                metadata={"previous_status": "solved", "new_status": "closed", "auto_close": True},
+            )
+            _audit_worker(
+                db,
+                state,
+                action="worker.auto_close",
+                entity_type="ticket",
+                entity_id=record.id,
+                market_id=market_id,
+                details={"after_hours": after_hours},
+                actor=actor,
+            )
+            state.tickets[record.id] = ticket_from_record(record)
+            closed_ids.append(record.id)
+        result.succeeded = len(closed_ids)
+        result.details = {"closed_ticket_ids": closed_ids}
+        db.commit()
+        return result
+
     def recompute_work_queue(
         self,
         db: Session,
@@ -641,6 +708,7 @@ class BackgroundWorkerService:
                 )
             )
             jobs.append(self.refresh_sla_states(db, state, market_id, actor=actor))
+            jobs.append(self.auto_close_resolved(db, state, market_id, actor=actor))
             jobs.append(self.recompute_work_queue(db, state, market_id, actor=actor))
             jobs.append(self.rollup_analytics(db, state, market_id, actor=actor))
             jobs.append(self.dispatch_alert_deliveries(db, state, market_id, actor=actor))

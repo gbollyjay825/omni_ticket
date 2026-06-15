@@ -776,6 +776,73 @@ def test_resolving_a_ticket_stamps_lifecycle_and_freezes_sla(client: TestClient)
     assert any(event["body"] == "Ticket closed." for event in timeline)
 
 
+def test_resolving_with_notify_queues_a_customer_email(client: TestClient) -> None:
+    ticket = next(item for item in client.get("/api/v1/tickets").json() if item["channel"] == "email")
+    etag = client.get(f"/api/v1/tickets/{ticket['id']}").headers["ETag"]
+    resolved = client.patch(
+        f"/api/v1/tickets/{ticket['id']}",
+        headers={"If-Match": etag},
+        json={
+            "status": "solved",
+            "resolution_note": "Refund processed; reference 12345.",
+            "notify_customer": True,
+        },
+    )
+    assert resolved.status_code == 200
+
+    messages = client.get(f"/api/v1/outbound/messages?ticket_id={ticket['id']}").json()
+    resolution_email = [m for m in messages if m["idempotency_key"].startswith("resolution-")]
+    assert resolution_email, messages
+    assert "Refund processed" in resolution_email[0]["body"]
+
+    timeline = client.get(f"/api/v1/tickets/{ticket['id']}").json()["timeline"]
+    assert any("Refund processed" in event["body"] for event in timeline)
+
+
+def test_resolving_without_notify_keeps_note_internal(client: TestClient) -> None:
+    ticket = next(item for item in client.get("/api/v1/tickets").json() if item["channel"] == "email")
+    etag = client.get(f"/api/v1/tickets/{ticket['id']}").headers["ETag"]
+    resolved = client.patch(
+        f"/api/v1/tickets/{ticket['id']}",
+        headers={"If-Match": etag},
+        json={"status": "solved", "resolution_note": "Closed internally; no reply needed."},
+    )
+    assert resolved.status_code == 200
+
+    messages = client.get(f"/api/v1/outbound/messages?ticket_id={ticket['id']}").json()
+    assert not [m for m in messages if m["idempotency_key"].startswith("resolution-")]
+
+    timeline = client.get(f"/api/v1/tickets/{ticket['id']}").json()["timeline"]
+    note = next(event for event in timeline if "Closed internally" in event["body"])
+    assert note["type"] == "internal_note"
+
+
+def test_worker_auto_closes_resolved_tickets_past_window(client: TestClient) -> None:
+    ticket = client.get("/api/v1/tickets").json()[0]
+    etag = client.get(f"/api/v1/tickets/{ticket['id']}").headers["ETag"]
+    client.patch(
+        f"/api/v1/tickets/{ticket['id']}",
+        headers={"If-Match": etag},
+        json={"status": "solved"},
+    )
+
+    with Session(get_engine()) as session:
+        record = session.get(TicketRecord, ticket["id"])
+        assert record is not None
+        record.resolved_at = utc_now() - timedelta(
+            hours=settings.auto_close_resolved_after_hours + 1
+        )
+        session.commit()
+
+    with Session(get_engine()) as session:
+        job = worker_service.auto_close_resolved(session, store, "market-ng")
+    assert job.succeeded == 1
+
+    detail = client.get(f"/api/v1/tickets/{ticket['id']}").json()["ticket"]
+    assert detail["status"] == "closed"
+    assert detail["closed_at"] is not None
+
+
 def test_ticket_knowledge_suggestions_rank_active_market_articles(client: TestClient) -> None:
     suffix = uuid4().hex
     article = client.post(
