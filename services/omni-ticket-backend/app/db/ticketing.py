@@ -39,6 +39,7 @@ from app.db.models import (
     CompanyRecord,
     ConnectorEventRecord,
     CsatFeedbackRecord,
+    CsatSurveyRecord,
     CustomerRecord,
     EmailNotificationRecord,
     HandoffRecord,
@@ -2173,6 +2174,28 @@ class TicketRepository:
                 subject = (notification.subject if notification else "") or (
                     f"Your request {record.public_id} has been resolved"
                 )
+                # Survey invite: when an active CSAT survey covers this channel, append
+                # a rating invitation so real customer satisfaction can flow back in.
+                surveys = db.scalars(
+                    select(CsatSurveyRecord)
+                    .where(
+                        CsatSurveyRecord.market_id == market_id,
+                        CsatSurveyRecord.active.is_(True),
+                    )
+                    .order_by(CsatSurveyRecord.created_at.asc())
+                ).all()
+                survey = next(
+                    (s for s in surveys if not s.channels or record.channel in s.channels),
+                    None,
+                )
+                email_body = body
+                if survey is not None:
+                    portal_url = f"{settings.public_app_url.rstrip('/')}/?screen=portal"
+                    email_body = (
+                        f"{body}\n\n---\n{survey.question}\n"
+                        f"Rate your experience: {portal_url} — choose \"Track an existing "
+                        f"request\", then enter ticket {record.public_id} with this email address."
+                    )
                 note_event = _add_timeline_record(
                     db,
                     state,
@@ -2195,7 +2218,7 @@ class TicketRepository:
                         actor="api",
                         to_email=to_email,
                         subject=subject,
-                        body=body,
+                        body=email_body,
                         source="ticket_resolved",
                         idempotency_key=f"resolution-{record.id}-{stamp}",
                     )

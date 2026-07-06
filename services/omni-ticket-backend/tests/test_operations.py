@@ -6257,6 +6257,78 @@ def test_public_portal_customer_reply_reopens_ticket(client: TestClient) -> None
         assert audit.details["new_status"] == "open"
 
 
+def test_public_portal_csat_rating_records_real_customer_feedback(client: TestClient) -> None:
+    public_client = TestClient(create_app())
+    email = f"portal-csat-{uuid4().hex}@example.com"
+    created = public_client.post(
+        "/api/v1/portal/ng/tickets",
+        json={
+            "name": "Portal CSAT Customer",
+            "email": email,
+            "subject": "Seat selection issue",
+            "description": "Could not select a seat during checkout.",
+            "custom_fields": {"issue_category": "Booking"},
+        },
+    )
+    assert created.status_code == 201
+    ticket = created.json()
+
+    # Rating is rejected while the ticket is still open.
+    early = public_client.post(
+        f"/api/v1/portal/ng/tickets/{ticket['public_id']}/csat",
+        json={"email": email, "rating": 5},
+    )
+    assert early.status_code == 409
+
+    solved = client.patch(f"/api/v1/tickets/{ticket['ticket_id']}", json={"status": "solved"})
+    assert solved.status_code == 200
+
+    # The wrong email cannot rate someone else's ticket.
+    wrong = public_client.post(
+        f"/api/v1/portal/ng/tickets/{ticket['public_id']}/csat",
+        json={"email": f"other-{uuid4().hex}@example.com", "rating": 5},
+    )
+    assert wrong.status_code == 404
+
+    rated = public_client.post(
+        f"/api/v1/portal/ng/tickets/{ticket['public_id']}/csat",
+        json={"email": email, "rating": 4, "comment": "Quick fix, thanks!"},
+    )
+    assert rated.status_code == 201
+    body = rated.json()
+    assert body["csat_allowed"] is True
+    assert body["csat_rating"] == 4
+    assert body["csat_comment"] == "Quick fix, thanks!"
+
+    feedback = client.get("/api/v1/csat/feedback").json()
+    entry = next(item for item in feedback if item["ticket_id"] == ticket["ticket_id"])
+    assert entry["rating"] == 4
+    assert entry["source"] == "customer_survey"
+    assert entry["submitted_by"] == email
+
+
+def test_resolution_email_includes_survey_invite(client: TestClient) -> None:
+    ticket = next(
+        item
+        for item in client.get("/api/v1/tickets").json()
+        if item["channel"] == "email" and item["status"] not in ("solved", "closed")
+    )
+    etag = client.get(f"/api/v1/tickets/{ticket['id']}").headers["ETag"]
+    resolved = client.patch(
+        f"/api/v1/tickets/{ticket['id']}",
+        headers={"If-Match": etag},
+        json={"status": "solved", "notify_customer": True},
+    )
+    assert resolved.status_code == 200
+
+    messages = client.get(f"/api/v1/outbound/messages?ticket_id={ticket['id']}").json()
+    resolution_email = next(m for m in messages if m["idempotency_key"].startswith("resolution-"))
+    # Seeded market-ng ticket survey (email+portal channels) rides along as an invite.
+    assert "Rate your experience" in resolution_email["body"]
+    assert "satisfied" in resolution_email["body"].lower()
+    assert ticket["public_id"] in resolution_email["body"]
+
+
 def test_public_portal_answers_are_rate_limited() -> None:
     original_attempts = settings.portal_rate_limit_attempts
     original_window = settings.portal_rate_limit_window_seconds

@@ -126,6 +126,7 @@ import {
   createBackendDiscussionComment,
   fetchBackendDiscussionComments,
   createBackendPortalTicket,
+  createBackendPortalTicketCsat,
   createBackendPortalTicketReply,
   exportBackendAudit,
   createBackendProductionAccountReference,
@@ -1310,6 +1311,11 @@ function OmniApp() {
     email: '',
   })
   const [portalTicketDetail, setPortalTicketDetail] = useState<BackendPortalTicketDetail | null>(null)
+  const [portalCsatDraft, setPortalCsatDraft] = useState<{ rating: number; comment: string }>({
+    rating: 0,
+    comment: '',
+  })
+  const [portalCsatBusy, setPortalCsatBusy] = useState(false)
   const [portalLookupBusy, setPortalLookupBusy] = useState(false)
   const [portalReplyBusy, setPortalReplyBusy] = useState(false)
   const [portalReplyBody, setPortalReplyBody] = useState('')
@@ -2880,6 +2886,28 @@ function OmniApp() {
     }
   }
 
+  async function handlePortalCsatSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (portalCsatBusy || !portalTicketDetail || portalCsatDraft.rating < 1) return
+    const email = portalLookup.email.trim().toLowerCase()
+    setPortalCsatBusy(true)
+    setPortalLookupNotice('')
+    try {
+      const detail = await createBackendPortalTicketCsat(portalMarket, portalTicketDetail.public_id, {
+        email,
+        rating: portalCsatDraft.rating,
+        comment: portalCsatDraft.comment.trim() || undefined,
+      })
+      setPortalTicketDetail(detail)
+      setPortalCsatDraft({ rating: 0, comment: '' })
+      setPortalLookupNotice('Thanks — your rating has been recorded.')
+    } catch (error) {
+      setPortalLookupNotice(error instanceof Error ? error.message : 'Rating failed.')
+    } finally {
+      setPortalCsatBusy(false)
+    }
+  }
+
   function renderPortalHelpCenter() {
     const portalBrandName = workspaceSettings?.public_brand_name?.trim() || 'Omni Ticket'
     const portalSupportName = workspaceSettings?.portal_support_name?.trim() || 'Wakanow support'
@@ -3110,6 +3138,62 @@ function OmniApp() {
                     <button className="primary-action portal-submit" type="submit" disabled={portalReplyBusy}>
                       {portalReplyBusy ? <RefreshCw size={16} className="spin-icon" /> : <Send size={16} />}
                       Send reply
+                    </button>
+                  </form>
+                </div>
+              ) : null}
+              {portalTicketDetail?.csat_allowed ? (
+                <div className="portal-csat" aria-label="Rate your experience">
+                  {portalTicketDetail.csat_rating ? (
+                    <div className="portal-csat-done">
+                      <span className="portal-csat-stars" aria-label={`Rated ${portalTicketDetail.csat_rating} out of 5`}>
+                        {[1, 2, 3, 4, 5].map((value) => (
+                          <Star
+                            key={value}
+                            size={18}
+                            className={value <= (portalTicketDetail.csat_rating ?? 0) ? 'filled' : ''}
+                          />
+                        ))}
+                      </span>
+                      <p>
+                        Thanks for rating this request{portalTicketDetail.csat_comment ? ` — “${portalTicketDetail.csat_comment}”` : ''}.
+                        You can update your rating any time.
+                      </p>
+                    </div>
+                  ) : null}
+                  <form onSubmit={handlePortalCsatSubmit}>
+                    <strong>{portalTicketDetail.csat_rating ? 'Update your rating' : 'How did we do?'}</strong>
+                    <div className="portal-csat-picker" role="radiogroup" aria-label="Rating from 1 to 5">
+                      {[1, 2, 3, 4, 5].map((value) => (
+                        <button
+                          type="button"
+                          key={value}
+                          role="radio"
+                          aria-checked={portalCsatDraft.rating === value}
+                          aria-label={`${value} star${value === 1 ? '' : 's'}`}
+                          className={portalCsatDraft.rating >= value ? 'active' : ''}
+                          onClick={() => setPortalCsatDraft((current) => ({ ...current, rating: value }))}
+                        >
+                          <Star size={20} />
+                        </button>
+                      ))}
+                    </div>
+                    <textarea
+                      value={portalCsatDraft.comment}
+                      onChange={(event) =>
+                        setPortalCsatDraft((current) => ({ ...current, comment: event.target.value }))
+                      }
+                      placeholder="Anything we should know? (optional)"
+                      rows={2}
+                      maxLength={1000}
+                    />
+                    <button
+                      className="primary-action portal-submit"
+                      type="submit"
+                      disabled={portalCsatBusy || portalCsatDraft.rating < 1}
+                    >
+                      {portalCsatBusy ? <RefreshCw size={16} className="spin-icon" /> : <Star size={16} />}
+                      Submit rating
                     </button>
                   </form>
                 </div>

@@ -46,7 +46,15 @@ from app.db.mappers import (
     market_from_record,
     user_from_record,
 )
-from app.db.models import AuditEventRecord, CompanyRecord, CustomerRecord, MarketRecord, TicketRecord, UserRecord
+from app.db.models import (
+    AuditEventRecord,
+    CompanyRecord,
+    CsatFeedbackRecord,
+    CustomerRecord,
+    MarketRecord,
+    TicketRecord,
+    UserRecord,
+)
 from app.db.operations import operations_repository
 from app.db.outbound import outbound_repository
 from app.db.production_accounts import production_account_reference_repository
@@ -79,6 +87,7 @@ from app.models.domain import (
     ConnectorEvent,
     ConnectorInboundRequest,
     CsatFeedback,
+    CsatSource,
     CsatSurvey,
     CustomFieldDefinition,
     CustomObject,
@@ -147,6 +156,7 @@ from app.models.domain import (
     PortalAttachmentResponse,
     PortalAnswersResponse,
     PortalAnswerSuggestion,
+    PortalCsatRequest,
     PortalTicketDetailResponse,
     PortalTicketReplyRequest,
     PortalTicketResponse,
@@ -511,6 +521,13 @@ def _portal_ticket_detail_payload(
         channel=ChannelType.portal.value,
         limit=3,
     )
+    existing_csat = db.scalar(
+        select(CsatFeedbackRecord).where(
+            CsatFeedbackRecord.market_id == market_id,
+            CsatFeedbackRecord.ticket_id == ticket_id,
+        )
+    )
+    csat_allowed = ticket.status.value in {"solved", "closed"}
     return PortalTicketDetailResponse(
         ticket_id=ticket.id,
         public_id=ticket.public_id,
@@ -523,6 +540,9 @@ def _portal_ticket_detail_payload(
         updated_at=ticket.updated_at,
         next_step=_portal_next_step(ticket.status.value),
         reply_allowed=True,
+        csat_allowed=csat_allowed,
+        csat_rating=existing_csat.rating if existing_csat else None,
+        csat_comment=existing_csat.comment if existing_csat else None,
         timeline=public_events,
         attachments=_portal_visible_attachments(
             db,
@@ -750,6 +770,66 @@ def create_portal_ticket_reply(
         actor=customer.name,
         body=request_body.body.strip(),
         submitted_by=email,
+    )
+    return _portal_ticket_detail_payload(
+        db,
+        state,
+        market_id=market.id,
+        market_code=market.code.lower(),
+        ticket_id=ticket.id,
+    )
+
+
+@router.post(
+    "/portal/{market_code}/tickets/{public_id}/csat",
+    response_model=PortalTicketDetailResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_portal_ticket_csat(
+    market_code: str,
+    public_id: str,
+    request_body: PortalCsatRequest,
+    request: Request,
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> PortalTicketDetailResponse:
+    """Public satisfaction capture: the customer rates a resolved ticket from the
+    Help Center, verified by the same email + ticket-number pair as portal replies.
+    No agent session involved — this is how real customer CSAT enters the system."""
+    market = _portal_market_record_or_404(db, market_code)
+    email = str(request_body.email).lower()
+    try:
+        database_rate_limiter.check(
+            db,
+            f"portal-ticket-csat:{market.id}:{_client_rate_limit_identity(request)}:{public_id}:{email}",
+            limit=app_settings.portal_rate_limit_attempts,
+            window_seconds=app_settings.portal_rate_limit_window_seconds,
+        )
+    except RateLimitExceeded as exc:
+        raise_rate_limit_exceeded(exc)
+    ticket, customer = _portal_ticket_record_for_email_or_404(
+        db,
+        market_id=market.id,
+        public_id=public_id,
+        email=email,
+    )
+    if ticket.status not in {"solved", "closed"}:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="Ratings open once the ticket is resolved.",
+        )
+    ticket_repository.submit_csat_feedback(
+        db,
+        state,
+        ticket.id,
+        CreateCsatFeedbackRequest(
+            rating=request_body.rating,
+            comment=(request_body.comment or "").strip() or None,
+            source=CsatSource.customer_survey,
+            submitted_by=email,
+        ),
+        market.id,
+        actor=customer.name,
     )
     return _portal_ticket_detail_payload(
         db,

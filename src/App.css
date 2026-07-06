@@ -5671,6 +5671,90 @@ button.freshchat-global-search:hover {
   overflow-wrap: anywhere;
 }
 
+/* Portal CSAT rating widget (public Help Center) */
+.portal-csat {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--surface-2);
+  padding: 14px;
+}
+
+.portal-csat form {
+  display: grid;
+  gap: 9px;
+}
+
+.portal-csat strong {
+  color: var(--heading);
+  font-size: 13.5px;
+}
+
+.portal-csat-picker {
+  display: flex;
+  gap: 4px;
+}
+
+.portal-csat-picker button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--hairline);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.portal-csat-picker button.active {
+  border-color: #b45309;
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.portal-csat-picker button.active svg {
+  fill: #f59e0b;
+  color: #b45309;
+}
+
+.portal-csat textarea {
+  min-height: 52px;
+  resize: vertical;
+  border: 1px solid var(--hairline);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--heading);
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+}
+
+.portal-csat-done {
+  display: grid;
+  gap: 5px;
+}
+
+.portal-csat-done p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.portal-csat-stars {
+  display: inline-flex;
+  gap: 3px;
+  color: var(--muted);
+}
+
+.portal-csat-stars .filled {
+  fill: #f59e0b;
+  color: #b45309;
+}
+
 /* Resolve / close-out dialog */
 .resolve-dialog {
   max-width: 520px;

@@ -929,6 +929,9 @@ export interface BackendPortalTicketDetail {
   updated_at: string
   next_step: string
   reply_allowed: boolean
+  csat_allowed: boolean
+  csat_rating: number | null
+  csat_comment: string | null
   timeline: BackendPortalTicketTimelineEvent[]
   attachments: BackendPortalAttachment[]
   article_suggestions: BackendPortalAnswerSuggestion[]
@@ -937,6 +940,12 @@ export interface BackendPortalTicketDetail {
 export interface BackendPortalTicketReplyInput {
   email: string
   body: string
+}
+
+export interface BackendPortalCsatInput {
+  email: string
+  rating: number
+  comment?: string
 }
 
 export interface BackendAgent {
@@ -2845,6 +2854,20 @@ export async function createBackendPortalTicketReply(
 ): Promise<BackendPortalTicketDetail> {
   return fetchJson<BackendPortalTicketDetail>(
     `/portal/${encodeURIComponent(marketCode.toLowerCase())}/tickets/${encodeURIComponent(publicId.trim())}/reply`,
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+  )
+}
+
+export async function createBackendPortalTicketCsat(
+  marketCode: string,
+  publicId: string,
+  input: BackendPortalCsatInput,
+): Promise<BackendPortalTicketDetail> {
+  return fetchJson<BackendPortalTicketDetail>(
+    `/portal/${encodeURIComponent(marketCode.toLowerCase())}/tickets/${encodeURIComponent(publicId.trim())}/csat`,
     {
       method: 'POST',
       body: JSON.stringify(input),

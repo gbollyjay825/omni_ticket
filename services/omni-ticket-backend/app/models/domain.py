@@ -958,6 +958,10 @@ class PortalTicketDetailResponse(BaseModel):
     updated_at: datetime
     next_step: str
     reply_allowed: bool = True
+    # Customer satisfaction: rating opens once the ticket is resolved/closed.
+    csat_allowed: bool = False
+    csat_rating: int | None = None
+    csat_comment: str | None = None
     timeline: list[PortalTicketTimelineEvent] = Field(default_factory=list)
     attachments: list[PortalAttachmentResponse] = Field(default_factory=list)
     article_suggestions: list[PortalAnswerSuggestion] = Field(default_factory=list)
@@ -966,6 +970,14 @@ class PortalTicketDetailResponse(BaseModel):
 class PortalTicketReplyRequest(BaseModel):
     email: EmailStr
     body: str = Field(min_length=2, max_length=8000)
+
+
+class PortalCsatRequest(BaseModel):
+    """Public satisfaction rating submitted by the customer from the Help Center."""
+
+    email: EmailStr
+    rating: int = Field(ge=1, le=5)
+    comment: str | None = Field(default=None, max_length=1000)
 
 
 class ResponseMacro(BaseModel):
