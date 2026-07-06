@@ -5823,6 +5823,23 @@ button.freshchat-global-search:hover {
   color: var(--signal-ink);
 }
 
+.case-card > span .chip {
+  margin-left: auto;
+}
+
+.case-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.case-card-actions button {
+  flex: 1 1 auto;
+  justify-content: center;
+  min-height: 32px;
+  font-size: 12px;
+}
+
 .case-sibling-list {
   display: grid;
   gap: 6px;

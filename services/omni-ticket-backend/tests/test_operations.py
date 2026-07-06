@@ -817,6 +817,54 @@ def test_resolving_without_notify_keeps_note_internal(client: TestClient) -> Non
     assert note["type"] == "internal_note"
 
 
+def test_parent_ticket_cannot_resolve_with_open_handoff_child(client: TestClient) -> None:
+    parent = next(
+        item
+        for item in client.get("/api/v1/tickets").json()
+        if item["status"] not in ("solved", "closed")
+    )
+    handoff = client.post(
+        f"/api/v1/tickets/{parent['id']}/handoffs",
+        json={
+            "to_team": "Billing Support",
+            "requested_by": "gbolahan@omniticket.example.com",
+            "reason": "Needs a refund review before we can close.",
+            "due_minutes": 120,
+            "checklist": ["Check refund ledger"],
+        },
+    )
+    assert handoff.status_code == 201
+    child_ticket_id = handoff.json()["linked_ticket_id"]
+    assert child_ticket_id
+
+    # Parent is blocked while the handoff child is open…
+    etag = client.get(f"/api/v1/tickets/{parent['id']}").headers["ETag"]
+    blocked = client.patch(
+        f"/api/v1/tickets/{parent['id']}",
+        headers={"If-Match": etag},
+        json={"status": "solved"},
+    )
+    assert blocked.status_code == 422
+    child_public_id = client.get(f"/api/v1/tickets/{child_ticket_id}").json()["ticket"]["public_id"]
+    assert child_public_id in blocked.json()["detail"]
+
+    # …and resolves normally once the child is closed out.
+    child_etag = client.get(f"/api/v1/tickets/{child_ticket_id}").headers["ETag"]
+    child_solved = client.patch(
+        f"/api/v1/tickets/{child_ticket_id}",
+        headers={"If-Match": child_etag},
+        json={"status": "solved"},
+    )
+    assert child_solved.status_code == 200
+    etag = client.get(f"/api/v1/tickets/{parent['id']}").headers["ETag"]
+    resolved = client.patch(
+        f"/api/v1/tickets/{parent['id']}",
+        headers={"If-Match": etag},
+        json={"status": "solved"},
+    )
+    assert resolved.status_code == 200
+
+
 def test_worker_auto_closes_resolved_tickets_past_window(client: TestClient) -> None:
     ticket = client.get("/api/v1/tickets").json()[0]
     etag = client.get(f"/api/v1/tickets/{ticket['id']}").headers["ETag"]

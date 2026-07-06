@@ -57,6 +57,7 @@ import type {
   AttachmentDraft,
   BusinessHours,
   BusinessHoursDay,
+  CaseRecord,
   ChannelId,
   ComposerMode,
   ContactMethod,
@@ -970,6 +971,7 @@ function OmniApp() {
     createCase,
     attachCaseTicket,
     detachCaseTicket,
+    setCaseStatus,
     recordResponseMacroUse,
     resetDemo,
     backendSession,
@@ -1006,7 +1008,11 @@ function OmniApp() {
   const [attachmentDraft, setAttachmentDraft] = useState<AttachmentDraft | null>(null)
   const [mergeTicketBusy, setMergeTicketBusy] = useState('')
   const [caseLinkBusy, setCaseLinkBusy] = useState('')
-  const [resolveDialog, setResolveDialog] = useState<{ note: string; notify: boolean } | null>(null)
+  const [resolveDialog, setResolveDialog] = useState<{
+    note: string
+    notify: boolean
+    resolveCase: boolean
+  } | null>(null)
   const [resolveBusy, setResolveBusy] = useState(false)
   const [dashboardRange, setDashboardRange] = useState<DashboardRange>('all')
   const [dashboardTicketGroup, setDashboardTicketGroup] = useState('all')
@@ -4394,11 +4400,39 @@ function OmniApp() {
       .filter((field) => customFieldIsMissing(field, conversation.customFields[field.key]))
   }
 
+  // Open handoff-child tickets spawned from this ticket — the parent can't close
+  // while a receiving team is still working one (mirrors the backend 422 guard).
+  function openHandoffChildren(conversation: OmniConversation): OmniConversation[] {
+    return state.handoffs
+      .filter((handoff) => handoff.conversationId === conversation.id && handoff.linkedConversationId)
+      .map((handoff) => state.conversations.find((item) => item.id === handoff.linkedConversationId))
+      .filter((child): child is OmniConversation => Boolean(child && child.status !== 'resolved'))
+  }
+
+  // When this is the last open ticket in its case, resolving it can close the case too.
+  function caseResolvableAfter(conversation: OmniConversation): CaseRecord | undefined {
+    if (!conversation.caseId) return undefined
+    const linkedCase = state.cases.find((item) => item.id === conversation.caseId)
+    if (!linkedCase || linkedCase.status !== 'open') return undefined
+    const siblingsAllResolved = linkedCase.ticketIds
+      .filter((id) => id !== conversation.id)
+      .map((id) => state.conversations.find((item) => item.id === id))
+      .every((sibling) => !sibling || sibling.status === 'resolved')
+    return siblingsAllResolved ? linkedCase : undefined
+  }
+
   // Quick resolve without a customer email (the "Close no email" action / shortcut).
   async function resolveWithoutEmail(conversation: OmniConversation) {
     const missing = requiredFieldsMissingForResolve(conversation)
     if (missing.length > 0) {
       announcePrototype(`Complete required fields before resolving: ${missing.map((f) => f.label).join(', ')}.`)
+      return
+    }
+    const children = openHandoffChildren(conversation)
+    if (children.length > 0) {
+      announcePrototype(
+        `Resolve linked handoff tickets first: ${children.map((c) => c.ticketNumber).join(', ')}.`,
+      )
       return
     }
     await updateConversation(
@@ -4416,6 +4450,8 @@ function OmniApp() {
       announcePrototype(`Complete required fields before resolving: ${missing.map((f) => f.label).join(', ')}.`)
       return
     }
+    if (openHandoffChildren(selectedConversation).length > 0) return
+    const caseToResolve = resolveDialog.resolveCase ? caseResolvableAfter(selectedConversation) : undefined
     setResolveBusy(true)
     try {
       await updateConversation(
@@ -4423,8 +4459,15 @@ function OmniApp() {
         { status: 'resolved', slaState: 'healthy' },
         { resolutionNote: resolveDialog.note.trim(), notifyCustomer: resolveDialog.notify },
       )
+      if (caseToResolve) {
+        await setCaseStatus(caseToResolve.id, 'resolved')
+      }
       announcePrototype(
-        resolveDialog.notify ? 'Ticket resolved and customer notified.' : 'Ticket resolved.',
+        caseToResolve
+          ? `Ticket resolved and case ${caseToResolve.publicId} closed out.`
+          : resolveDialog.notify
+            ? 'Ticket resolved and customer notified.'
+            : 'Ticket resolved.',
       )
       setResolveDialog(null)
     } finally {
@@ -5563,7 +5606,7 @@ function OmniApp() {
             <button
               className="primary-action"
               type="button"
-              onClick={() => setResolveDialog({ note: '', notify: true })}
+              onClick={() => setResolveDialog({ note: '', notify: true, resolveCase: false })}
             >
               <Check size={17} />
               Resolve
@@ -6138,6 +6181,9 @@ function OmniApp() {
                     <span>
                       <Layers size={14} />
                       Case · {linkedCase.publicId}
+                      <em className={`chip status-${linkedCase.status === 'open' ? 'in-progress' : 'done'}`}>
+                        {titleCase(linkedCase.status)}
+                      </em>
                     </span>
                     <strong>{linkedCase.title}</strong>
                     <small>
@@ -6161,13 +6207,24 @@ function OmniApp() {
                         <p className="case-empty">No other tickets linked yet.</p>
                       )}
                     </div>
-                    <button
-                      type="button"
-                      className="secondary-action"
-                      onClick={() => void detachCaseTicket(linkedCase.id, selectedConversation.id)}
-                    >
-                      Remove from case
-                    </button>
+                    <div className="case-card-actions">
+                      <button
+                        type="button"
+                        className="secondary-action"
+                        onClick={() =>
+                          void setCaseStatus(linkedCase.id, linkedCase.status === 'open' ? 'resolved' : 'open')
+                        }
+                      >
+                        {linkedCase.status === 'open' ? 'Resolve case' : 'Reopen case'}
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-action"
+                        onClick={() => void detachCaseTicket(linkedCase.id, selectedConversation.id)}
+                      >
+                        Remove from case
+                      </button>
+                    </div>
                   </div>
                 )
               }
@@ -6815,6 +6872,8 @@ function OmniApp() {
   function renderResolveDialog() {
     if (!resolveDialog) return null
     const missing = requiredFieldsMissingForResolve(selectedConversation)
+    const blockedByChildren = openHandoffChildren(selectedConversation)
+    const resolvableCase = caseResolvableAfter(selectedConversation)
     return (
       <div className="modal-backdrop" role="presentation" onMouseDown={() => setResolveDialog(null)}>
         <section
@@ -6851,6 +6910,13 @@ function OmniApp() {
                 Complete required fields before resolving: {missing.map((field) => field.label).join(', ')}.
               </p>
             ) : null}
+            {blockedByChildren.length > 0 ? (
+              <p className="resolve-warning" role="alert">
+                <AlertTriangle size={15} />
+                Resolve linked handoff tickets first:{' '}
+                {blockedByChildren.map((child) => child.ticketNumber).join(', ')}.
+              </p>
+            ) : null}
             <label className="span-all">
               Resolution note
               <textarea
@@ -6874,11 +6940,31 @@ function OmniApp() {
               />
               <span>Email the customer that their request is resolved</span>
             </label>
+            {resolvableCase ? (
+              <label className="toggle-row span-all">
+                <input
+                  type="checkbox"
+                  checked={resolveDialog.resolveCase}
+                  onChange={(event) =>
+                    setResolveDialog((current) =>
+                      current ? { ...current, resolveCase: event.target.checked } : current,
+                    )
+                  }
+                />
+                <span>
+                  Also resolve case {resolvableCase.publicId} — this is its last open ticket
+                </span>
+              </label>
+            ) : null}
             <div className="quick-create-footer">
               <button type="button" className="secondary-action" onClick={() => setResolveDialog(null)}>
                 Cancel
               </button>
-              <button type="submit" className="primary-action" disabled={resolveBusy || missing.length > 0}>
+              <button
+                type="submit"
+                className="primary-action"
+                disabled={resolveBusy || missing.length > 0 || blockedByChildren.length > 0}
+              >
                 <Check size={16} />
                 {resolveBusy ? 'Resolving…' : resolveDialog.notify ? 'Resolve & notify' : 'Resolve'}
               </button>

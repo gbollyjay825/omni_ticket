@@ -1038,6 +1038,23 @@ def _coerce_dt(value: object) -> datetime | None:
     return None
 
 
+def _open_handoff_children(db: Session, ticket: TicketRecord) -> list[TicketRecord]:
+    """Open handoff-child tickets spawned from this ticket — a parent can't close
+    while a team is still working a linked child (Freshdesk parent/child rule)."""
+    candidates = db.scalars(
+        select(TicketRecord).where(
+            TicketRecord.market_id == ticket.market_id,
+            TicketRecord.status.not_in(list(_RESOLVED_STATUSES)),
+        )
+    ).all()
+    return [
+        candidate
+        for candidate in candidates
+        if (candidate.custom_fields or {}).get("linked_ticket_type") == "handoff_child"
+        and (candidate.custom_fields or {}).get("source_ticket_id") == ticket.id
+    ]
+
+
 def _sla_met_at(record: TicketRecord, when: datetime) -> bool | None:
     """Frozen SLA outcome: did the ticket meet its resolution target at moment `when`?
     Returns None when no resolution target is known."""
@@ -2072,6 +2089,17 @@ class TicketRepository:
         custom_fields_patch = patch.pop("custom_fields", None)
         resolution_note = patch.pop("resolution_note", None)
         notify_customer = patch.pop("notify_customer", None)
+        requested_status = patch.get("status")
+        if requested_status in _RESOLVED_STATUSES and previous_status not in _RESOLVED_STATUSES:
+            open_children = _open_handoff_children(db, record)
+            if open_children:
+                raise HTTPException(
+                    status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail=(
+                        "Resolve linked handoff tickets first: "
+                        + ", ".join(child.public_id for child in open_children)
+                    ),
+                )
         for key, value in patch.items():
             if value is not None:
                 setattr(record, key, value)
