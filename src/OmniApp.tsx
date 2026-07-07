@@ -2844,6 +2844,7 @@ function OmniApp() {
       const detail = await fetchBackendPortalTicket(portalMarket, publicId, email)
       setPortalTicketDetail(detail)
       setPortalReplyBody('')
+      setPortalCsatDraft({ rating: 0, comment: '' })
       setPortalAnswers(detail.article_suggestions)
       setPortalLookup((current) => ({ ...current, publicId: detail.public_id, email }))
       setPortalLookupNotice(`Ticket ${detail.public_id} is ${detail.customer_status.toLowerCase()}.`)
@@ -3509,6 +3510,21 @@ function OmniApp() {
   }
 
   function applyBulkTicketUpdate(patch: Partial<OmniConversation>) {
+    if (patch.status && isClosedOut(patch.status)) {
+      // Bulk close-out honours the same guards as the resolve dialog, per ticket.
+      const targets = selectedTicketIds
+        .map((id) => state.conversations.find((conversation) => conversation.id === id))
+        .filter((conversation): conversation is OmniConversation => Boolean(conversation))
+      void (async () => {
+        let succeeded = 0
+        for (const conversation of targets) {
+          if (await guardedStatusChange(conversation, patch.status as ConversationStatus)) succeeded += 1
+        }
+        announcePrototype(`${succeeded} of ${targets.length} tickets closed out.`)
+      })()
+      setSelectedTicketIds([])
+      return
+    }
     selectedTicketIds.forEach((id) => updateConversation(id, patch))
     setSelectedTicketIds([])
   }
@@ -4441,12 +4457,50 @@ function OmniApp() {
       )
       return
     }
-    await updateConversation(
+    const ok = await updateConversation(
       conversation.id,
       { status: 'resolved', slaState: 'healthy' },
       { resolutionNote: '', notifyCustomer: false },
     )
-    announcePrototype('Ticket resolved without a customer notification email.')
+    announcePrototype(
+      ok
+        ? 'Ticket resolved without a customer notification email.'
+        : 'Resolve failed — the backend rejected the update.',
+    )
+  }
+
+  // Every path that sets a closed-out status goes through the same guards the
+  // resolve dialog enforces (required fields + open handoff children).
+  async function guardedStatusChange(
+    conversation: OmniConversation,
+    nextStatus: ConversationStatus,
+  ): Promise<boolean> {
+    if (!isClosedOut(nextStatus)) {
+      return updateConversation(conversation.id, { status: nextStatus })
+    }
+    const missing = requiredFieldsMissingForResolve(conversation)
+    if (missing.length > 0) {
+      announcePrototype(
+        `${conversation.ticketNumber}: complete required fields before resolving (${missing
+          .map((field) => field.label)
+          .join(', ')}).`,
+      )
+      return false
+    }
+    const children = openHandoffChildren(conversation)
+    if (children.length > 0) {
+      announcePrototype(
+        `${conversation.ticketNumber}: resolve linked handoff tickets first (${children
+          .map((child) => child.ticketNumber)
+          .join(', ')}).`,
+      )
+      return false
+    }
+    return updateConversation(
+      conversation.id,
+      { status: nextStatus, slaState: 'healthy' },
+      { resolutionNote: '', notifyCustomer: false },
+    )
   }
 
   async function submitResolve() {
@@ -4460,11 +4514,16 @@ function OmniApp() {
     const caseToResolve = resolveDialog.resolveCase ? caseResolvableAfter(selectedConversation) : undefined
     setResolveBusy(true)
     try {
-      await updateConversation(
+      const ok = await updateConversation(
         selectedConversation.id,
         { status: resolveDialog.finalStatus, slaState: 'healthy' },
         { resolutionNote: resolveDialog.note.trim(), notifyCustomer: resolveDialog.notify },
       )
+      if (!ok) {
+        // Keep the dialog open so nothing is lost; the sync banner carries the error.
+        announcePrototype('Resolve failed — the backend rejected the update.')
+        return
+      }
       if (caseToResolve) {
         await setCaseStatus(caseToResolve.id, 'resolved')
       }
@@ -4836,7 +4895,9 @@ function OmniApp() {
     const groupOptions = state.supportGroups.map((group) => group.name)
     const isUnfilteredDashboard =
       dashboardRange === 'all' && dashboardTicketGroup === 'all' && dashboardChatGroup === 'all'
-    const endpointDashboard = backendSession
+    // Offline: server numbers may belong to a previous filter selection, so ignore
+    // them and let the client-side fallback compute the current range instead.
+    const endpointDashboard = backendSession && online
       ? dashboardAnalytics ?? (isUnfilteredDashboard ? backendSnapshot?.analytics : null)
       : null
     const ticketTrends = endpointDashboard?.ticket_trends ?? {}
@@ -6311,10 +6372,14 @@ function OmniApp() {
                     onClick={async () => {
                       setScenarioRunBusy(true)
                       try {
-                        await runScenario(selectedConversation.id, scenarioPick)
+                        const ok = await runScenario(selectedConversation.id, scenarioPick)
                         const name = state.scenarioAutomations.find((s) => s.id === scenarioPick)?.name
-                        announcePrototype(`Scenario "${name ?? 'automation'}" applied.`)
-                        setScenarioPick('')
+                        announcePrototype(
+                          ok
+                            ? `Scenario "${name ?? 'automation'}" applied.`
+                            : `Scenario "${name ?? 'automation'}" failed — see the sync banner.`,
+                        )
+                        if (ok) setScenarioPick('')
                       } finally {
                         setScenarioRunBusy(false)
                       }
@@ -6329,11 +6394,21 @@ function OmniApp() {
               Status
               <select
                 value={selectedConversation.status}
-                onChange={(event) =>
-                  updateConversation(selectedConversation.id, {
-                    status: event.target.value as ConversationStatus,
-                  })
-                }
+                onChange={(event) => {
+                  const next = event.target.value as ConversationStatus
+                  if (isClosedOut(next)) {
+                    // Closing out from the dropdown gets the full close-out dialog
+                    // (note, notify, guards) instead of a silent status write.
+                    setResolveDialog({
+                      note: '',
+                      notify: next === 'resolved',
+                      resolveCase: false,
+                      finalStatus: next,
+                    })
+                    return
+                  }
+                  void updateConversation(selectedConversation.id, { status: next })
+                }}
               >
                 {statusOptions
                   .filter((option) => option !== 'all')
@@ -6802,7 +6877,7 @@ function OmniApp() {
                         <select
                           value={conversation.status}
                           onChange={(event) =>
-                            updateConversation(conversation.id, { status: event.target.value as ConversationStatus })
+                            void guardedStatusChange(conversation, event.target.value as ConversationStatus)
                           }
                           aria-label={`Status for ${conversation.ticketNumber}`}
                         >

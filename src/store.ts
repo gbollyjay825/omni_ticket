@@ -2072,9 +2072,11 @@ export function useOmniStore() {
     if (options?.resolutionNote !== undefined) backendPatch.resolution_note = options.resolutionNote
     if (options?.notifyCustomer !== undefined) backendPatch.notify_customer = options.notifyCustomer
 
-    if (
-      Object.keys(backendPatch).length > 0 &&
-      await syncBackendMutation(
+    if (Object.keys(backendPatch).length > 0 && online && backendSession) {
+      // Backend-connected: a rejection (e.g. open-children guard, validation)
+      // must surface as failure, NOT fall through to an optimistic local patch
+      // that pretends the ticket was updated.
+      return await syncBackendMutation(
         (session) => patchBackendTicket(conversationId, backendPatch, session),
         () => {
           const conversation = state.conversations.find((item) => item.id === conversationId)
@@ -2086,8 +2088,6 @@ export function useOmniStore() {
           }
         },
       )
-    ) {
-      return
     }
 
     patchState((current) => ({
@@ -2098,6 +2098,7 @@ export function useOmniStore() {
           : conversation,
       ),
     }))
+    return true
   }
 
   function updateSettings(patch: Partial<WorkspaceSettings>) {

@@ -527,6 +527,10 @@ def _portal_ticket_detail_payload(
             CsatFeedbackRecord.ticket_id == ticket_id,
         )
     )
+    # Only the customer's own survey rating is public — agent-recorded or imported
+    # feedback (and its internal comments) must never leak through the portal.
+    if existing_csat is not None and existing_csat.source != CsatSource.customer_survey.value:
+        existing_csat = None
     csat_allowed = ticket.status.value in {"solved", "closed"}
     return PortalTicketDetailResponse(
         ticket_id=ticket.id,

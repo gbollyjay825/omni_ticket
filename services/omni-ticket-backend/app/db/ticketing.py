@@ -608,7 +608,7 @@ def _append_threaded_connector_reply(
         target_tags.add("customer-replied")
     target_ticket.tags = sorted(target_tags)
     if previous_status != TicketStatus.open.value:
-        target_ticket.status = TicketStatus.open.value
+        _apply_status_with_stamps(target_ticket, TicketStatus.open.value, utc_now())
         _add_timeline_record(
             db,
             state,
@@ -1100,18 +1100,55 @@ def _queue_event_notification_email(
 
 def _apply_status_with_stamps(record: TicketRecord, new_status: str, now: datetime) -> None:
     """Set a ticket status while maintaining the close-out lifecycle stamps
-    (resolved_at/closed_at + frozen SLA outcome), clearing them on reopen."""
+    (resolved_at/closed_at + frozen SLA outcome), clearing them on reopen.
+    solved<->closed moves keep the original resolved_at and only adjust closed_at."""
     previous = record.status
-    if new_status in _RESOLVED_STATUSES and previous not in _RESOLVED_STATUSES:
+    if new_status in _RESOLVED_STATUSES:
         if record.resolved_at is None:
             record.resolved_at = now
             record.sla_resolution_met = _sla_met_at(record, now)
         record.closed_at = now if new_status == TicketStatus.closed.value else None
-    elif previous in _RESOLVED_STATUSES and new_status not in _RESOLVED_STATUSES:
+    elif previous in _RESOLVED_STATUSES:
         record.resolved_at = None
         record.closed_at = None
         record.sla_resolution_met = None
     record.status = new_status
+
+
+def _sync_handoff_for_resolved_child(
+    db: Session,
+    state: InMemoryStore,
+    record: TicketRecord,
+    market_id: str,
+    now: datetime,
+) -> None:
+    """Handoff-child ticket closed out -> resolve its handoff and tell the parent."""
+    handoff_id = (record.custom_fields or {}).get("handoff_id")
+    if not handoff_id:
+        return
+    handoff_record = db.get(HandoffRecord, handoff_id)
+    if (
+        handoff_record is None
+        or handoff_record.market_id != market_id
+        or handoff_record.status in {HandoffStatus.resolved.value, HandoffStatus.cancelled.value}
+    ):
+        return
+    handoff_record.status = HandoffStatus.resolved.value
+    handoff_record.updated_at = now
+    parent = db.get(TicketRecord, handoff_record.ticket_id)
+    if parent is not None and parent.market_id == market_id:
+        _add_timeline_record(
+            db,
+            state,
+            parent,
+            event_type=TimelineEventType.handoff_resolved,
+            channel=ChannelType.internal,
+            actor="handoff-service",
+            body=f"Handoff to {handoff_record.to_team} completed — {record.public_id} resolved.",
+            public=False,
+            metadata={"handoff_id": handoff_record.id, "synced_from": "child_ticket"},
+        )
+    state.handoffs[handoff_record.id] = handoff_from_record(handoff_record)
 
 
 def _open_handoff_children(db: Session, ticket: TicketRecord) -> list[TicketRecord]:
@@ -2271,38 +2308,28 @@ class TicketRepository:
                 },
             )
 
-        resolved_now = status_changed and record.status in _RESOLVED_STATUSES
-        # Handoff-child ticket closed out -> resolve its handoff and tell the parent.
+        # Close-out side effects fire only when ENTERING the resolved set — a
+        # solved -> closed move must not re-post the note or re-email the customer.
+        resolved_now = (
+            status_changed
+            and record.status in _RESOLVED_STATUSES
+            and previous_status not in _RESOLVED_STATUSES
+        )
         if resolved_now:
-            handoff_id = (record.custom_fields or {}).get("handoff_id")
-            if handoff_id:
-                handoff_record = db.get(HandoffRecord, handoff_id)
-                if (
-                    handoff_record is not None
-                    and handoff_record.market_id == market_id
-                    and handoff_record.status
-                    not in {HandoffStatus.resolved.value, HandoffStatus.cancelled.value}
-                ):
-                    handoff_record.status = HandoffStatus.resolved.value
-                    handoff_record.updated_at = now
-                    parent = db.get(TicketRecord, handoff_record.ticket_id)
-                    if parent is not None and parent.market_id == market_id:
-                        _add_timeline_record(
-                            db,
-                            state,
-                            parent,
-                            event_type=TimelineEventType.handoff_resolved,
-                            channel=ChannelType.internal,
-                            actor="handoff-service",
-                            body=(
-                                f"Handoff to {handoff_record.to_team} completed — "
-                                f"{record.public_id} resolved."
-                            ),
-                            public=False,
-                            metadata={"handoff_id": handoff_record.id, "synced_from": "child_ticket"},
-                        )
-                    state.handoffs[handoff_record.id] = handoff_from_record(handoff_record)
+            _sync_handoff_for_resolved_child(db, state, record, market_id, now)
         note_text = (resolution_note or "").strip()
+        # A deliberately PAUSED "Ticket resolved" notification suppresses the customer
+        # email even when the agent leaves notify on; a missing config row falls back
+        # to sensible defaults so fresh installs still notify.
+        resolution_notification = db.scalar(
+            select(EmailNotificationRecord).where(
+                EmailNotificationRecord.market_id == market_id,
+                EmailNotificationRecord.event == "ticket_resolved",
+            )
+        )
+        notification_paused = resolution_notification is not None and not resolution_notification.active
+        if notification_paused and notify_customer:
+            notify_customer = False
         if resolved_now and notify_customer:
             customer = db.get(CustomerRecord, record.customer_id)
             to_email = customer.email if customer else ""
@@ -2311,13 +2338,7 @@ class TicketRepository:
                 "needs attention and we'll reopen it."
             )
             if to_email:
-                notification = db.scalar(
-                    select(EmailNotificationRecord).where(
-                        EmailNotificationRecord.market_id == market_id,
-                        EmailNotificationRecord.event == "ticket_resolved",
-                        EmailNotificationRecord.active.is_(True),
-                    )
-                )
+                notification = resolution_notification
                 subject = (notification.subject if notification else "") or (
                     f"Your request {record.public_id} has been resolved"
                 )
@@ -2409,10 +2430,52 @@ class TicketRepository:
             raise HTTPException(status.HTTP_409_CONFLICT, detail="Scenario is paused")
 
         now = utc_now()
-        applied: list[str] = []
+        # Pre-validate the whole bundle before touching the ticket: action values are
+        # free text in Setup, and committing an invalid status/priority would corrupt
+        # the record and 500 every ticket read for the market. Common UI-vocabulary
+        # synonyms are normalised instead of rejected.
+        status_synonyms = {"resolved": TicketStatus.solved.value, "new": TicketStatus.open.value}
+        priority_synonyms = {"medium": Priority.normal.value}
+        valid_statuses = {item.value for item in TicketStatus}
+        valid_priorities = {item.value for item in Priority}
+        normalized_actions: list[tuple[str, str]] = []
         for action in scenario.actions or []:
             action_type = str(action.get("type", ""))
             value = str(action.get("value", "")).strip()
+            if action_type == "set_status" and value:
+                value = status_synonyms.get(value.lower(), value.lower())
+                if value not in valid_statuses:
+                    raise HTTPException(
+                        status.HTTP_422_UNPROCESSABLE_CONTENT,
+                        detail=f"Scenario '{scenario.name}': invalid status '{action.get('value')}'.",
+                    )
+            elif action_type == "set_priority" and value:
+                value = priority_synonyms.get(value.lower(), value.lower())
+                if value not in valid_priorities:
+                    raise HTTPException(
+                        status.HTTP_422_UNPROCESSABLE_CONTENT,
+                        detail=f"Scenario '{scenario.name}': invalid priority '{action.get('value')}'.",
+                    )
+            normalized_actions.append((action_type, value))
+        # The scenario engine honours the same close-out guard as manual transitions.
+        closes_out = any(
+            action_type == "set_status" and value in _RESOLVED_STATUSES
+            for action_type, value in normalized_actions
+        )
+        if closes_out and record.status not in _RESOLVED_STATUSES:
+            open_children = _open_handoff_children(db, record)
+            if open_children:
+                raise HTTPException(
+                    status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail=(
+                        "Resolve linked handoff tickets first: "
+                        + ", ".join(child.public_id for child in open_children)
+                    ),
+                )
+
+        previous_status = record.status
+        applied: list[str] = []
+        for action_type, value in normalized_actions:
             if action_type == "add_tag" and value:
                 if value not in (record.tags or []):
                     record.tags = [*(record.tags or []), value]
@@ -2440,6 +2503,8 @@ class TicketRepository:
                 )
                 applied.append("note added")
 
+        if record.status in _RESOLVED_STATUSES and previous_status not in _RESOLVED_STATUSES:
+            _sync_handoff_for_resolved_child(db, state, record, market_id, now)
         record.updated_at = now
         _add_timeline_record(
             db,
@@ -3029,7 +3094,7 @@ class TicketRepository:
             metadata={"source": "portal", "submitted_by": submitted_by},
         )
         if previous_status != TicketStatus.open.value:
-            ticket_record.status = TicketStatus.open.value
+            _apply_status_with_stamps(ticket_record, TicketStatus.open.value, utc_now())
             _add_timeline_record(
                 db,
                 state,
@@ -3242,15 +3307,23 @@ class TicketRepository:
             },
         )
         # Handoff resolved -> its linked child ticket closes out with it.
-        if (
-            status_was != HandoffStatus.resolved.value
-            and handoff_record.status == HandoffStatus.resolved.value
-            and handoff_record.linked_ticket_id
-        ):
+        # Handoff cancelled -> the auto-created child closes too, so it can't strand
+        # the parent behind the open-children guard.
+        terminal_transitions = {
+            HandoffStatus.resolved.value: (TicketStatus.solved.value, "completed"),
+            HandoffStatus.cancelled.value: (TicketStatus.closed.value, "cancelled"),
+        }
+        transition = (
+            terminal_transitions.get(handoff_record.status)
+            if handoff_record.status != status_was
+            else None
+        )
+        if transition and handoff_record.linked_ticket_id:
+            child_status, verb = transition
             child = db.get(TicketRecord, handoff_record.linked_ticket_id)
             if child is not None and child.market_id == market_id and child.status not in _RESOLVED_STATUSES:
                 sync_now = utc_now()
-                _apply_status_with_stamps(child, TicketStatus.solved.value, sync_now)
+                _apply_status_with_stamps(child, child_status, sync_now)
                 child.updated_at = sync_now
                 _add_timeline_record(
                     db,
@@ -3259,7 +3332,7 @@ class TicketRepository:
                     event_type=TimelineEventType.status_change,
                     channel=ChannelType.internal,
                     actor="handoff-service",
-                    body=f"Ticket resolved — handoff to {handoff_record.to_team} completed.",
+                    body=f"Ticket {'resolved' if child_status == TicketStatus.solved.value else 'closed'} — handoff to {handoff_record.to_team} {verb}.",
                     public=False,
                     metadata={"handoff_id": handoff_record.id, "synced_from": "handoff"},
                 )

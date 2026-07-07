@@ -1,3 +1,4 @@
+import re
 from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
@@ -149,8 +150,9 @@ def _ticket_in_dashboard_scope(record: TicketRecord) -> bool:
     tags = {str(tag).lower() for tag in (record.tags or [])}
     if tags & DASHBOARD_EXCLUDED_TAGS:
         return False
-    subject = record.subject.lower()
-    return "smoke" not in subject and "test" not in subject
+    # Word-boundary match so real subjects like "latest booking" or "contest entry"
+    # aren't silently dropped from the dashboard.
+    return not re.search(r"\b(?:test|smoke)\b", record.subject, flags=re.IGNORECASE)
 
 
 def _filter_dashboard_records(
@@ -237,10 +239,13 @@ def _average_response_seconds(timeline: dict[str, list[TimelineEventRecord]]) ->
 
 
 def _average_resolution_seconds(tickets: list) -> float | None:
+    # Prefer the immutable resolved_at stamp — updated_at drifts with later edits
+    # and the 72h auto-close would otherwise inflate every resolution time.
     values = [
-        (_as_utc(ticket.updated_at) - _as_utc(ticket.created_at)).total_seconds()
+        (_as_utc(ticket.resolved_at or ticket.updated_at) - _as_utc(ticket.created_at)).total_seconds()
         for ticket in tickets
-        if ticket.status in CLOSED_STATUSES and _as_utc(ticket.updated_at) >= _as_utc(ticket.created_at)
+        if ticket.status in CLOSED_STATUSES
+        and _as_utc(ticket.resolved_at or ticket.updated_at) >= _as_utc(ticket.created_at)
     ]
     return _average(values)
 

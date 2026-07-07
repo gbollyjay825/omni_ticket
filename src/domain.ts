@@ -15,7 +15,7 @@ export type ConversationStatus = 'new' | 'open' | 'pending' | 'waiting' | 'resol
 
 /** Resolved = agent finished, awaiting confirmation/auto-close. Closed = terminal.
  * Both count as "closed out" for open-work filters and metrics. */
-export function isClosedOut(status: ConversationStatus): boolean {
+export function isClosedOut(status: ConversationStatus): status is 'resolved' | 'closed' {
   return status === 'resolved' || status === 'closed'
 }
 export type Priority = 'urgent' | 'high' | 'medium' | 'low'

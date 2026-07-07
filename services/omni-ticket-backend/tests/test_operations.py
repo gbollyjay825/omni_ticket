@@ -817,6 +817,35 @@ def test_resolving_without_notify_keeps_note_internal(client: TestClient) -> Non
     assert note["type"] == "internal_note"
 
 
+def test_portal_reply_reopen_clears_closeout_stamps(client: TestClient) -> None:
+    public_client = TestClient(create_app())
+    email = f"reopen-{uuid4().hex}@example.com"
+    created = public_client.post(
+        "/api/v1/portal/ng/tickets",
+        json={
+            "name": "Reopen Customer",
+            "email": email,
+            "subject": "Baggage claim delayed",
+            "description": "Still waiting on my baggage claim update.",
+            "custom_fields": {"issue_category": "Booking"},
+        },
+    ).json()
+    ticket_id = created["ticket_id"]
+    client.patch(f"/api/v1/tickets/{ticket_id}", json={"status": "solved"})
+    assert client.get(f"/api/v1/tickets/{ticket_id}").json()["ticket"]["resolved_at"] is not None
+
+    # Customer replies -> auto-reopen must clear the stamps so a later re-resolve
+    # records a FRESH resolution time, not the first one.
+    public_client.post(
+        f"/api/v1/portal/ng/tickets/{created['public_id']}/reply",
+        json={"email": email, "body": "It arrived damaged, please reopen."},
+    )
+    reopened = client.get(f"/api/v1/tickets/{ticket_id}").json()["ticket"]
+    assert reopened["status"] == "open"
+    assert reopened["resolved_at"] is None
+    assert reopened["sla_resolution_met"] is None
+
+
 def test_handoff_and_child_ticket_status_sync_both_directions(client: TestClient) -> None:
     tickets = [
         item
@@ -894,6 +923,80 @@ def test_run_scenario_applies_action_bundle(client: TestClient) -> None:
 
     missing = client.post(f"/api/v1/tickets/{ticket['id']}/scenarios/not-a-scenario/run")
     assert missing.status_code == 404
+
+
+def test_run_scenario_validates_and_normalizes_free_text_values(client: TestClient) -> None:
+    ticket = next(
+        item
+        for item in client.get("/api/v1/tickets").json()
+        if item["status"] not in ("solved", "closed")
+    )
+    # UI-vocabulary synonyms normalise instead of corrupting the record...
+    created = client.post(
+        "/api/v1/scenario-automations",
+        json={
+            "name": "Close with UI words",
+            "description": "Uses frontend vocabulary.",
+            "actions": [
+                {"type": "set_status", "value": "resolved"},
+                {"type": "set_priority", "value": "medium"},
+            ],
+        },
+    )
+    assert created.status_code == 201
+    scenario_id = created.json()["id"]
+    run = client.post(f"/api/v1/tickets/{ticket['id']}/scenarios/{scenario_id}/run")
+    assert run.status_code == 200
+    assert run.json()["status"] == "solved"
+    assert run.json()["priority"] == "normal"
+    assert run.json()["resolved_at"] is not None
+
+    # ...and garbage is rejected up-front with nothing applied.
+    bad = client.post(
+        "/api/v1/scenario-automations",
+        json={
+            "name": "Broken scenario",
+            "description": "Invalid status value.",
+            "actions": [{"type": "set_status", "value": "donezo"}],
+        },
+    )
+    bad_id = bad.json()["id"]
+    other = next(
+        item
+        for item in client.get("/api/v1/tickets").json()
+        if item["status"] not in ("solved", "closed")
+    )
+    rejected = client.post(f"/api/v1/tickets/{other['id']}/scenarios/{bad_id}/run")
+    assert rejected.status_code == 422
+    assert "invalid status" in rejected.json()["detail"]
+    # The market's ticket list still reads fine — nothing was corrupted.
+    assert client.get("/api/v1/tickets").status_code == 200
+    assert client.get(f"/api/v1/tickets/{other['id']}").json()["ticket"]["status"] == other["status"]
+
+
+def test_solved_to_closed_transition_stamps_closed_at(client: TestClient) -> None:
+    ticket = next(
+        item
+        for item in client.get("/api/v1/tickets").json()
+        if item["status"] not in ("solved", "closed")
+    )
+
+    def etag() -> str:
+        return client.get(f"/api/v1/tickets/{ticket['id']}").headers["ETag"]
+
+    client.patch(f"/api/v1/tickets/{ticket['id']}", headers={"If-Match": etag()}, json={"status": "solved"})
+    solved = client.get(f"/api/v1/tickets/{ticket['id']}").json()["ticket"]
+    assert solved["closed_at"] is None
+    first_resolved_at = solved["resolved_at"]
+
+    client.patch(f"/api/v1/tickets/{ticket['id']}", headers={"If-Match": etag()}, json={"status": "closed"})
+    closed = client.get(f"/api/v1/tickets/{ticket['id']}").json()["ticket"]
+    assert closed["closed_at"] is not None
+    assert closed["resolved_at"] == first_resolved_at  # original resolution moment kept
+
+    client.patch(f"/api/v1/tickets/{ticket['id']}", headers={"If-Match": etag()}, json={"status": "solved"})
+    reopened_to_solved = client.get(f"/api/v1/tickets/{ticket['id']}").json()["ticket"]
+    assert reopened_to_solved["closed_at"] is None
 
 
 def test_ticket_creation_queues_acknowledgement_email(client: TestClient) -> None:
