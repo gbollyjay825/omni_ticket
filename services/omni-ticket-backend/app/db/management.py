@@ -836,6 +836,24 @@ class ManagementRepository:
                 bucket["risk"] += 1
             elif sla.get("risk") not in (None, "on_track"):
                 bucket["risk"] += 1
+        # Wiring state comes from real configuration: a channel is only "live" when
+        # its intake path (IMAP credentials / verified signed webhook) is fully set up.
+        from app.services.inbound_adapters import inbound_adapter_router
+        from app.services.outbound_adapters import outbound_adapter_router
+
+        inbound_configs = {
+            config.provider.value: config
+            for config in inbound_adapter_router.config_summary(db, market_id)
+        }
+        outbound_configs = {
+            config.provider.value: config
+            for config in outbound_adapter_router.config_summary(db, market_id)
+        }
+        always_on = {
+            "portal": "Public Help Center — always able to receive requests.",
+            "api": "Authenticated API intake — always able to receive events.",
+            "internal": "Internal channel.",
+        }
         for channel in channels:
             bucket = stats.get(
                 channel.type.value, {"queued": 0, "active": 0, "risk": 0, "breached": 0}
@@ -847,6 +865,29 @@ class ManagementRepository:
                 channel.health = (
                     ChannelHealth.degraded if bucket["risk"] > 0 else ChannelHealth.healthy
                 )
+            key = channel.type.value
+            if key in always_on:
+                channel.intake_live = True
+                channel.intake_note = always_on[key]
+                channel.outbound_live = key != "internal"
+                channel.outbound_note = always_on[key]
+                continue
+            inbound = inbound_configs.get(key)
+            channel.intake_live = bool(inbound and inbound.live_intake)
+            channel.intake_note = (
+                (inbound.notes if inbound else "No intake adapter for this channel.")
+                if channel.intake_live or not inbound or not inbound.missing_settings
+                else "Missing: " + ", ".join(inbound.missing_settings)
+            )
+            outbound = outbound_configs.get(key)
+            outbound_live = bool(outbound and getattr(outbound, "live_delivery", False))
+            channel.outbound_live = outbound_live
+            outbound_missing = list(getattr(outbound, "missing_settings", []) or []) if outbound else []
+            channel.outbound_note = (
+                "Delivery live."
+                if outbound_live
+                else ("Missing: " + ", ".join(outbound_missing) if outbound_missing else "Delivery not configured.")
+            )
         state.channels = {
             **{key: value for key, value in state.channels.items() if value.market_id != market_id},
             **{channel.id: channel for channel in channels},

@@ -4747,6 +4747,13 @@ function OmniApp() {
     if (viewId === 'whatsapp') setFilters({ channel: 'whatsapp' })
   }
 
+  /** Humanise a wait in minutes: 45m, 3.5h, 12d — old demo tickets shouldn't read "43085m". */
+  function formatWaitMinutes(minutes: number): string {
+    if (minutes < 90) return `${Math.round(minutes)}m`
+    if (minutes < 48 * 60) return `${Math.round((minutes / 60) * 10) / 10}h`
+    return `${Math.round(minutes / (24 * 60))}d`
+  }
+
   function focusComposer() {
     if (typeof document === 'undefined') return
     window.requestAnimationFrame(() => {
@@ -7417,7 +7424,7 @@ function OmniApp() {
                 <span>Active sessions</span>
               </article>
               <article>
-                <strong>{avgWait}m</strong>
+                <strong>{formatWaitMinutes(avgWait)}</strong>
                 <span>Avg wait</span>
               </article>
               <article>
@@ -7596,13 +7603,47 @@ function OmniApp() {
           <Icon size={20} />
         </div>
 
+        <div
+          className={`channel-live-banner ${channel.intakeLive === false ? 'offline' : 'live'}`}
+          role="status"
+        >
+          {channel.intakeLive === false ? (
+            <>
+              <AlertTriangle size={15} />
+              <span>
+                <strong>Not receiving live data.</strong>{' '}
+                {channel.intakeNote || 'Connect this channel in Setup to go live.'}
+              </span>
+              <button
+                type="button"
+                className="secondary-action"
+                onClick={() => {
+                  selectScreen('admin')
+                  openSetupModule(
+                    channel.id === 'email' ? 'Email' : channel.id === 'chat' ? 'Widgets' : 'Provider credentials',
+                  )
+                }}
+              >
+                Connect
+              </button>
+            </>
+          ) : (
+            <>
+              <CheckCircle2 size={15} />
+              <span>
+                <strong>Live.</strong> {channel.intakeNote || 'This channel is receiving real traffic.'}
+              </span>
+            </>
+          )}
+        </div>
+
         <div className="channel-overview-metrics">
           <div>
             <strong>{channel.queueDepth}</strong>
             <span>waiting</span>
           </div>
           <div>
-            <strong>{channel.avgWaitMinutes}m</strong>
+            <strong>{formatWaitMinutes(channel.avgWaitMinutes)}</strong>
             <span>avg wait</span>
           </div>
           <div>
@@ -7829,12 +7870,18 @@ function OmniApp() {
                     aria-label={`${activeChannel.label} reply`}
                   />
                   <div>
-                    <span>{online ? 'Ready to reply in this channel' : 'Offline: reply will send later'}</span>
+                    <span>
+                      {activeChannel.outboundLive === false
+                        ? `Channel not connected — delivery is not configured (${activeChannel.outboundNote || 'add provider credentials in Setup'})`
+                        : online
+                          ? 'Ready to reply in this channel'
+                          : 'Offline: reply will send later'}
+                    </span>
                     <button
                       className="primary-action"
                       type="button"
                       onClick={() => sendLiveChatReply(liveConversation, activeDirectChannelId)}
-                      disabled={!liveChatDraft.trim()}
+                      disabled={!liveChatDraft.trim() || activeChannel.outboundLive === false}
                     >
                       <Send size={17} />
                       Reply in {activeChannel.shortLabel}
@@ -7950,9 +7997,10 @@ function OmniApp() {
             <div className="channel-table">
               {state.channels.map((channel) => {
                 const Icon = channelIcons[channel.id]
+                const wired = channel.intakeLive !== false
                 return (
                   <article
-                    className={`channel-row ${state.selectedChannelId === channel.id ? 'active' : ''}`}
+                    className={`channel-row ${state.selectedChannelId === channel.id ? 'active' : ''} ${wired ? '' : 'channel-offline'}`}
                     key={channel.id}
                   >
                     <div className="row-icon">
@@ -7961,29 +8009,54 @@ function OmniApp() {
                     <div>
                       <strong>{channel.label}</strong>
                       <span>{channel.description}</span>
+                      {!wired ? (
+                        <em className="channel-wiring-note">
+                          Cannot receive live data — {channel.intakeNote || 'not connected yet.'}
+                        </em>
+                      ) : null}
                     </div>
                     <div className="channel-row-meta">
                       <span>{channel.queueDepth} waiting</span>
-                      <span>{channel.avgWaitMinutes}m avg wait</span>
-                      <span className={`chip status-${channel.status}`}>{titleCase(channel.status)}</span>
-                      <button
-                        className="secondary-action"
-                        type="button"
-                        aria-label={
-                          isDirectMessageChannel(channel.id)
-                            ? `Open ${channel.label} chat workspace`
-                            : `Focus ${channel.label} queue`
-                        }
-                        onClick={() =>
-                          isDirectMessageChannel(channel.id)
-                            ? openDirectChannel(channel.id)
-                            : setSelectedChannel(channel.id)
-                        }
-                      >
-                        {isDirectMessageChannel(channel.id)
-                          ? 'Open chat'
-                          : 'View queue'}
-                      </button>
+                      <span>{formatWaitMinutes(channel.avgWaitMinutes)} avg wait</span>
+                      {wired ? (
+                        <span className={`chip status-${channel.status}`}>{titleCase(channel.status)}</span>
+                      ) : (
+                        <span className="chip chip-offline">Not connected</span>
+                      )}
+                      {wired ? (
+                        <button
+                          className="secondary-action"
+                          type="button"
+                          aria-label={
+                            isDirectMessageChannel(channel.id)
+                              ? `Open ${channel.label} chat workspace`
+                              : `Focus ${channel.label} queue`
+                          }
+                          onClick={() =>
+                            isDirectMessageChannel(channel.id)
+                              ? openDirectChannel(channel.id)
+                              : setSelectedChannel(channel.id)
+                          }
+                        >
+                          {isDirectMessageChannel(channel.id)
+                            ? 'Open chat'
+                            : 'View queue'}
+                        </button>
+                      ) : (
+                        <button
+                          className="secondary-action"
+                          type="button"
+                          aria-label={`Connect ${channel.label} in Setup`}
+                          onClick={() => {
+                            selectScreen('admin')
+                            openSetupModule(
+                              channel.id === 'email' ? 'Email' : channel.id === 'chat' ? 'Widgets' : 'Provider credentials',
+                            )
+                          }}
+                        >
+                          Connect
+                        </button>
+                      )}
                     </div>
                   </article>
                 )

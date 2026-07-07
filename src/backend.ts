@@ -830,6 +830,10 @@ export interface BackendChannel {
   active: number
   sla_risk: number
   capabilities: string[]
+  intake_live?: boolean
+  intake_note?: string
+  outbound_live?: boolean
+  outbound_note?: string
 }
 
 export type BackendTicketFieldType =

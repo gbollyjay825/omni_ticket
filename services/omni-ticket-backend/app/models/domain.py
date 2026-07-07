@@ -524,6 +524,12 @@ class Channel(BaseModel):
     active: int = 0
     sla_risk: int = 0
     capabilities: list[str] = Field(default_factory=list)
+    # Wiring state, computed from real configuration (IMAP settings, connector
+    # accounts, widget/portal) at serialization time — never stored.
+    intake_live: bool = False
+    intake_note: str = ""
+    outbound_live: bool = False
+    outbound_note: str = ""
 
 
 class Agent(BaseModel):

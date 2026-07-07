@@ -706,7 +706,14 @@ def seed_reference_data(session: Session, source: InMemoryStore = store) -> None
     )
     session.add_all(
         [
-            ChannelRecord(**_payload(channel))
+            ChannelRecord(
+                **{
+                    key: value
+                    for key, value in _payload(channel).items()
+                    # Wiring/readiness fields are computed at read time, never stored.
+                    if key not in {"intake_live", "intake_note", "outbound_live", "outbound_note"}
+                }
+            )
             for channel in source.channels.values()
         ]
     )

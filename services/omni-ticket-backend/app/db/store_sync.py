@@ -94,7 +94,15 @@ def persist_store_state(db: Session, state: InMemoryStore) -> None:
     for settings in state.settings_by_market.values():
         _merge_record(db, WorkspaceSettingsRecord, settings.model_dump(mode="json"))
     for channel in state.channels.values():
-        _merge_record(db, ChannelRecord, channel.model_dump(mode="json"))
+        # Wiring/readiness fields are computed at read time, never stored.
+        _merge_record(
+            db,
+            ChannelRecord,
+            channel.model_dump(
+                mode="json",
+                exclude={"intake_live", "intake_note", "outbound_live", "outbound_note"},
+            ),
+        )
     for agent in state.agents.values():
         _merge_record(
             db,

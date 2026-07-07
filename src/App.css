@@ -5755,6 +5755,67 @@ button.freshchat-global-search:hover {
   color: #b45309;
 }
 
+/* Channel wiring states: unwired channels are greyed out with an honest reason */
+.channel-row.channel-offline {
+  opacity: 0.62;
+  background: var(--surface-2);
+}
+
+.channel-row.channel-offline .row-icon {
+  filter: grayscale(1);
+}
+
+.channel-wiring-note {
+  display: block;
+  margin-top: 3px;
+  font-style: normal;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.chip.chip-offline {
+  background: #e2e8f0;
+  color: #475569;
+}
+
+.channel-live-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 10px;
+  padding: 9px 12px;
+  font-size: 12.5px;
+  margin-bottom: 10px;
+}
+
+.channel-live-banner span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.channel-live-banner.live {
+  border: 1px solid #bbf7d0;
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+.channel-live-banner.offline {
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
+}
+
+.channel-live-banner.offline svg {
+  color: #b45309;
+}
+
+.channel-live-banner button {
+  flex: none;
+  min-height: 30px;
+  font-size: 12px;
+}
+
 /* Run-scenario picker (ticket properties) */
 .scenario-run-row {
   display: flex;

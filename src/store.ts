@@ -496,6 +496,10 @@ function mapChannel(channel: BackendChannel): Channel {
     health: Math.max(12, healthScore - channel.sla_risk * 3),
     intakeEnabled: channel.health !== 'paused',
     description: seed?.description ?? channel.capabilities.join(', '),
+    intakeLive: channel.intake_live ?? false,
+    intakeNote: channel.intake_note ?? '',
+    outboundLive: channel.outbound_live ?? false,
+    outboundNote: channel.outbound_note ?? '',
   }
 }
 
@@ -745,8 +749,26 @@ function mapDiscussionTopic(topic: BackendDiscussionTopic): DiscussionTopic {
   }
 }
 
-function mapAgent(agent: BackendAgent, ticketContexts: BackendTicketContext[]): AgentProfile {
+function mapAgent(
+  agent: BackendAgent,
+  ticketContexts: BackendTicketContext[],
+  csatFeedback: BackendCsatFeedback[] = [],
+): AgentProfile {
   const assignedTickets = ticketContexts.filter((context) => context.ticket.assignee_id === agent.id)
+  // Occupancy and CSAT are computed from the agent's real workload and the real
+  // ratings on their tickets — not the seeded occupancy or a fabricated score.
+  const openAssigned = assignedTickets.filter(
+    (context) => context.ticket.status !== 'solved' && context.ticket.status !== 'closed',
+  )
+  const occupancy =
+    agent.capacity > 0 ? Math.min(100, Math.round((openAssigned.length / agent.capacity) * 100)) : 0
+  const assignedIds = new Set(assignedTickets.map((context) => context.ticket.id))
+  const ratings = csatFeedback
+    .filter((feedback) => assignedIds.has(feedback.ticket_id))
+    .map((feedback) => feedback.rating)
+  const csat = ratings.length
+    ? Math.round((ratings.reduce((total, value) => total + value, 0) / ratings.length / 5) * 100)
+    : 0
   return {
     id: agent.id,
     name: agent.name,
@@ -754,10 +776,10 @@ function mapAgent(agent: BackendAgent, ticketContexts: BackendTicketContext[]): 
     avatar: initials(agent.name),
     availability: agent.status,
     skills: agent.skills.map((skill) => normalizeChannelId(skill).replace('-', ' ')),
-    load: assignedTickets.length,
+    load: openAssigned.length,
     capacity: agent.capacity,
-    occupancy: agent.occupancy,
-    csat: Math.max(82, 100 - agent.occupancy / 2),
+    occupancy,
+    csat,
     shift: `${agent.languages.join(', ').toUpperCase()} coverage`,
   }
 }
@@ -1085,7 +1107,9 @@ function mergeBackendSnapshot(current: OmniState, snapshot: BackendSnapshot): Om
   const customers = snapshot.customers.map((customer) =>
     mapCustomer(customer, companiesById, snapshot.tickets, snapshot.csat_feedback ?? []),
   )
-  const agents = snapshot.agents.map((agent) => mapAgent(agent, snapshot.tickets))
+  const agents = snapshot.agents.map((agent) =>
+    mapAgent(agent, snapshot.tickets, snapshot.csat_feedback ?? []),
+  )
   const handoffs = snapshot.handoffs.map((handoff) => mapHandoff(handoff, conversationsById))
   const cases = (snapshot.cases ?? []).map(mapCase)
   const supportGroups = (snapshot.support_groups ?? snapshot.supportGroups ?? []).map(mapSupportGroup)

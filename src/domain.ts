@@ -53,6 +53,11 @@ export interface Channel {
   health: number
   intakeEnabled: boolean
   description: string
+  /** Wiring state from real configuration: can this channel receive live traffic? */
+  intakeLive?: boolean
+  intakeNote?: string
+  outboundLive?: boolean
+  outboundNote?: string
 }
 
 export interface TimelineEvent {

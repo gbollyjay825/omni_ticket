@@ -925,6 +925,39 @@ def test_run_scenario_applies_action_bundle(client: TestClient) -> None:
     assert missing.status_code == 404
 
 
+def test_channel_wiring_state_reflects_real_configuration(client: TestClient) -> None:
+    channels = client.get("/api/v1/channels").json()
+    by_type = {c["type"]: c for c in channels}
+
+    # Email has no IMAP credentials in this environment -> cannot receive live data.
+    assert by_type["email"]["intake_live"] is False
+    assert "Missing" in by_type["email"]["intake_note"] or "IMAP" in by_type["email"]["intake_note"]
+
+    # WhatsApp starts unwired…
+    assert by_type["whatsapp"]["intake_live"] is False
+
+    # …and flips to live once its connector account is fully configured.
+    accounts = client.get("/api/v1/connectors/accounts").json()
+    whatsapp = next(a for a in accounts if a["provider"] == "whatsapp")
+    patched = client.patch(
+        f"/api/v1/connectors/accounts/{whatsapp['id']}",
+        json={
+            "status": "connected",
+            "intake_enabled": True,
+            "webhook_verified": True,
+            "secret_configured": True,
+            "credential_ref": "vault://omni/ng/whatsapp",
+        },
+    )
+    assert patched.status_code == 200
+    refreshed = {c["type"]: c for c in client.get("/api/v1/channels").json()}
+    assert refreshed["whatsapp"]["intake_live"] is True
+
+    # Always-on surfaces (if present) report live.
+    if "api" in refreshed:
+        assert refreshed["api"]["intake_live"] is True
+
+
 def test_channel_stats_are_computed_from_real_tickets(client: TestClient) -> None:
     tickets = client.get("/api/v1/tickets").json()
     open_email = [t for t in tickets if t["channel"] == "email" and t["status"] not in ("solved", "closed")]
