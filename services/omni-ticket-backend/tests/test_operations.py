@@ -817,6 +817,60 @@ def test_resolving_without_notify_keeps_note_internal(client: TestClient) -> Non
     assert note["type"] == "internal_note"
 
 
+def test_ticket_creation_queues_acknowledgement_email(client: TestClient) -> None:
+    public_client = TestClient(create_app())
+    email = f"ack-{uuid4().hex}@example.com"
+    created = public_client.post(
+        "/api/v1/portal/ng/tickets",
+        json={
+            "name": "Ack Customer",
+            "email": email,
+            "subject": "Visa appointment reschedule",
+            "description": "Need to move my appointment to next week.",
+            "custom_fields": {"issue_category": "Booking"},
+        },
+    )
+    assert created.status_code == 201
+    ticket = created.json()
+
+    messages = client.get(f"/api/v1/outbound/messages?ticket_id={ticket['ticket_id']}").json()
+    ack = next(m for m in messages if m["idempotency_key"] == f"ack-{ticket['ticket_id']}")
+    assert ack["payload"]["to_email"] == email
+    # Subject comes from the seeded "ticket_created" notification config.
+    assert ack["payload"]["subject"] == "We've received your request"
+    assert ticket["public_id"] in ack["body"]
+
+
+def test_sla_breach_emails_team_inbox(client: TestClient) -> None:
+    ticket = next(
+        item
+        for item in client.get("/api/v1/tickets").json()
+        if item["status"] not in ("solved", "closed")
+    )
+    with Session(get_engine()) as session:
+        record = session.get(TicketRecord, ticket["id"])
+        assert record is not None
+        record.team = "Billing Support"
+        past = (utc_now() - timedelta(hours=2)).isoformat()
+        record.sla = {
+            **record.sla,
+            "first_response_due_at": past,
+            "resolution_due_at": past,
+            "risk": "on_track",
+            "breached": False,
+        }
+        session.commit()
+
+    with Session(get_engine()) as session:
+        job = worker_service.refresh_sla_states(session, store, "market-ng")
+    assert ticket["id"] in job.details["changed_ticket_ids"]
+
+    messages = client.get(f"/api/v1/outbound/messages?ticket_id={ticket['id']}").json()
+    breach = next(m for m in messages if m["idempotency_key"] == f"sla-breach-{ticket['id']}")
+    assert breach["payload"]["to_email"] == "billing-support@omniticket.example.com"
+    assert breach["payload"]["subject"] == "SLA breached on an open ticket"
+
+
 def test_parent_ticket_cannot_resolve_with_open_handoff_child(client: TestClient) -> None:
     parent = next(
         item
@@ -1443,8 +1497,10 @@ def test_handoff_forward_email_reply_threads_to_linked_ticket(
     assert sent.status_code == 200
     assert sent.json()["status"] == "sent"
     assert sent_messages
-    sent_message = sent_messages[0]
-    assert sent_message["To"] == "billing-support@omniticket.example.com"
+    # The creation acknowledgement also sends now — pick the handoff forward explicitly.
+    sent_message = next(
+        message for message in sent_messages if message["To"] == "billing-support@omniticket.example.com"
+    )
     assert sent_message["X-Omni-Handoff-ID"] == handoff_body["id"]
     assert sent_message["X-Omni-Source-Ticket-ID"] == source_ticket["id"]
     assert sent_message["X-Omni-Linked-Ticket-ID"] == linked_ticket_id
@@ -3055,10 +3111,14 @@ def test_email_outbound_uses_configured_smtp_adapter(
         ("login", "jimb@wakanow.com", "smtp-secret"),
     ]
     assert sent_messages
-    sent_message = sent_messages[0]
+    # The creation acknowledgement also sends now — pick the reply email explicitly.
+    sent_message = next(
+        message
+        for message in sent_messages
+        if "SMTP adapter should send this customer reply." in message.get_content()
+    )
     assert sent_message["From"] == "jimb@wakanow.com"
     assert sent_message["To"]
-    assert "SMTP adapter should send this customer reply." in sent_message.get_content()
 
     outbound_message = next(
         message
@@ -5932,7 +5992,7 @@ def test_signed_webhook_ingests_without_agent_session(client: TestClient) -> Non
     assert context.status_code == 200
     assert any(
         event["type"] == "connector_receipt"
-        and event["metadata"]["external_id"] == payload["external_id"]
+        and event["metadata"].get("external_id") == payload["external_id"]
         for event in context.json()["timeline"]
     )
 

@@ -17,11 +17,16 @@ from app.db.models import (
     AuditEventRecord,
     MarketRecord,
     OutboundMessageRecord,
+    SupportGroupRecord,
     TicketRecord,
 )
 from app.db.operations import OPEN_STATUSES, operations_repository
 from app.db.outbound import outbound_repository
-from app.db.ticketing import _add_timeline_record, ticket_repository
+from app.db.ticketing import (
+    _add_timeline_record,
+    _queue_event_notification_email,
+    ticket_repository,
+)
 from app.models.domain import (
     ChannelType,
     OperationalAlertSeverity,
@@ -355,6 +360,29 @@ class BackgroundWorkerService:
                     },
                     actor=actor,
                 )
+                if ticket.sla.breached and not previous_breached:
+                    # Newly breached: email the owning team's inbox (config-gated by the
+                    # active "sla_breach" notification in Setup → Email notifications).
+                    group = db.scalar(
+                        select(SupportGroupRecord).where(
+                            SupportGroupRecord.market_id == market_id,
+                            SupportGroupRecord.name == record.team,
+                        )
+                    )
+                    team_email = (group.team_email or "").strip() if group else ""
+                    _queue_event_notification_email(
+                        db,
+                        state,
+                        record,
+                        event="sla_breach",
+                        to_email=team_email,
+                        idempotency_key=f"sla-breach-{ticket.id}",
+                        default_subject=f"SLA breached on {ticket.public_id}",
+                        extra_body=(
+                            f"Ticket {ticket.public_id} — {record.subject}\n"
+                            f"Priority {record.priority} · team {record.team}."
+                        ),
+                    )
             notification = escalation_service.notification_payload(db, ticket, state=state)
             if notification and not escalation_service.already_notified(
                 db,

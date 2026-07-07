@@ -1038,6 +1038,65 @@ def _coerce_dt(value: object) -> datetime | None:
     return None
 
 
+def _queue_event_notification_email(
+    db: Session,
+    state: InMemoryStore,
+    record: TicketRecord,
+    *,
+    event: str,
+    to_email: str,
+    idempotency_key: str,
+    default_subject: str,
+    extra_body: str = "",
+) -> bool:
+    """Dispatch a lifecycle email notification (ticket_created ack, sla_breach, …).
+    Config-gated: only sends when an ACTIVE EmailNotification exists for the event —
+    toggling the notification off in Setup genuinely disables it."""
+    if not to_email:
+        return False
+    notification = db.scalar(
+        select(EmailNotificationRecord).where(
+            EmailNotificationRecord.market_id == record.market_id,
+            EmailNotificationRecord.event == event,
+            EmailNotificationRecord.active.is_(True),
+        )
+    )
+    if notification is None:
+        return False
+    subject = notification.subject or default_subject
+    body = (notification.body or default_subject).strip()
+    if extra_body:
+        body = f"{body}\n\n{extra_body}"
+    note = _add_timeline_record(
+        db,
+        state,
+        record,
+        event_type=TimelineEventType.internal_note,
+        channel=ChannelType.internal,
+        actor="notifications",
+        body=f"{notification.name} email queued to {to_email}.",
+        public=False,
+        metadata={"notification_event": event},
+    )
+    timeline_record = db.get(TimelineEventRecord, note.id)
+    if timeline_record is None:
+        return False
+    message = outbound_repository.queue_email(
+        db,
+        state,
+        ticket=record,
+        timeline_event=timeline_record,
+        actor="notifications",
+        to_email=to_email,
+        subject=subject,
+        body=body,
+        source=event,
+        idempotency_key=idempotency_key,
+    )
+    outbound_repository.process_message(db, state, message.id, record.market_id, actor="outbound-queue")
+    return True
+
+
 def _open_handoff_children(db: Session, ticket: TicketRecord) -> list[TicketRecord]:
     """Open handoff-child tickets spawned from this ticket — a parent can't close
     while a team is still working a linked child (Freshdesk parent/child rule)."""
@@ -2067,6 +2126,19 @@ class TicketRepository:
             entity_id=ticket.id,
             market_id=market_id,
             details={"ai_enabled": ai_enabled, "channel": request.channel.value, "source": source},
+        )
+        _queue_event_notification_email(
+            db,
+            state,
+            ticket_record,
+            event="ticket_created",
+            to_email=customer.email,
+            idempotency_key=f"ack-{ticket.id}",
+            default_subject=f"We've received your request {ticket.public_id}",
+            extra_body=(
+                f"Your reference is {ticket.public_id}. Reply to this email to add details "
+                "and we'll pick it up on the same ticket."
+            ),
         )
         ticket_record.updated_at = utc_now()
         db.commit()
