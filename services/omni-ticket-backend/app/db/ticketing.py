@@ -37,6 +37,7 @@ from app.db.models import (
     AutomationRuleRecord,
     CaseRecord,
     CompanyRecord,
+    ChannelRecord,
     ConnectorEventRecord,
     CsatFeedbackRecord,
     CsatSurveyRecord,
@@ -2081,7 +2082,20 @@ class TicketRepository:
         priority = automation_service.classify_priority(text, request.priority)
         sentiment = automation_service.classify_sentiment(text)
         tags = automation_service.classify_tags(text, request.channel, request.tags)
-        assignee = automation_service.choose_agent(state, request.channel, market_id) if ai_enabled else None
+        # A paused channel still accepts customer messages (never drop intake) but
+        # skips AI auto-assignment so new work lands in the Unassigned queue.
+        channel_row = db.scalar(
+            select(ChannelRecord).where(
+                ChannelRecord.market_id == market_id,
+                ChannelRecord.type == request.channel.value,
+            )
+        )
+        channel_paused = bool(channel_row and channel_row.health == "paused")
+        assignee = (
+            automation_service.choose_agent(state, request.channel, market_id)
+            if ai_enabled and not channel_paused
+            else None
+        )
         team = assignee.team if assignee else "Unassigned"
         if ai_enabled:
             tags = sorted(set(tags) | {"ai-routed"})

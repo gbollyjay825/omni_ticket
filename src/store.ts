@@ -488,13 +488,42 @@ function mapChannel(channel: BackendChannel): Channel {
     status: channel.health,
     queueDepth: channel.queued,
     activeSessions: channel.active,
-    avgWaitMinutes: seed?.avgWaitMinutes ?? Math.max(5, channel.queued * 2),
+    // Real value is computed from conversation timelines during snapshot hydration.
+    avgWaitMinutes: 0,
     targetMinutes: seed?.targetMinutes ?? 30,
     slaRisk: channel.sla_risk,
     health: Math.max(12, healthScore - channel.sla_risk * 3),
     intakeEnabled: channel.health !== 'paused',
     description: seed?.description ?? channel.capabilities.join(', '),
   }
+}
+
+/** Average minutes customers have been waiting on a channel: open conversations whose
+ * last customer message has no later agent reply. 0 when nobody is waiting. */
+function channelAvgWaitMinutes(channelId: ChannelId, conversations: OmniConversation[]): number {
+  const now = Date.now()
+  const waits: number[] = []
+  for (const conversation of conversations) {
+    if (conversation.channelId !== channelId || isClosedOut(conversation.status)) continue
+    let lastCustomerAt: number | null = null
+    let answered = true
+    for (const event of conversation.timeline) {
+      if (event.authorRole === 'customer') {
+        const at = new Date(event.timestamp).getTime()
+        if (Number.isFinite(at)) {
+          lastCustomerAt = at
+          answered = false
+        }
+      } else if (event.authorRole === 'agent') {
+        answered = true
+      }
+    }
+    if (!answered && lastCustomerAt != null) {
+      waits.push(Math.max(0, (now - lastCustomerAt) / 60000))
+    }
+  }
+  if (waits.length === 0) return 0
+  return Math.round(waits.reduce((total, value) => total + value, 0) / waits.length)
 }
 
 function mapTicketField(field: BackendTicketField): TicketField {
@@ -1019,8 +1048,13 @@ function mergeBackendSnapshot(current: OmniState, snapshot: BackendSnapshot): Om
     ...current.settings,
     aiWorkQueueAutomationEnabled: snapshot.settings.ai_work_queue_automation_enabled,
   }
-  const channels = snapshot.channels.map(mapChannel)
   const conversations = snapshot.tickets.map((context) => mapConversation(context, settings))
+  const channels = snapshot.channels
+    .map(mapChannel)
+    .map((channel) => ({
+      ...channel,
+      avgWaitMinutes: channelAvgWaitMinutes(channel.id, conversations),
+    }))
   const conversationsById = new Map(conversations.map((conversation) => [conversation.id, conversation]))
   const companiesById = new Map(snapshot.companies.map((company) => [company.id, company]))
   const customers = snapshot.customers.map((customer) => mapCustomer(customer, companiesById, snapshot.tickets))

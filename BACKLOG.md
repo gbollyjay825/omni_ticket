@@ -48,6 +48,7 @@ Audit: 18-agent adversarially-verified review of the close-out flow (2026-06-14)
 | E3 | Scenario-automation execution engine (validated, guarded, one-click run) | ✅ | `53b9343` + fixes |
 | E4 | Handoff ↔ child ticket status sync (both directions; cancel closes child) | ✅ | `21e1f19` + fixes |
 | — | Pre-deploy adversarial review: 24 agents, 17 confirmed findings fixed (1 critical) | ✅ | `5834d48` |
+| F1 | Channel control shows LIVE stats (queued/active/SLA-risk/health from real tickets; real avg-wait; paused channels skip auto-assign) — was frozen seed numbers | ✅ | see git log |
 
 ## Deploy state
 

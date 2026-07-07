@@ -61,6 +61,7 @@ from app.models.domain import (
     AutomationRule,
     BusinessHours,
     Channel,
+    ChannelHealth,
     CreateAutomationRuleRequest,
     CreateBusinessHoursRequest,
     CreateCsatSurveyRequest,
@@ -812,6 +813,40 @@ class ManagementRepository:
                 select(ChannelRecord).where(ChannelRecord.market_id == market_id)
             ).all()
         ]
+        # Queue stats are computed live from the market's real open tickets — the
+        # seeded queued/active/sla_risk numbers are placeholders only. A stored
+        # health of "paused" is an operator override and is preserved.
+        open_tickets = db.scalars(
+            select(TicketRecord).where(
+                TicketRecord.market_id == market_id,
+                TicketRecord.status.not_in(["solved", "closed"]),
+            )
+        ).all()
+        stats: dict[str, dict[str, int]] = {}
+        for record in open_tickets:
+            bucket = stats.setdefault(
+                record.channel, {"queued": 0, "active": 0, "risk": 0, "breached": 0}
+            )
+            bucket["queued"] += 1
+            if record.assignee_id:
+                bucket["active"] += 1
+            sla = record.sla if isinstance(record.sla, dict) else {}
+            if sla.get("breached"):
+                bucket["breached"] += 1
+                bucket["risk"] += 1
+            elif sla.get("risk") not in (None, "on_track"):
+                bucket["risk"] += 1
+        for channel in channels:
+            bucket = stats.get(
+                channel.type.value, {"queued": 0, "active": 0, "risk": 0, "breached": 0}
+            )
+            channel.queued = bucket["queued"]
+            channel.active = bucket["active"]
+            channel.sla_risk = bucket["risk"]
+            if channel.health != ChannelHealth.paused:
+                channel.health = (
+                    ChannelHealth.degraded if bucket["risk"] > 0 else ChannelHealth.healthy
+                )
         state.channels = {
             **{key: value for key, value in state.channels.items() if value.market_id != market_id},
             **{channel.id: channel for channel in channels},

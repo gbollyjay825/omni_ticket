@@ -925,6 +925,49 @@ def test_run_scenario_applies_action_bundle(client: TestClient) -> None:
     assert missing.status_code == 404
 
 
+def test_channel_stats_are_computed_from_real_tickets(client: TestClient) -> None:
+    tickets = client.get("/api/v1/tickets").json()
+    open_email = [t for t in tickets if t["channel"] == "email" and t["status"] not in ("solved", "closed")]
+
+    channels = client.get("/api/v1/channels").json()
+    email = next(c for c in channels if c["type"] == "email")
+    assert email["queued"] == len(open_email)
+    assert email["active"] == len([t for t in open_email if t["assignee_id"]])
+
+    # Resolving an email ticket moves the live queue count immediately.
+    if open_email:
+        target = open_email[0]
+        etag = client.get(f"/api/v1/tickets/{target['id']}").headers["ETag"]
+        client.patch(f"/api/v1/tickets/{target['id']}", headers={"If-Match": etag}, json={"status": "solved"})
+        refreshed = next(c for c in client.get("/api/v1/channels").json() if c["type"] == "email")
+        assert refreshed["queued"] == len(open_email) - 1
+
+
+def test_paused_channel_skips_auto_assignment_but_accepts_intake(client: TestClient) -> None:
+    channels = client.get("/api/v1/channels").json()
+    email = next(c for c in channels if c["type"] == "email")
+    paused = client.patch(f"/api/v1/channels/{email['id']}", json={"health": "paused"})
+    assert paused.status_code == 200
+
+    customer = client.get("/api/v1/customers").json()[0]
+    created = client.post(
+        "/api/v1/tickets",
+        json={
+            "subject": "Ticket into a paused channel",
+            "description": "Intake must never drop customer messages.",
+            "customer_id": customer["id"],
+            "channel": "email",
+        },
+    )
+    assert created.status_code == 201
+    assert created.json()["assignee_id"] is None  # accepted, but not auto-assigned
+
+    # Paused is an operator override the live stats must not overwrite.
+    still_paused = next(c for c in client.get("/api/v1/channels").json() if c["type"] == "email")
+    assert still_paused["health"] == "paused"
+    client.patch(f"/api/v1/channels/{email['id']}", json={"health": "healthy"})
+
+
 def test_run_scenario_validates_and_normalizes_free_text_values(client: TestClient) -> None:
     ticket = next(
         item
