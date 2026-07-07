@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, MouseEvent } from 'react'
 import type { LucideIcon } from 'lucide-react'
+import { isClosedOut } from './domain'
 import {
   Activity,
   AlertTriangle,
@@ -706,6 +707,7 @@ const statusOptions: (ConversationStatus | 'all')[] = [
   'pending',
   'waiting',
   'resolved',
+  'closed',
 ]
 const slaOptions: (SlaState | 'all')[] = ['all', 'healthy', 'risk', 'breached', 'paused']
 const sentimentOptions: (Sentiment | 'all')[] = [
@@ -1012,6 +1014,7 @@ function OmniApp() {
     note: string
     notify: boolean
     resolveCase: boolean
+    finalStatus: 'resolved' | 'closed'
   } | null>(null)
   const [resolveBusy, setResolveBusy] = useState(false)
   const [dashboardRange, setDashboardRange] = useState<DashboardRange>('all')
@@ -1370,7 +1373,7 @@ function OmniApp() {
 
   const selectedCustomerOpenWork = state.conversations.filter(
     (conversation) =>
-      conversation.customerId === selectedCustomer.id && conversation.status !== 'resolved',
+      conversation.customerId === selectedCustomer.id && !isClosedOut(conversation.status),
   )
   const selectedHandoffs = state.handoffs.filter(
     (handoff) =>
@@ -4406,7 +4409,7 @@ function OmniApp() {
     return state.handoffs
       .filter((handoff) => handoff.conversationId === conversation.id && handoff.linkedConversationId)
       .map((handoff) => state.conversations.find((item) => item.id === handoff.linkedConversationId))
-      .filter((child): child is OmniConversation => Boolean(child && child.status !== 'resolved'))
+      .filter((child): child is OmniConversation => Boolean(child && !isClosedOut(child.status)))
   }
 
   // When this is the last open ticket in its case, resolving it can close the case too.
@@ -4417,7 +4420,7 @@ function OmniApp() {
     const siblingsAllResolved = linkedCase.ticketIds
       .filter((id) => id !== conversation.id)
       .map((id) => state.conversations.find((item) => item.id === id))
-      .every((sibling) => !sibling || sibling.status === 'resolved')
+      .every((sibling) => !sibling || isClosedOut(sibling.status))
     return siblingsAllResolved ? linkedCase : undefined
   }
 
@@ -4456,7 +4459,7 @@ function OmniApp() {
     try {
       await updateConversation(
         selectedConversation.id,
-        { status: 'resolved', slaState: 'healthy' },
+        { status: resolveDialog.finalStatus, slaState: 'healthy' },
         { resolutionNote: resolveDialog.note.trim(), notifyCustomer: resolveDialog.notify },
       )
       if (caseToResolve) {
@@ -5157,8 +5160,8 @@ function OmniApp() {
       {
         title: 'Default views',
         views: [
-          { id: 'all-open', label: 'All open tickets', count: state.conversations.filter((item) => item.status !== 'resolved').length },
-          { id: 'my-open', label: 'My open tickets', count: state.conversations.filter((item) => item.assigneeId === selectedAgent?.id && item.status !== 'resolved').length },
+          { id: 'all-open', label: 'All open tickets', count: state.conversations.filter((item) => !isClosedOut(item.status)).length },
+          { id: 'my-open', label: 'My open tickets', count: state.conversations.filter((item) => item.assigneeId === selectedAgent?.id && !isClosedOut(item.status)).length },
           { id: 'unassigned', label: 'Unassigned', count: state.conversations.filter((item) => item.status === 'new').length },
           { id: 'overdue', label: 'Overdue', count: state.conversations.filter((item) => item.slaState === 'breached').length },
         ],
@@ -5168,7 +5171,7 @@ function OmniApp() {
         views: [
           { id: 'whatsapp', label: 'WhatsApp queues', count: state.conversations.filter((item) => item.channelId === 'whatsapp').length },
           { id: 'ai-escalations', label: 'AI escalations', count: state.conversations.filter((item) => item.sentiment === 'at-risk').length },
-          { id: 'resolved', label: 'Resolved today', count: state.conversations.filter((item) => item.status === 'resolved').length },
+          { id: 'resolved', label: 'Resolved today', count: state.conversations.filter((item) => isClosedOut(item.status)).length },
         ],
       },
     ]
@@ -5606,7 +5609,9 @@ function OmniApp() {
             <button
               className="primary-action"
               type="button"
-              onClick={() => setResolveDialog({ note: '', notify: true, resolveCase: false })}
+              onClick={() =>
+                setResolveDialog({ note: '', notify: true, resolveCase: false, finalStatus: 'resolved' })
+              }
             >
               <Check size={17} />
               Resolve
@@ -6503,25 +6508,25 @@ function OmniApp() {
     }
     const dueOk = (conversation: OmniConversation) => {
       if (inboxDue === 'any') return true
-      if (conversation.status === 'resolved') return false
+      if (isClosedOut(conversation.status)) return false
       const due = new Date(conversation.resolutionDue).getTime()
       if (!Number.isFinite(due)) return false
       if (inboxDue === 'overdue') return due < now
       return due - now < DAY
     }
     const viewOk = (conversation: OmniConversation) => {
-      if (inboxView === 'all-open') return conversation.status !== 'resolved'
+      if (inboxView === 'all-open') return !isClosedOut(conversation.status)
       if (inboxView === 'my-open') {
-        return conversation.assigneeId === selectedAgent?.id && conversation.status !== 'resolved'
+        return conversation.assigneeId === selectedAgent?.id && !isClosedOut(conversation.status)
       }
       if (inboxView === 'unassigned') {
         return (
-          conversation.status !== 'resolved' &&
+          !isClosedOut(conversation.status) &&
           (conversation.status === 'new' || conversation.assigneeId === '')
         )
       }
       if (inboxView === 'overdue') return conversation.slaState === 'breached'
-      if (inboxView === 'resolved') return conversation.status === 'resolved'
+      if (inboxView === 'resolved') return isClosedOut(conversation.status)
       if (inboxView === 'whatsapp') return conversation.channelId === 'whatsapp'
       if (inboxView === 'ai-escalations') return conversation.sentiment === 'at-risk'
       return true
@@ -6679,7 +6684,7 @@ function OmniApp() {
                 const channel = state.channels.find((item) => item.id === conversation.channelId)
                 const selected = selectedConversation.id === conversation.id
                 const checked = selectedTicketIds.includes(conversation.id)
-                const resolved = conversation.status === 'resolved'
+                const resolved = isClosedOut(conversation.status)
                 const promiseText = resolved ? 'Resolved on time' : promiseLabel(conversation)
                 return (
                   <article
@@ -6917,6 +6922,28 @@ function OmniApp() {
                 {blockedByChildren.map((child) => child.ticketNumber).join(', ')}.
               </p>
             ) : null}
+            <div className="resolve-status-choice" role="radiogroup" aria-label="Close-out status">
+              {(
+                [
+                  ['resolved', 'Resolved', 'Awaiting confirmation — reopens if the customer replies'],
+                  ['closed', 'Closed', 'Final — no follow-up expected'],
+                ] as const
+              ).map(([value, label, hint]) => (
+                <button
+                  type="button"
+                  key={value}
+                  role="radio"
+                  aria-checked={resolveDialog.finalStatus === value}
+                  className={resolveDialog.finalStatus === value ? 'active' : ''}
+                  onClick={() =>
+                    setResolveDialog((current) => (current ? { ...current, finalStatus: value } : current))
+                  }
+                >
+                  <strong>{label}</strong>
+                  <small>{hint}</small>
+                </button>
+              ))}
+            </div>
             <label className="span-all">
               Resolution note
               <textarea
@@ -6966,7 +6993,9 @@ function OmniApp() {
                 disabled={resolveBusy || missing.length > 0 || blockedByChildren.length > 0}
               >
                 <Check size={16} />
-                {resolveBusy ? 'Resolving…' : resolveDialog.notify ? 'Resolve & notify' : 'Resolve'}
+                {resolveBusy
+                  ? 'Working…'
+                  : `${resolveDialog.finalStatus === 'closed' ? 'Close' : 'Resolve'}${resolveDialog.notify ? ' & notify' : ''}`}
               </button>
             </div>
           </form>
@@ -7535,8 +7564,8 @@ function OmniApp() {
         directChatFilter === 'all'
           ? true
           : directChatFilter === 'resolved'
-            ? conversation.status === 'resolved'
-            : conversation.status !== 'resolved',
+            ? isClosedOut(conversation.status)
+            : !isClosedOut(conversation.status),
       )
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
     const liveConversation =
@@ -7565,7 +7594,7 @@ function OmniApp() {
             const Icon = channelIcons[channelId]
             const openCount = state.conversations.filter(
               (conversation) =>
-                conversation.channelId === channelId && conversation.status !== 'resolved',
+                conversation.channelId === channelId && !isClosedOut(conversation.status),
             ).length
 
             return (
@@ -7604,8 +7633,8 @@ function OmniApp() {
                     value === 'all'
                       ? channelChatBaseConversations.length
                       : value === 'resolved'
-                        ? channelChatBaseConversations.filter((c) => c.status === 'resolved').length
-                        : channelChatBaseConversations.filter((c) => c.status !== 'resolved').length
+                        ? channelChatBaseConversations.filter((c) => isClosedOut(c.status)).length
+                        : channelChatBaseConversations.filter((c) => !isClosedOut(c.status)).length
                   return (
                     <button
                       type="button"

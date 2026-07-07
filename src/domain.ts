@@ -11,7 +11,13 @@ export type ChannelId =
   | 'internal'
 
 export type ChannelStatus = 'healthy' | 'degraded' | 'paused'
-export type ConversationStatus = 'new' | 'open' | 'pending' | 'waiting' | 'resolved'
+export type ConversationStatus = 'new' | 'open' | 'pending' | 'waiting' | 'resolved' | 'closed'
+
+/** Resolved = agent finished, awaiting confirmation/auto-close. Closed = terminal.
+ * Both count as "closed out" for open-work filters and metrics. */
+export function isClosedOut(status: ConversationStatus): boolean {
+  return status === 'resolved' || status === 'closed'
+}
 export type Priority = 'urgent' | 'high' | 'medium' | 'low'
 export type Sentiment = 'positive' | 'neutral' | 'frustrated' | 'at-risk'
 export type SlaState = 'healthy' | 'risk' | 'breached' | 'paused'

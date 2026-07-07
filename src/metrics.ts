@@ -3,6 +3,7 @@
 // (conversations with their timelines + backend CSAT feedback) so the dashboard
 // shows live numbers and supports instant client-side filtering — no hardcoded tiles.
 
+import { isClosedOut } from './domain'
 import type { ChannelId, OmniConversation, TimelineType } from './domain'
 
 // Channels we treat as "chat / messaging" for the chat-side dashboard tiles.
@@ -160,11 +161,12 @@ export function averageResponseSeconds(conversation: OmniConversation): number |
   return average(gaps)
 }
 
-/** Seconds from creation to resolution for resolved tickets, else null. */
+/** Seconds from creation to resolution for closed-out tickets, else null.
+ * Prefers the stamped resolvedAt (immutable) over updatedAt (drifts with later edits). */
 export function resolutionSeconds(conversation: OmniConversation): number | null {
-  if (conversation.status !== 'resolved') return null
+  if (!isClosedOut(conversation.status)) return null
   const created = new Date(conversation.createdAt).getTime()
-  const resolved = new Date(conversation.updatedAt).getTime()
+  const resolved = new Date(conversation.resolvedAt ?? conversation.updatedAt).getTime()
   if (!Number.isFinite(created) || !Number.isFinite(resolved) || resolved < created) return null
   return (resolved - created) / 1000
 }
@@ -196,12 +198,12 @@ export function computeDashboardMetrics(
   )
 
   // ── Ticket trends ────────────────────────────────────────────────────────
-  const openTickets = ticketConversations.filter((conversation) => conversation.status !== 'resolved')
+  const openTickets = ticketConversations.filter((conversation) => !isClosedOut(conversation.status))
   const ticketTrends = {
     open: openTickets.length,
     unassigned: ticketConversations.filter(
       (conversation) =>
-        conversation.status !== 'resolved' &&
+        !isClosedOut(conversation.status) &&
         (conversation.status === 'new' || conversation.assigneeId === ''),
     ).length,
     overdue: openTickets.filter((conversation) => conversation.slaState === 'breached').length,
@@ -216,7 +218,7 @@ export function computeDashboardMetrics(
       .map((conversation) => firstResponseSeconds(conversation))
       .filter((value): value is number => value != null),
   )
-  const resolvedTickets = ticketConversations.filter((conversation) => conversation.status === 'resolved')
+  const resolvedTickets = ticketConversations.filter((conversation) => isClosedOut(conversation.status))
   const withinSla = resolvedTickets.filter((conversation) => conversation.slaState !== 'breached').length
   const hasBackendTicketPerformance = backendTicketPerformance != null
   const backendFirstResponse = backendTicketPerformance?.avg_first_response_seconds
@@ -261,9 +263,9 @@ export function computeDashboardMetrics(
   const chatTrends = {
     unassigned: chatConversations.filter((conversation) => conversation.status === 'new').length,
     assignedNotReplied: chatConversations.filter(
-      (conversation) => conversation.status !== 'resolved' && conversation.slaState !== 'healthy',
+      (conversation) => !isClosedOut(conversation.status) && conversation.slaState !== 'healthy',
     ).length,
-    assigned: chatConversations.filter((conversation) => conversation.status !== 'resolved').length,
+    assigned: chatConversations.filter((conversation) => !isClosedOut(conversation.status)).length,
   }
 
   // ── Chat performance ─────────────────────────────────────────────────────

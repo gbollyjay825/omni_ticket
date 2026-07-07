@@ -5760,6 +5760,41 @@ button.freshchat-global-search:hover {
   max-width: 520px;
 }
 
+.resolve-status-choice {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.resolve-status-choice button {
+  display: grid;
+  gap: 3px;
+  text-align: left;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 10px 12px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.resolve-status-choice button strong {
+  color: var(--heading);
+  font-size: 13.5px;
+}
+
+.resolve-status-choice button small {
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.3;
+}
+
+.resolve-status-choice button.active {
+  border-color: #0f766e;
+  background: #f0fdfa;
+  box-shadow: inset 0 0 0 1px #0f766e;
+}
+
 .resolve-form textarea {
   width: 100%;
   min-height: 96px;
@@ -9501,6 +9536,7 @@ button.freshchat-global-search:hover {
 }
 
 .desk-ticket-row.status-resolved,
+.desk-ticket-row.status-closed,
 .desk-ticket-row.status-waiting {
   color: #6b8195;
 }

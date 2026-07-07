@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { openDB, type DBSchema } from 'idb'
+import { isClosedOut } from './domain'
 import type {
   AgentProfile,
   CaseRecord,
@@ -365,7 +366,7 @@ function backendPriority(value: Priority): BackendTicket['priority'] {
 }
 
 function mapStatus(value: BackendTicket['status']): ConversationStatus {
-  if (value === 'solved' || value === 'closed') return 'resolved'
+  if (value === 'solved') return 'resolved'
   return value
 }
 
@@ -1577,7 +1578,7 @@ export function useOmniStore() {
   }, [state.conversations, state.filters, customerContactIndex])
 
   const metrics = useMemo(() => {
-    const open = state.conversations.filter((conversation) => conversation.status !== 'resolved')
+    const open = state.conversations.filter((conversation) => !isClosedOut(conversation.status))
     const atRisk = open.filter(
       (conversation) => conversation.slaState === 'risk' || conversation.slaState === 'breached',
     )
