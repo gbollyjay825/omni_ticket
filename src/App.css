@@ -5755,6 +5755,30 @@ button.freshchat-global-search:hover {
   color: #b45309;
 }
 
+/* Run-scenario picker (ticket properties) */
+.scenario-run-row {
+  display: flex;
+  gap: 6px;
+}
+
+.scenario-run-row select {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 34px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--heading);
+  padding: 0 8px;
+  font: inherit;
+  font-size: 13px;
+}
+
+.scenario-run-row button {
+  flex: none;
+  min-height: 34px;
+}
+
 /* Resolve / close-out dialog */
 .resolve-dialog {
   max-width: 520px;

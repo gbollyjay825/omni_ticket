@@ -44,6 +44,7 @@ from app.db.models import (
     EmailNotificationRecord,
     HandoffRecord,
     OutboundMessageRecord,
+    ScenarioAutomationRecord,
     SlaPolicyRecord,
     SupportGroupRecord,
     TicketFieldRecord,
@@ -2338,6 +2339,93 @@ class TicketRepository:
                 metadata={"resolution_note": True},
             )
 
+        db.commit()
+        db.refresh(record)
+        return _sync_ticket(db, state, record)
+
+    def run_scenario(
+        self,
+        db: Session,
+        state: InMemoryStore,
+        ticket_id: str,
+        scenario_id: str,
+        market_id: str,
+        *,
+        actor: str,
+    ) -> Ticket:
+        """Apply a scenario automation's action bundle to a ticket in one click
+        (Freshdesk scenario automations: agent-triggered, never automatic)."""
+        record = _ticket_record_or_404(db, ticket_id, market_id)
+        scenario = db.get(ScenarioAutomationRecord, scenario_id)
+        if scenario is None or scenario.market_id != market_id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Scenario not found")
+        if not scenario.active:
+            raise HTTPException(status.HTTP_409_CONFLICT, detail="Scenario is paused")
+
+        now = utc_now()
+        applied: list[str] = []
+        for action in scenario.actions or []:
+            action_type = str(action.get("type", ""))
+            value = str(action.get("value", "")).strip()
+            if action_type == "add_tag" and value:
+                if value not in (record.tags or []):
+                    record.tags = [*(record.tags or []), value]
+                applied.append(f"tag '{value}'")
+            elif action_type == "set_priority" and value:
+                record.priority = value
+                applied.append(f"priority {value}")
+            elif action_type == "assign_group" and value:
+                record.team = value
+                applied.append(f"team {value}")
+            elif action_type == "set_status" and value:
+                previous_status = record.status
+                if value in _RESOLVED_STATUSES and previous_status not in _RESOLVED_STATUSES:
+                    if record.resolved_at is None:
+                        record.resolved_at = now
+                        record.sla_resolution_met = _sla_met_at(record, now)
+                    record.closed_at = now if value == TicketStatus.closed.value else None
+                elif previous_status in _RESOLVED_STATUSES and value not in _RESOLVED_STATUSES:
+                    record.resolved_at = None
+                    record.closed_at = None
+                    record.sla_resolution_met = None
+                record.status = value
+                applied.append(f"status {value}")
+            elif action_type == "add_note" and value:
+                _add_timeline_record(
+                    db,
+                    state,
+                    record,
+                    event_type=TimelineEventType.internal_note,
+                    channel=ChannelType.internal,
+                    actor=scenario.name,
+                    body=value,
+                    public=False,
+                    metadata={"scenario_id": scenario.id},
+                )
+                applied.append("note added")
+
+        record.updated_at = now
+        _add_timeline_record(
+            db,
+            state,
+            record,
+            event_type=TimelineEventType.status_change,
+            channel=ChannelType.internal,
+            actor=actor,
+            body=f"Scenario '{scenario.name}' applied: {', '.join(applied) or 'no actions'}.",
+            public=False,
+            metadata={"scenario_id": scenario.id, "applied": applied},
+        )
+        _audit(
+            db,
+            state,
+            actor=actor,
+            action="scenario.run",
+            entity_type="ticket",
+            entity_id=record.id,
+            market_id=market_id,
+            details={"scenario_id": scenario.id, "scenario_name": scenario.name, "applied": applied},
+        )
         db.commit()
         db.refresh(record)
         return _sync_ticket(db, state, record)

@@ -817,6 +817,34 @@ def test_resolving_without_notify_keeps_note_internal(client: TestClient) -> Non
     assert note["type"] == "internal_note"
 
 
+def test_run_scenario_applies_action_bundle(client: TestClient) -> None:
+    ticket = next(
+        item
+        for item in client.get("/api/v1/tickets").json()
+        if item["status"] not in ("solved", "closed")
+    )
+    run = client.post(f"/api/v1/tickets/{ticket['id']}/scenarios/scenario-ng-refund/run")
+    assert run.status_code == 200
+    updated = run.json()
+    assert "refund" in updated["tags"]
+    assert updated["priority"] == "high"
+    assert updated["team"] == "Refund Desk"
+
+    context = client.get(f"/api/v1/tickets/{ticket['id']}").json()
+    assert any("Refund flow started" in event["body"] for event in context["timeline"])
+    assert any(
+        "Scenario 'Start refund flow' applied" in event["body"] for event in context["timeline"]
+    )
+
+    audit = client.get("/api/v1/audit").json()
+    assert any(
+        event["action"] == "scenario.run" and event["entity_id"] == ticket["id"] for event in audit
+    )
+
+    missing = client.post(f"/api/v1/tickets/{ticket['id']}/scenarios/not-a-scenario/run")
+    assert missing.status_code == 404
+
+
 def test_ticket_creation_queues_acknowledgement_email(client: TestClient) -> None:
     public_client = TestClient(create_app())
     email = f"ack-{uuid4().hex}@example.com"

@@ -2351,6 +2351,28 @@ def merge_ticket(
     return result
 
 
+@router.post("/tickets/{ticket_id}/scenarios/{scenario_id}/run", response_model=Ticket)
+def run_ticket_scenario(
+    ticket_id: str,
+    scenario_id: str,
+    response: Response,
+    context: RequestContext = Depends(require_context),
+    state: InMemoryStore = Depends(get_store),
+    db: Session = Depends(get_db),
+) -> Ticket:
+    require_operator(context)
+    ticket = ticket_repository.run_scenario(
+        db,
+        state,
+        ticket_id,
+        scenario_id,
+        context.market_id,
+        actor=str(context.user.email),
+    )
+    _set_resource_etag(response, ticket)
+    return ticket
+
+
 @router.get("/cases", response_model=list[Case])
 def list_cases(
     context: RequestContext = Depends(require_context),

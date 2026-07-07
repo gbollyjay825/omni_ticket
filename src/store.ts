@@ -127,6 +127,7 @@ import {
   patchBackendServiceAppointment,
   patchBackendSupportGroup,
   patchBackendTicket,
+  runBackendTicketScenario,
   patchBackendTicketField,
   patchBackendUser,
   type BackendLoginInput,
@@ -2605,6 +2606,12 @@ export function useOmniStore() {
     return syncBackendMutation((session) => updateBackendCase(caseId, { status }, session))
   }
 
+  async function runScenario(conversationId: string, scenarioId: string) {
+    return syncBackendMutation((session) =>
+      runBackendTicketScenario(conversationId, scenarioId, session),
+    )
+  }
+
   async function toggleHandoffChecklist(handoffId: string, taskId: string) {
     const handoff = state.handoffs.find((item) => item.id === handoffId)
     const task = handoff?.checklist.find((item) => item.id === taskId)
@@ -2728,6 +2735,7 @@ export function useOmniStore() {
     attachCaseTicket,
     detachCaseTicket,
     setCaseStatus,
+    runScenario,
     recordResponseMacroUse,
     createResponseMacro,
     updateResponseMacro,

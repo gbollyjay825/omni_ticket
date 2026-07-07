@@ -2967,6 +2967,18 @@ export interface BackendUpdateCaseInput {
   summary?: string
 }
 
+export async function runBackendTicketScenario(
+  ticketId: string,
+  scenarioId: string,
+  session: BackendSession,
+): Promise<BackendTicket> {
+  return fetchJson<BackendTicket>(
+    `/tickets/${encodeURIComponent(ticketId)}/scenarios/${encodeURIComponent(scenarioId)}/run`,
+    { method: 'POST' },
+    session,
+  )
+}
+
 export async function createBackendCase(
   input: BackendCreateCaseInput,
   session: BackendSession,

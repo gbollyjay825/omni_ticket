@@ -974,6 +974,7 @@ function OmniApp() {
     attachCaseTicket,
     detachCaseTicket,
     setCaseStatus,
+    runScenario,
     recordResponseMacroUse,
     resetDemo,
     backendSession,
@@ -1017,6 +1018,8 @@ function OmniApp() {
     finalStatus: 'resolved' | 'closed'
   } | null>(null)
   const [resolveBusy, setResolveBusy] = useState(false)
+  const [scenarioPick, setScenarioPick] = useState('')
+  const [scenarioRunBusy, setScenarioRunBusy] = useState(false)
   const [dashboardRange, setDashboardRange] = useState<DashboardRange>('all')
   const [dashboardTicketGroup, setDashboardTicketGroup] = useState('all')
   const [dashboardChatGroup, setDashboardChatGroup] = useState('all')
@@ -6280,6 +6283,48 @@ function OmniApp() {
                 </div>
               )
             })()}
+            {state.scenarioAutomations.some((scenario) => scenario.active) ? (
+              <div className="property-card scenario-run-card">
+                <span>
+                  <Workflow size={14} />
+                  Run scenario
+                </span>
+                <div className="scenario-run-row">
+                  <select
+                    value={scenarioPick}
+                    onChange={(event) => setScenarioPick(event.target.value)}
+                    aria-label="Choose a scenario"
+                  >
+                    <option value="">Choose a scenario…</option>
+                    {state.scenarioAutomations
+                      .filter((scenario) => scenario.active)
+                      .map((scenario) => (
+                        <option key={scenario.id} value={scenario.id} title={scenario.description}>
+                          {scenario.name}
+                        </option>
+                      ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="secondary-action"
+                    disabled={!scenarioPick || scenarioRunBusy}
+                    onClick={async () => {
+                      setScenarioRunBusy(true)
+                      try {
+                        await runScenario(selectedConversation.id, scenarioPick)
+                        const name = state.scenarioAutomations.find((s) => s.id === scenarioPick)?.name
+                        announcePrototype(`Scenario "${name ?? 'automation'}" applied.`)
+                        setScenarioPick('')
+                      } finally {
+                        setScenarioRunBusy(false)
+                      }
+                    }}
+                  >
+                    {scenarioRunBusy ? 'Running…' : 'Run'}
+                  </button>
+                </div>
+              </div>
+            ) : null}
             <label>
               Status
               <select
