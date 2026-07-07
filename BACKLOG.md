@@ -39,19 +39,25 @@ Audit: 18-agent adversarially-verified review of the close-out flow (2026-06-14)
 | C | Public CSAT loop: survey invite on resolve, portal rating capture (no agent auth), rating widget; real customer CSAT feeds dashboard | ✅ | `4fd63db` |
 | D | Case/child close-out: resolve case from UI, last-ticket-in-case prompt, block closing parent with open handoff-child tickets | ✅ | `b38ba92` |
 
+## Parity slices E (2026-06-16)
+
+| Slice | Item | Status | Evidence |
+|-------|------|--------|----------|
+| E1 | Closed vs Resolved as distinct UI statuses (dialog choice, filters, metrics on resolvedAt) | ✅ | `8b57637` |
+| E2 | ticket_created ack + sla_breach notifications actually fire (config-gated) | ✅ | `bb65eb7` |
+| E3 | Scenario-automation execution engine (validated, guarded, one-click run) | ✅ | `53b9343` + fixes |
+| E4 | Handoff ↔ child ticket status sync (both directions; cancel closes child) | ✅ | `21e1f19` + fixes |
+| — | Pre-deploy adversarial review: 24 agents, 17 confirmed findings fixed (1 critical) | ✅ | `5834d48` |
+
 ## Deploy state
 
-- Prod (omni.wakanow.com): release `Claude-20260609175731` = up to `b956b47` (analytics + close-out NOT yet deployed).
-- Ready to ship pending user confirmation: `3415021`…`b38ba92` — server analytics + close-out Slices A–D (includes migration **0042**). Also needs `git push` (local is ahead of origin).
+- Prod (omni.wakanow.com): release `Claude-20260609175731` = up to `b956b47`.
+- Shipping now: `3415021`…HEAD — server analytics + close-out A–D + parity E1–E4 + review fixes (includes migration **0042**).
 
 ## Deferred / known gaps (parity nice-to-haves)
 
 | Item | Notes |
 |------|-------|
-| Closed vs Resolved as distinct UI statuses | Backend distinguishes (auto-close → closed); UI collapses both to "Resolved". Needs statusOptions + ~15 filter sites + metrics pass. |
-| Microsoft 365 OAuth2 (XOAUTH2) IMAP intake | Current adapter is password-auth; M365 disabled basic auth. Needed only if support mailbox is on M365. |
-| Email-notification dispatcher for other events | `ticket_resolved` now fires; `ticket_created` ack + `sla_breach` notifications are still config-only. |
-| Scenario-automation execution engine | Scenarios are CRUD-only; no runtime applies their actions. |
+| Microsoft 365 OAuth2 (XOAUTH2) IMAP intake | Current adapter is password-auth; M365 disabled basic auth. Needed only if support mailbox is on M365 — awaiting mailbox-provider confirmation. |
 | Advanced ticketing / Purchase history admin tiles | Hidden pending build (B-113 leftovers). |
 | Time logs: server-side + stop/stamp on resolve | Currently manual localStorage entries. |
-| Handoff ↔ ticket status sync | Handoff resolution only writes a timeline note. |
