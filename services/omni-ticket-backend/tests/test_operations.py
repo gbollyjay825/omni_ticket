@@ -817,6 +817,57 @@ def test_resolving_without_notify_keeps_note_internal(client: TestClient) -> Non
     assert note["type"] == "internal_note"
 
 
+def test_handoff_and_child_ticket_status_sync_both_directions(client: TestClient) -> None:
+    tickets = [
+        item
+        for item in client.get("/api/v1/tickets").json()
+        if item["status"] not in ("solved", "closed")
+    ]
+
+    # Direction 1: resolving the child ticket auto-resolves its handoff.
+    first_parent = tickets[0]
+    handoff = client.post(
+        f"/api/v1/tickets/{first_parent['id']}/handoffs",
+        json={
+            "to_team": "Billing Support",
+            "requested_by": "gbolahan@omniticket.example.com",
+            "reason": "Ledger reconciliation needed.",
+            "due_minutes": 60,
+            "checklist": ["Reconcile ledger"],
+        },
+    ).json()
+    child_id = handoff["linked_ticket_id"]
+    child_etag = client.get(f"/api/v1/tickets/{child_id}").headers["ETag"]
+    solved = client.patch(
+        f"/api/v1/tickets/{child_id}",
+        headers={"If-Match": child_etag},
+        json={"status": "solved"},
+    )
+    assert solved.status_code == 200
+    synced = next(h for h in client.get("/api/v1/handoffs").json() if h["id"] == handoff["id"])
+    assert synced["status"] == "resolved"
+    parent_timeline = client.get(f"/api/v1/tickets/{first_parent['id']}").json()["timeline"]
+    assert any("Handoff to Billing Support completed" in event["body"] for event in parent_timeline)
+
+    # Direction 2: resolving the handoff auto-solves its child ticket.
+    second_parent = tickets[1]
+    other = client.post(
+        f"/api/v1/tickets/{second_parent['id']}/handoffs",
+        json={
+            "to_team": "Airport Services",
+            "requested_by": "gbolahan@omniticket.example.com",
+            "reason": "Meet-and-assist confirmation.",
+            "due_minutes": 60,
+            "checklist": ["Confirm terminal staff"],
+        },
+    ).json()
+    resolved = client.patch(f"/api/v1/handoffs/{other['id']}", json={"status": "resolved"})
+    assert resolved.status_code == 200
+    child = client.get(f"/api/v1/tickets/{other['linked_ticket_id']}").json()["ticket"]
+    assert child["status"] == "solved"
+    assert child["resolved_at"] is not None
+
+
 def test_run_scenario_applies_action_bundle(client: TestClient) -> None:
     ticket = next(
         item
