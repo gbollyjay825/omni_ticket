@@ -8071,6 +8071,24 @@ function OmniApp() {
     )
   }
 
+  function healthTone(score: number): 'good' | 'warn' | 'bad' {
+    return score >= 70 ? 'good' : score >= 45 ? 'warn' : 'bad'
+  }
+
+  /** Real open work for a customer + the most recent CUSTOMER-FACING ticket
+   * (internal handoff-child tickets, whose subjects read "… Handoff from OMNI-…",
+   * are skipped so the activity line stays meaningful). */
+  function customerCardSummary(customerId: string) {
+    const tickets = state.conversations.filter((conversation) => conversation.customerId === customerId)
+    const open = tickets.filter((conversation) => !isClosedOut(conversation.status)).length
+    const byRecent = [...tickets].sort(
+      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+    )
+    const customerFacing = byRecent.find((conversation) => !/handoff from omni-/i.test(conversation.subject))
+    const latest = customerFacing ?? byRecent[0]
+    return { open, resolved: tickets.length - open, total: tickets.length, latest }
+  }
+
   function renderCustomers() {
     const query = state.filters.search.trim().toLowerCase()
     const queryDigits = query.replace(/\D/g, '')
@@ -8225,28 +8243,49 @@ function OmniApp() {
             </p>
           ) : (
             <div className="customer-grid">
-              {customers.map((customer) => (
-                <a
-                  key={customer.id}
-                  className={`customer-card ${selectedCustomer.id === customer.id ? 'active' : ''}`}
-                  href={routeHref({ screen: 'customers', customer: customer.id })}
-                  onClick={(event) => handleAppLink(event, () => selectCustomer(customer.id))}
-                  aria-current={selectedCustomer.id === customer.id ? 'true' : undefined}
-                  aria-label={`Open customer profile for ${customer.name}`}
-                >
-                  <div>
-                    <strong>{customer.name}</strong>
-                    <span>{customer.company}</span>
-                  </div>
-                  <b>{customer.healthScore}</b>
-                  <small>{customer.recentActivity}</small>
-                  <div className="tag-list">
-                    {customer.tags.slice(0, 2).map((tag) => (
-                      <span key={tag}>{tag}</span>
-                    ))}
-                  </div>
-                </a>
-              ))}
+              {customers.map((customer) => {
+                const summary = customerCardSummary(customer.id)
+                const tone = healthTone(customer.healthScore)
+                return (
+                  <a
+                    key={customer.id}
+                    className={`customer-card ${selectedCustomer.id === customer.id ? 'active' : ''}`}
+                    href={routeHref({ screen: 'customers', customer: customer.id })}
+                    onClick={(event) => handleAppLink(event, () => selectCustomer(customer.id))}
+                    aria-current={selectedCustomer.id === customer.id ? 'true' : undefined}
+                    aria-label={`Open customer profile for ${customer.name}`}
+                  >
+                    <div className="customer-card-head">
+                      <strong>{customer.name}</strong>
+                      <span>{customer.company}</span>
+                    </div>
+                    <div className="customer-card-health">
+                      <span className={`health-dot ${tone}`} aria-hidden="true" />
+                      <span className="customer-card-health-label">Health</span>
+                      <b>{customer.healthScore}</b>
+                      <div className="health-track compact">
+                        <span style={{ width: `${customer.healthScore}%` }} />
+                      </div>
+                    </div>
+                    <div className="customer-card-work">
+                      <span>
+                        <strong>{summary.open}</strong> open
+                      </span>
+                      <span>
+                        <strong>{summary.resolved}</strong> resolved
+                      </span>
+                    </div>
+                    <small className="customer-card-activity">
+                      {summary.latest ? summary.latest.subject : 'No tickets yet'}
+                    </small>
+                    <div className="tag-list">
+                      {customer.tags.slice(0, 2).map((tag) => (
+                        <span key={tag}>{tag}</span>
+                      ))}
+                    </div>
+                  </a>
+                )
+              })}
             </div>
           )}
         </section>

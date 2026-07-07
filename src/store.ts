@@ -792,9 +792,15 @@ function mapCustomer(
 ): CustomerProfile {
   const company = customer.company_id ? companiesById.get(customer.company_id) : undefined
   const customerTickets = ticketContexts.filter((context) => context.ticket.customer_id === customer.id)
-  const latestTicket = customerTickets
+  const ticketsByRecent = customerTickets
     .slice()
-    .sort((a, b) => b.ticket.updated_at.localeCompare(a.ticket.updated_at))[0]
+    .sort((a, b) => b.ticket.updated_at.localeCompare(a.ticket.updated_at))
+  // Prefer the newest CUSTOMER-FACING ticket for the activity line: internal
+  // handoff-child tickets carry auto-generated "… Handoff from OMNI-…" subjects
+  // that read as noise on the profile.
+  const latestTicket =
+    ticketsByRecent.find((context) => !/handoff from omni-/i.test(context.ticket.subject)) ??
+    ticketsByRecent[0]
   const primaryPhoneMethod = customer.contact_points.find((point) => {
     const channelId = normalizeChannelId(point.channel)
     return channelId === 'phone' || channelId === 'whatsapp' || channelId === 'sms'

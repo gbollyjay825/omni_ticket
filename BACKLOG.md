@@ -51,6 +51,7 @@ Audit: 18-agent adversarially-verified review of the close-out flow (2026-06-14)
 | F1 | Channel control shows LIVE stats (queued/active/SLA-risk/health from real tickets; real avg-wait; paused channels skip auto-assign) — was frozen seed numbers | ✅ | see git log |
 | F2 | Customer 360 health/CSAT computed from real tickets + ratings (was seeded score / hardcoded 72 / fabricated CSAT); system service accounts hidden from Contacts | ✅ | see git log |
 | F3 | Channel wiring states: per-channel intake/outbound readiness from real config; unwired channels greyed + disabled with reason + Connect link; live/not-live banner; agent occupancy/CSAT computed (was seeded/fabricated) | ✅ | see git log |
+| F4 | Contacts / Customer 360 legibility: labelled health (dot + score + meter), real open/resolved counts on each card, and a customer-facing activity line (internal "Handoff from OMNI-…" child subjects skipped) — was an unlabelled bare number + raw nested-handoff junk | ✅ | see git log |
 
 ## Deploy state
 
