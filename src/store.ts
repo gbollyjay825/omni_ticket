@@ -93,6 +93,7 @@ import {
   type BackendCustomer,
   type BackendDuplicateTicketSuggestion,
   type BackendCase,
+  type BackendCsatFeedback,
   type BackendHandoff,
   type BackendKnowledgeArticle,
   type BackendCreateKnowledgeInput,
@@ -765,6 +766,7 @@ function mapCustomer(
   customer: BackendCustomer,
   companiesById: Map<string, BackendCompany>,
   ticketContexts: BackendTicketContext[],
+  csatFeedback: BackendCsatFeedback[] = [],
 ): CustomerProfile {
   const company = customer.company_id ? companiesById.get(customer.company_id) : undefined
   const customerTickets = ticketContexts.filter((context) => context.ticket.customer_id === customer.id)
@@ -776,6 +778,29 @@ function mapCustomer(
     return channelId === 'phone' || channelId === 'whatsapp' || channelId === 'sms'
   })
 
+  // Health and CSAT are computed from this customer's REAL tickets and ratings —
+  // not seeded scores. Health starts from a healthy baseline and loses points for
+  // open work, SLA risk and breaches; real survey ratings pull it up or down.
+  const openTickets = customerTickets.filter(
+    (context) => context.ticket.status !== 'solved' && context.ticket.status !== 'closed',
+  )
+  const breached = openTickets.filter((context) => context.ticket.sla?.breached).length
+  const atRisk = openTickets.filter(
+    (context) =>
+      !context.ticket.sla?.breached &&
+      context.ticket.sla?.risk != null &&
+      context.ticket.sla.risk !== 'on_track',
+  ).length
+  const ratings = csatFeedback
+    .filter((feedback) => feedback.customer_id === customer.id)
+    .map((feedback) => feedback.rating)
+  const avgRating = ratings.length
+    ? Math.round((ratings.reduce((total, value) => total + value, 0) / ratings.length) * 10) / 10
+    : null
+  let healthScore = 85 - breached * 15 - atRisk * 7 - Math.max(0, openTickets.length - 2) * 4
+  if (avgRating != null) healthScore += avgRating >= 4 ? 8 : avgRating <= 2 ? -18 : 0
+  healthScore = Math.max(10, Math.min(98, healthScore))
+
   return {
     id: customer.id,
     name: customer.name,
@@ -784,10 +809,10 @@ function mapCustomer(
     email: customer.email,
     phone: primaryPhoneMethod?.value ?? '',
     location: customer.location || 'Market workspace',
-    healthScore: company?.health_score ?? 72,
-    csat: customer.sentiment === 'positive' ? 4.7 : customer.sentiment === 'neutral' ? 4.1 : 3.4,
+    healthScore,
+    csat: avgRating ?? 0,
     totalConversations: customerTickets.length,
-    openValue: formatAccountValue(company?.account_value ?? 0),
+    openValue: company ? formatAccountValue(company.account_value) : '—',
     preferredChannels: customer.preferred_channels.map((channel) => normalizeChannelId(channel)),
     contactMethods: mapContactMethods(customer),
     tags: customer.tags,
@@ -1057,7 +1082,9 @@ function mergeBackendSnapshot(current: OmniState, snapshot: BackendSnapshot): Om
     }))
   const conversationsById = new Map(conversations.map((conversation) => [conversation.id, conversation]))
   const companiesById = new Map(snapshot.companies.map((company) => [company.id, company]))
-  const customers = snapshot.customers.map((customer) => mapCustomer(customer, companiesById, snapshot.tickets))
+  const customers = snapshot.customers.map((customer) =>
+    mapCustomer(customer, companiesById, snapshot.tickets, snapshot.csat_feedback ?? []),
+  )
   const agents = snapshot.agents.map((agent) => mapAgent(agent, snapshot.tickets))
   const handoffs = snapshot.handoffs.map((handoff) => mapHandoff(handoff, conversationsById))
   const cases = (snapshot.cases ?? []).map(mapCase)

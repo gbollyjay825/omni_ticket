@@ -8001,8 +8001,13 @@ function OmniApp() {
   function renderCustomers() {
     const query = state.filters.search.trim().toLowerCase()
     const queryDigits = query.replace(/\D/g, '')
+    // System service accounts (e.g. the production account-request pack) are not
+    // customers — keep them out of the Customer 360 directory.
+    const directory = state.customers.filter(
+      (customer) => !customer.tags.includes('production-readiness'),
+    )
     const customers = query
-      ? state.customers.filter(
+      ? directory.filter(
           (customer) =>
             customer.name.toLowerCase().includes(query) ||
             customer.email.toLowerCase().includes(query) ||
@@ -8015,7 +8020,7 @@ function OmniApp() {
             customer.company.toLowerCase().includes(query) ||
             customer.tags.some((tag) => tag.toLowerCase().includes(query)),
         )
-      : state.customers
+      : directory
     const companies = backendSnapshot?.companies ?? []
 
     return (
