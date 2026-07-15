@@ -27,6 +27,20 @@ function durableCursor(value: unknown): string | null {
   return typeof value === 'string' && value && !value.startsWith('ephemeral_') ? value : null
 }
 
+export function buildRealtimeUrl(
+  apiBaseUrl: string,
+  marketId: string,
+  cursor: string | null = null,
+  pageOrigin = typeof window !== 'undefined' ? window.location.origin : undefined,
+) {
+  const url = new URL(apiBaseUrl, pageOrigin)
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+  url.pathname = `${url.pathname.replace(/\/$/, '')}/realtime`
+  url.searchParams.set('market_id', marketId)
+  if (cursor) url.searchParams.set('cursor', cursor)
+  return url
+}
+
 export class OmniRealtimeClient {
   private socket: WebSocket | null = null
   private reconnectTimer: number | null = null
@@ -77,14 +91,17 @@ export class OmniRealtimeClient {
 
   private connect() {
     if (this.stopped || typeof WebSocket === 'undefined') return
-    const url = new URL(getBackendBaseUrl())
-    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-    url.pathname = `${url.pathname.replace(/\/$/, '')}/realtime`
-    url.searchParams.set('market_id', this.session.market.id)
-    if (this.cursor) url.searchParams.set('cursor', this.cursor)
-    const protocols = ['omni.realtime.v1']
-    if (this.session.access_token) protocols.push(`bearer.${this.session.access_token}`)
-    this.socket = new WebSocket(url, protocols)
+    let socket: WebSocket
+    try {
+      const url = buildRealtimeUrl(getBackendBaseUrl(), this.session.market.id, this.cursor)
+      const protocols = ['omni.realtime.v1']
+      if (this.session.access_token) protocols.push(`bearer.${this.session.access_token}`)
+      socket = new WebSocket(url, protocols)
+    } catch {
+      this.scheduleReconnect()
+      return
+    }
+    this.socket = socket
     this.socket.addEventListener('open', () => {
       this.reconnectAttempts = 0
       this.onStatus?.('connected')

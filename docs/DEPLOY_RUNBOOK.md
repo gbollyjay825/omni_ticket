@@ -100,5 +100,10 @@ ssh pulse-prod 'pm2 status | grep omni-ticket'                        # all onli
 curl -fsS https://omni.wakanow.com/api/v1/health                     # public
 ```
 
+The isolated Omni Nginx site is tracked at `infra/nginx/omni-ticket.conf`. Both
+the `/api/` and frontend locations must forward WebSocket upgrade headers so the
+realtime endpoint at `/api/v1/realtime` can connect. Validate a changed site with
+`sudo nginx -t` before reloading Nginx. Do not edit the Pulse site.
+
 Check the live release commit by inspecting a marker only present at the intended tip,
 e.g. `grep -c C-110 /home/amechi/omni-ticket/current/docs/project-tracker.md`.
