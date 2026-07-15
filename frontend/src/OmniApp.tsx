@@ -2128,6 +2128,76 @@ function OmniApp() {
     }
   }
 
+  function buildEmailSettingsPatch(): BackendUpdateEmailProviderSettingsInput {
+    const inboundHost = emailSettingsDraft.inboundHost.trim()
+    const outboundHost = emailSettingsDraft.outboundHost.trim()
+    const inboundUsername = emailSettingsDraft.inboundUsername.trim()
+    const outboundUsername = emailSettingsDraft.outboundUsername.trim()
+    const normalizePassword = (value: string, host: string) => {
+      const trimmed = value.trim()
+      return host.toLowerCase().endsWith('gmail.com') ? trimmed.replace(/\s+/g, '') : trimmed
+    }
+    const inboundPassword = normalizePassword(emailSettingsDraft.inboundPassword, inboundHost)
+    const outboundPassword = normalizePassword(emailSettingsDraft.outboundPassword, outboundHost)
+    const sharedGmailMailbox =
+      inboundHost.toLowerCase().endsWith('gmail.com')
+      && outboundHost.toLowerCase().endsWith('gmail.com')
+      && inboundUsername.toLowerCase() === outboundUsername.toLowerCase()
+
+    const patch: BackendUpdateEmailProviderSettingsInput = {
+        inbound_enabled: emailSettingsDraft.inboundEnabled,
+        inbound_host: inboundHost,
+        inbound_port: Number(emailSettingsDraft.inboundPort || 993),
+        inbound_username: inboundUsername,
+        inbound_mailbox: emailSettingsDraft.inboundMailbox.trim() || 'INBOX',
+        inbound_use_ssl: emailSettingsDraft.inboundUseSsl,
+        inbound_mark_seen: emailSettingsDraft.inboundMarkSeen,
+        clear_inbound_password: emailSettingsDraft.clearInboundPassword,
+        outbound_enabled: emailSettingsDraft.outboundEnabled,
+        outbound_host: outboundHost,
+        outbound_port: Number(emailSettingsDraft.outboundPort || 587),
+        outbound_username: outboundUsername,
+        outbound_from_email: emailSettingsDraft.outboundFromEmail.trim(),
+        outbound_use_starttls: emailSettingsDraft.outboundUseStarttls,
+        outbound_use_ssl: emailSettingsDraft.outboundUseSsl,
+        clear_outbound_password: emailSettingsDraft.clearOutboundPassword,
+    }
+    if (sharedGmailMailbox && (inboundPassword || outboundPassword)) {
+      patch.inbound_password = inboundPassword || outboundPassword
+      patch.outbound_password = outboundPassword || inboundPassword
+    } else {
+      if (inboundPassword) patch.inbound_password = inboundPassword
+      if (outboundPassword) patch.outbound_password = outboundPassword
+    }
+    return patch
+  }
+
+  async function persistEmailSettingsDraft() {
+    if (!backendSession) throw new Error('Sign in before updating email settings.')
+    const updated = await patchBackendEmailSettings(buildEmailSettingsPatch(), backendSession)
+    setEmailConnectionTest(null)
+    setEmailSettingsDraft({
+      inboundEnabled: updated.inbound_enabled,
+      inboundHost: updated.inbound_host,
+      inboundPort: updated.inbound_port,
+      inboundUsername: updated.inbound_username || currentMarket?.support_email || '',
+      inboundPassword: '',
+      inboundMailbox: updated.inbound_mailbox || 'INBOX',
+      inboundUseSsl: updated.inbound_use_ssl,
+      inboundMarkSeen: updated.inbound_mark_seen,
+      clearInboundPassword: false,
+      outboundEnabled: updated.outbound_enabled,
+      outboundHost: updated.outbound_host,
+      outboundPort: updated.outbound_port,
+      outboundUsername: updated.outbound_username || currentMarket?.support_email || '',
+      outboundPassword: '',
+      outboundFromEmail: updated.outbound_from_email || currentMarket?.support_email || '',
+      outboundUseStarttls: updated.outbound_use_starttls,
+      outboundUseSsl: updated.outbound_use_ssl,
+      clearOutboundPassword: false,
+    })
+  }
+
   async function handleEmailSettingsSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!backendSession || emailSettingsBusy) return
@@ -2137,52 +2207,7 @@ function OmniApp() {
     }
     setEmailSettingsBusy(true)
     try {
-      const patch: BackendUpdateEmailProviderSettingsInput = {
-        inbound_enabled: emailSettingsDraft.inboundEnabled,
-        inbound_host: emailSettingsDraft.inboundHost.trim(),
-        inbound_port: Number(emailSettingsDraft.inboundPort || 993),
-        inbound_username: emailSettingsDraft.inboundUsername.trim(),
-        inbound_mailbox: emailSettingsDraft.inboundMailbox.trim() || 'INBOX',
-        inbound_use_ssl: emailSettingsDraft.inboundUseSsl,
-        inbound_mark_seen: emailSettingsDraft.inboundMarkSeen,
-        clear_inbound_password: emailSettingsDraft.clearInboundPassword,
-        outbound_enabled: emailSettingsDraft.outboundEnabled,
-        outbound_host: emailSettingsDraft.outboundHost.trim(),
-        outbound_port: Number(emailSettingsDraft.outboundPort || 587),
-        outbound_username: emailSettingsDraft.outboundUsername.trim(),
-        outbound_from_email: emailSettingsDraft.outboundFromEmail.trim(),
-        outbound_use_starttls: emailSettingsDraft.outboundUseStarttls,
-        outbound_use_ssl: emailSettingsDraft.outboundUseSsl,
-        clear_outbound_password: emailSettingsDraft.clearOutboundPassword,
-      }
-      if (emailSettingsDraft.inboundPassword.trim()) {
-        patch.inbound_password = emailSettingsDraft.inboundPassword.trim()
-      }
-      if (emailSettingsDraft.outboundPassword.trim()) {
-        patch.outbound_password = emailSettingsDraft.outboundPassword.trim()
-      }
-      const updated = await patchBackendEmailSettings(patch, backendSession)
-      setEmailConnectionTest(null)
-      setEmailSettingsDraft({
-        inboundEnabled: updated.inbound_enabled,
-        inboundHost: updated.inbound_host,
-        inboundPort: updated.inbound_port,
-        inboundUsername: updated.inbound_username || currentMarket?.support_email || '',
-        inboundPassword: '',
-        inboundMailbox: updated.inbound_mailbox || 'INBOX',
-        inboundUseSsl: updated.inbound_use_ssl,
-        inboundMarkSeen: updated.inbound_mark_seen,
-        clearInboundPassword: false,
-        outboundEnabled: updated.outbound_enabled,
-        outboundHost: updated.outbound_host,
-        outboundPort: updated.outbound_port,
-        outboundUsername: updated.outbound_username || currentMarket?.support_email || '',
-        outboundPassword: '',
-        outboundFromEmail: updated.outbound_from_email || currentMarket?.support_email || '',
-        outboundUseStarttls: updated.outbound_use_starttls,
-        outboundUseSsl: updated.outbound_use_ssl,
-        clearOutboundPassword: false,
-      })
+      await persistEmailSettingsDraft()
       setUiNotice('Email setup saved.')
       await refreshBackend()
     } catch (error) {
@@ -2194,8 +2219,13 @@ function OmniApp() {
 
   async function handleEmailConnectionTest() {
     if (!backendSession || emailSettingsBusy) return
+    if (emailSettingsDraft.outboundUseSsl && emailSettingsDraft.outboundUseStarttls) {
+      setUiNotice('SMTP can use SSL or STARTTLS, not both.')
+      return
+    }
     setEmailSettingsBusy(true)
     try {
+      await persistEmailSettingsDraft()
       const result = await testBackendEmailSettings(backendSession)
       setEmailConnectionTest(result)
       const connected = Number(result.inbound.connected) + Number(result.outbound.connected)
@@ -12794,7 +12824,7 @@ function OmniApp() {
                   disabled={!canManageEmailSettings || emailSettingsBusy || !backendSession}
                 >
                   <RefreshCw size={15} />
-                  Test connections
+                  Save & test connections
                 </button>
                 <button
                   className="primary-action"

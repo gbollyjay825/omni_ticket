@@ -21,12 +21,18 @@ test('Admin tools open focused API-backed settings rather than stacked panels', 
   await page.getByRole('button', { name: 'Email', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Email' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Mailbox intake and replies' })).toBeVisible()
+  const settingsSave = page.waitForResponse((response) =>
+    response.url().endsWith('/api/v1/email/settings')
+      && response.request().method() === 'PATCH'
+      && response.ok(),
+  )
   const connectionTest = page.waitForResponse((response) =>
     response.url().endsWith('/api/v1/email/settings/test')
       && response.request().method() === 'POST'
       && response.ok(),
   )
-  await page.getByRole('button', { name: 'Test connections' }).click()
+  await page.getByRole('button', { name: 'Save & test connections' }).click()
+  await settingsSave
   await connectionTest
   await expect(page.getByText(/^Connections tested /)).toBeVisible()
 
