@@ -37,6 +37,8 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { BackendSession } from '../../backend'
+import type { RealtimeEnvelope } from '../../api/realtime'
+import { useOmnichatRealtime } from '../omnichat/useOmnichatRealtime'
 import {
   createTicket,
   createTicketTask,
@@ -74,6 +76,26 @@ type ComposerMode = 'reply' | 'note'
 type DetailPanel = 'properties' | 'activity' | 'links' | 'tasks' | 'time' | 'suggestions'
 
 const PAGE_SIZE = 30
+const TICKET_REALTIME_AGGREGATES = new Set([
+  'case',
+  'conversation_ticket_link',
+  'handoff',
+  'message',
+  'outbound_message',
+  'ticket',
+  'ticket_time_entry',
+  'ticket_watcher',
+])
+
+function eventTicketIds(event: RealtimeEnvelope) {
+  const ids = new Set<string>()
+  if (event.aggregate_type === 'ticket') ids.add(event.aggregate_id)
+  for (const key of ['ticket_id', 'linked_ticket_id']) {
+    const value = event.payload[key]
+    if (typeof value === 'string' && value) ids.add(value)
+  }
+  return ids
+}
 
 function initials(value: string) {
   return value
@@ -184,7 +206,6 @@ export function TicketWorkspace({ session, online, onNavigate, onSignOut }: Tick
         limit: PAGE_SIZE,
         offset,
       }),
-    refetchInterval: 30_000,
   })
   const customersQuery = useQuery({
     queryKey: ['ticket-customers', session.market.id],
@@ -210,7 +231,25 @@ export function TicketWorkspace({ session, online, onNavigate, onSignOut }: Tick
     queryKey: ['ticket-workspace', session.market.id, ticketId],
     queryFn: () => fetchTicketWorkspace(session, ticketId),
     enabled: Boolean(ticketId),
-    refetchInterval: 30_000,
+  })
+
+  useOmnichatRealtime({
+    session,
+    online,
+    onDurableEvent: (event) => {
+      if (!TICKET_REALTIME_AGGREGATES.has(event.aggregate_type)) return
+      void queryClient.invalidateQueries({ queryKey: ['ticket-queue', session.market.id] })
+      if (!ticketId) return
+      const affectedTicketIds = eventTicketIds(event)
+      if (
+        affectedTicketIds.has(ticketId) ||
+        (event.aggregate_type === 'case' && event.aggregate_id === workspaceQuery.data?.case?.id)
+      ) {
+        void queryClient.invalidateQueries({
+          queryKey: ['ticket-workspace', session.market.id, ticketId],
+        })
+      }
+    },
   })
 
   const tickets = ticketsQuery.data?.items ?? []

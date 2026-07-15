@@ -144,6 +144,7 @@ from app.models.domain import (
     DiscussionComment,
     DiscussionTopic,
     DuplicateTicketSuggestion,
+    EmailConnectionTestResult,
     EmailProviderSettings,
     GlobalSearchResult,
     Handoff,
@@ -234,6 +235,7 @@ from app.services.alert_delivery import alert_delivery_service
 from app.services.campaigns import campaign_service
 from app.services.facebook_webhooks import facebook_webhook_adapter
 from app.services.global_search import global_search_service
+from app.services.email_connection import email_connection_tester
 from app.services.inbound_adapters import inbound_adapter_router
 from app.services.instagram_webhooks import instagram_webhook_adapter
 from app.services.outbound_adapters import outbound_adapter_router
@@ -3567,6 +3569,19 @@ def update_email_provider_settings(
         market_id=context.market_id,
         actor=context.user.email,
     )
+
+
+@router.post("/email/settings/test", response_model=EmailConnectionTestResult)
+def test_email_provider_settings(
+    context: RequestContext = Depends(require_context),
+    db: Session = Depends(get_db),
+) -> EmailConnectionTestResult:
+    require_admin(context)
+    runtime = email_provider_settings_repository.runtime_settings(
+        db,
+        market_id=context.market_id,
+    )
+    return email_connection_tester.test(runtime, market_id=context.market_id)
 
 
 @router.get("/integration-credentials/settings", response_model=IntegrationCredentialSettings)

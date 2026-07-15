@@ -111,6 +111,7 @@ import type {
   BackendCustomerPage,
   BackendCustomerWorkspace,
   BackendDiscussionComment,
+  BackendEmailConnectionTestResult,
   BackendEmailProviderSettings,
   BackendGlobalSearchResult,
   BackendAnalyticsSummary,
@@ -173,6 +174,7 @@ import {
   pruneBackendAttachmentRetention,
   pruneBackendAuditRetention,
   sendBackendProductionAccountRequestEmail,
+  testBackendEmailSettings,
   watchBackendTicket,
 } from './backend'
 import { useOmniStore } from './store'
@@ -1277,6 +1279,8 @@ function OmniApp() {
   const [emailSettingsDraft, setEmailSettingsDraft] =
     useState<EmailSettingsDraft>(defaultEmailSettingsDraft)
   const [emailSettingsBusy, setEmailSettingsBusy] = useState(false)
+  const [emailConnectionTest, setEmailConnectionTest] =
+    useState<BackendEmailConnectionTestResult | null>(null)
   const [integrationCredentialDraft, setIntegrationCredentialDraft] =
     useState<IntegrationCredentialDraft>(defaultIntegrationCredentialDraft)
   const [integrationCredentialBusy, setIntegrationCredentialBusy] = useState(false)
@@ -1497,7 +1501,7 @@ function OmniApp() {
         )
       })
     return () => controller.abort()
-  }, [backendSession, backendSync.lastSyncAt, extractedWorkspace, online])
+  }, [backendSession, extractedWorkspace, online])
 
   useEffect(() => {
     if (extractedWorkspace || !backendSession || !online || !selectedConversation.id) return
@@ -1535,10 +1539,13 @@ function OmniApp() {
   } = useOmnichatRealtime({
     session: extractedWorkspace ? null : backendSession,
     online,
-    onDurableEvent: () => {
+    onDurableEvent: (event) => {
+      if (event.aggregate_type === 'personal_task') {
+        return
+      }
       window.clearTimeout(realtimeRefreshTimerRef.current)
       realtimeRefreshTimerRef.current = window.setTimeout(() => {
-        void refreshBackendRef.current()
+        void refreshBackendRef.current({ background: true })
       }, 250)
     },
   })
@@ -2155,6 +2162,7 @@ function OmniApp() {
         patch.outbound_password = emailSettingsDraft.outboundPassword.trim()
       }
       const updated = await patchBackendEmailSettings(patch, backendSession)
+      setEmailConnectionTest(null)
       setEmailSettingsDraft({
         inboundEnabled: updated.inbound_enabled,
         inboundHost: updated.inbound_host,
@@ -2179,6 +2187,25 @@ function OmniApp() {
       await refreshBackend()
     } catch (error) {
       setUiNotice(error instanceof Error ? error.message : 'Email setup save failed.')
+    } finally {
+      setEmailSettingsBusy(false)
+    }
+  }
+
+  async function handleEmailConnectionTest() {
+    if (!backendSession || emailSettingsBusy) return
+    setEmailSettingsBusy(true)
+    try {
+      const result = await testBackendEmailSettings(backendSession)
+      setEmailConnectionTest(result)
+      const connected = Number(result.inbound.connected) + Number(result.outbound.connected)
+      setUiNotice(
+        connected === 2
+          ? 'Email connections verified. IMAP and SMTP authentication succeeded.'
+          : `Email connection test completed: ${connected} of 2 connections succeeded.`,
+      )
+    } catch (error) {
+      setUiNotice(error instanceof Error ? error.message : 'Email connection test failed.')
     } finally {
       setEmailSettingsBusy(false)
     }
@@ -12483,14 +12510,24 @@ function OmniApp() {
             </p>
             <div className="email-settings-status" aria-label="Email setup readiness">
               <article>
-                <span className={`channel-health-dot ${emailInboundConfig?.live_intake ? 'healthy' : 'degraded'}`} />
+                <span className={`channel-health-dot ${emailConnectionTest?.inbound.connected ? 'healthy' : 'degraded'}`} />
                 <strong>Inbound</strong>
-                <small>{emailInboundConfig?.live_intake ? 'IMAP live' : emailInboundConfig?.missing_settings.slice(0, 2).join(' · ') || 'Pending setup'}</small>
+                <small>
+                  {emailConnectionTest?.inbound.detail ??
+                    (emailInboundConfig?.configured
+                      ? 'IMAP configured. Run the connection test.'
+                      : emailInboundConfig?.missing_settings.slice(0, 2).join(' · ') || 'Pending setup')}
+                </small>
               </article>
               <article>
-                <span className={`channel-health-dot ${emailOutboundConfig?.live_delivery ? 'healthy' : 'degraded'}`} />
+                <span className={`channel-health-dot ${emailConnectionTest?.outbound.connected ? 'healthy' : 'degraded'}`} />
                 <strong>Outbound</strong>
-                <small>{emailOutboundConfig?.live_delivery ? 'SMTP live' : emailOutboundConfig?.missing_settings.slice(0, 2).join(' · ') || 'Pending setup'}</small>
+                <small>
+                  {emailConnectionTest?.outbound.detail ??
+                    (emailOutboundConfig?.configured
+                      ? 'SMTP configured. Run the connection test.'
+                      : emailOutboundConfig?.missing_settings.slice(0, 2).join(' · ') || 'Pending setup')}
+                </small>
               </article>
               <article>
                 <Lock size={15} />
@@ -12744,18 +12781,30 @@ function OmniApp() {
             </div>
             <div className="email-settings-actions">
               <span>
-                {emailProviderSettings
-                  ? `Last saved ${formatTime(emailProviderSettings.updated_at)}`
+                {emailConnectionTest
+                  ? `Connections tested ${formatTime(emailConnectionTest.tested_at)}`
+                  : emailProviderSettings
+                    ? `Last saved ${formatTime(emailProviderSettings.updated_at)}`
                   : 'Backend email settings will appear after sync.'}
               </span>
-              <button
-                className="primary-action"
-                type="submit"
-                disabled={!canManageEmailSettings || emailSettingsBusy || !backendSession}
-              >
-                <Check size={15} />
-                Save email setup
-              </button>
+              <div className="email-settings-action-buttons">
+                <button
+                  type="button"
+                  onClick={() => void handleEmailConnectionTest()}
+                  disabled={!canManageEmailSettings || emailSettingsBusy || !backendSession}
+                >
+                  <RefreshCw size={15} />
+                  Test connections
+                </button>
+                <button
+                  className="primary-action"
+                  type="submit"
+                  disabled={!canManageEmailSettings || emailSettingsBusy || !backendSession}
+                >
+                  <Check size={15} />
+                  Save email setup
+                </button>
+              </div>
             </div>
           </form>
           <div data-setup-panel="email" className="automation-settings-panel team-inbox-overview">

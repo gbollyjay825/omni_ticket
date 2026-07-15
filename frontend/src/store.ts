@@ -1617,7 +1617,7 @@ export function useOmniStore() {
     }
   }
 
-  async function refreshBackend() {
+  async function refreshBackend(options: { background?: boolean } = {}) {
     if (!backendSession) {
       setBackendSync((current) => ({
         ...current,
@@ -1635,11 +1635,13 @@ export function useOmniStore() {
       return
     }
 
-    setBackendSync((current) => ({
-      ...current,
-      status: 'syncing',
-      error: undefined,
-    }))
+    if (!options.background) {
+      setBackendSync((current) => ({
+        ...current,
+        status: 'syncing',
+        error: undefined,
+      }))
+    }
 
     try {
       const [snapshot, oidcProviderConfig] = await Promise.all([

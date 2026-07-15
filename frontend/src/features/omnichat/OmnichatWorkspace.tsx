@@ -70,6 +70,13 @@ interface OmnichatWorkspaceProps {
 
 type ComposerMode = 'reply' | 'private'
 type MobilePane = 'queue' | 'thread' | 'context'
+const CONVERSATION_REALTIME_AGGREGATES = new Set([
+  'conversation',
+  'conversation_assignment',
+  'conversation_message',
+  'conversation_ticket_link',
+  'message_receipt',
+])
 
 function initials(name: string) {
   return name
@@ -233,6 +240,7 @@ export function OmnichatWorkspace({
     session,
     online,
     onDurableEvent: (event) => {
+      if (!CONVERSATION_REALTIME_AGGREGATES.has(event.aggregate_type)) return
       if (event.aggregate_id === activeConversationId || event.payload.conversation_id === activeConversationId) {
         void refreshConversation()
       } else {

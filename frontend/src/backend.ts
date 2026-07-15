@@ -499,6 +499,19 @@ export interface BackendUpdateEmailProviderSettingsInput {
   clear_outbound_password?: boolean
 }
 
+export interface BackendEmailConnectionCheck {
+  configured: boolean
+  connected: boolean
+  detail: string
+}
+
+export interface BackendEmailConnectionTestResult {
+  market_id: string
+  tested_at: string
+  inbound: BackendEmailConnectionCheck
+  outbound: BackendEmailConnectionCheck
+}
+
 export interface BackendIntegrationCredentialSettings {
   market_id: string
   ai_provider: string
@@ -2317,6 +2330,14 @@ export async function patchBackendEmailSettings(
   return fetchJson<BackendEmailProviderSettings>('/email/settings', {
     method: 'PATCH',
     body: JSON.stringify(patch),
+  }, session)
+}
+
+export async function testBackendEmailSettings(
+  session: BackendSession,
+): Promise<BackendEmailConnectionTestResult> {
+  return fetchJson<BackendEmailConnectionTestResult>('/email/settings/test', {
+    method: 'POST',
   }, session)
 }
 

@@ -379,6 +379,19 @@ class UpdateEmailProviderSettingsRequest(BaseModel):
     clear_outbound_password: bool = False
 
 
+class EmailConnectionCheck(BaseModel):
+    configured: bool
+    connected: bool
+    detail: str
+
+
+class EmailConnectionTestResult(BaseModel):
+    market_id: str
+    tested_at: datetime = Field(default_factory=utc_now)
+    inbound: EmailConnectionCheck
+    outbound: EmailConnectionCheck
+
+
 class IntegrationCredentialSettings(BaseModel):
     market_id: str = "market-ng"
     ai_provider: str = "auto"

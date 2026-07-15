@@ -1694,6 +1694,23 @@ export interface paths {
         patch: operations["update_email_provider_settings_api_v1_email_settings_patch"];
         trace?: never;
     };
+    "/api/v1/email/settings/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Email Provider Settings */
+        post: operations["test_email_provider_settings_api_v1_email_settings_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/features": {
         parameters: {
             query?: never;
@@ -6407,6 +6424,27 @@ export interface components {
             /** Score */
             score: number;
             ticket: components["schemas"]["Ticket"];
+        };
+        /** EmailConnectionCheck */
+        EmailConnectionCheck: {
+            /** Configured */
+            configured: boolean;
+            /** Connected */
+            connected: boolean;
+            /** Detail */
+            detail: string;
+        };
+        /** EmailConnectionTestResult */
+        EmailConnectionTestResult: {
+            inbound: components["schemas"]["EmailConnectionCheck"];
+            /** Market Id */
+            market_id: string;
+            outbound: components["schemas"]["EmailConnectionCheck"];
+            /**
+             * Tested At
+             * Format: date-time
+             */
+            tested_at?: string;
         };
         /** EmailNotification */
         EmailNotification: {
@@ -14581,6 +14619,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EmailProviderSettings"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_email_provider_settings_api_v1_email_settings_test_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "X-Omni-Market"?: string | null;
+            };
+            path?: never;
+            cookie?: {
+                omni_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailConnectionTestResult"];
                 };
             };
             /** @description Validation Error */

@@ -2,15 +2,19 @@ import { expect, test } from '@playwright/test'
 
 test.use({ storageState: { cookies: [], origins: [] } })
 
-test('local development access signs in and persists the admin session', async ({ page }) => {
+test('administrator access signs in and persists the session', async ({ page }) => {
   await page.goto('/?screen=inbox', { waitUntil: 'domcontentloaded' })
 
   const access = page.getByRole('region', { name: 'Local development access' })
-  await expect(access).toBeVisible()
-  await expect(access).toContainText('gbolahan@omniticket.example.com')
-  await expect(access).toContainText('omni-demo')
-
-  await access.getByRole('button', { name: 'Sign in as local administrator' }).click()
+  if (await access.isVisible()) {
+    await expect(access).toContainText('gbolahan@omniticket.example.com')
+    await expect(access).toContainText('omni-demo')
+    await access.getByRole('button', { name: 'Sign in as local administrator' }).click()
+  } else {
+    await page.getByLabel('Email').fill('gbolahan@omniticket.example.com')
+    await page.getByLabel('Password').fill('omni-demo')
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click()
+  }
   await expect(page.getByRole('heading', { name: 'All tickets' })).toBeVisible()
 
   await page.reload({ waitUntil: 'domcontentloaded' })

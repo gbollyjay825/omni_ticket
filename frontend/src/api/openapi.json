@@ -5978,6 +5978,55 @@
         "title": "DuplicateTicketSuggestion",
         "type": "object"
       },
+      "EmailConnectionCheck": {
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "connected": {
+            "title": "Connected",
+            "type": "boolean"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "configured",
+          "connected",
+          "detail"
+        ],
+        "title": "EmailConnectionCheck",
+        "type": "object"
+      },
+      "EmailConnectionTestResult": {
+        "properties": {
+          "inbound": {
+            "$ref": "#/components/schemas/EmailConnectionCheck"
+          },
+          "market_id": {
+            "title": "Market Id",
+            "type": "string"
+          },
+          "outbound": {
+            "$ref": "#/components/schemas/EmailConnectionCheck"
+          },
+          "tested_at": {
+            "format": "date-time",
+            "title": "Tested At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "market_id",
+          "inbound",
+          "outbound"
+        ],
+        "title": "EmailConnectionTestResult",
+        "type": "object"
+      },
       "EmailNotification": {
         "properties": {
           "active": {
@@ -27031,6 +27080,87 @@
           }
         },
         "summary": "Update Email Provider Settings",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/email/settings/test": {
+      "post": {
+        "operationId": "test_email_provider_settings_api_v1_email_settings_test_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Omni-Market",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Omni-Market"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "omni_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Omni Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailConnectionTestResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Test Email Provider Settings",
         "tags": [
           "operations"
         ]

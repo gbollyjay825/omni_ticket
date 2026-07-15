@@ -9778,6 +9778,12 @@ button.freshchat-global-search:hover {
   overflow-wrap: anywhere;
 }
 
+.email-settings-action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .account-request-panel {
   gap: 12px;
 }
