@@ -21,7 +21,7 @@ from app.db.models import (
 from app.db.session import create_database_engine
 from app.db.store_sync import persist_store_state
 
-ALEMBIC_HEAD = "20260715_0057"
+ALEMBIC_HEAD = "20260715_0058"
 
 
 def test_file_sqlite_uses_unbounded_short_lived_connections(tmp_path: Path) -> None:

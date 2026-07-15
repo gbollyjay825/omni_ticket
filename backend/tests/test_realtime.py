@@ -28,6 +28,10 @@ def test_ticket_changes_create_durable_realtime_events(client: TestClient) -> No
     assert any(event["type"] == "ticket.created" for event in ticket_events)
     assert all(event["market_id"] == "market-ng" for event in events)
     assert all(event["organization_id"] == "wakanow" for event in events)
+    assert any(
+        event["aggregate_type"] == "message" and event["version"] > 2_147_483_647
+        for event in events
+    )
 
     cursor = page.json()["cursor"]
     updated = client.patch(

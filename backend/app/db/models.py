@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -1055,7 +1056,7 @@ class RealtimeEventRecord(Base):
     type: Mapped[str] = mapped_column(String(80), index=True)
     aggregate_type: Mapped[str] = mapped_column(String(64), index=True)
     aggregate_id: Mapped[str] = mapped_column(String(64), index=True)
-    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False)
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
 

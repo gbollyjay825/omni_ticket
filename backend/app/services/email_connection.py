@@ -85,7 +85,7 @@ class EmailConnectionTester:
         if not config.outbound_from_email:
             missing.append("From address")
         if config.outbound_username and not config.outbound_password:
-            missing.append("SMTP password or API key")
+            missing.append("SMTP app password")
         if config.outbound_use_ssl and config.outbound_use_starttls:
             missing.append("Choose SSL or STARTTLS")
         if missing:
@@ -118,13 +118,13 @@ class EmailConnectionTester:
             return EmailConnectionCheck(
                 configured=True,
                 connected=False,
-                detail="SMTP authentication failed. Check the username and API key or password.",
+                detail="SMTP authentication failed. Check the mailbox address and app password.",
             )
         except smtplib.SMTPServerDisconnected:
             return EmailConnectionCheck(
                 configured=True,
                 connected=False,
-                detail="The SMTP server closed the connection during authentication. Check the username and API key.",
+                detail="The SMTP server closed the connection during authentication. Check the mailbox address and app password.",
             )
         except (smtplib.SMTPException, OSError, TimeoutError):
             return EmailConnectionCheck(

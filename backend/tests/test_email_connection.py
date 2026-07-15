@@ -19,10 +19,10 @@ def _save_email_settings(client: TestClient) -> None:
             "inbound_mailbox": "INBOX",
             "inbound_use_ssl": True,
             "outbound_enabled": True,
-            "outbound_host": "smtp.sendgrid.test",
+            "outbound_host": "smtp.gmail.test",
             "outbound_port": 587,
-            "outbound_username": "apikey",
-            "outbound_password": "sendgrid-api-key",
+            "outbound_username": "omni-test@wakanow.com",
+            "outbound_password": "smtp-app-password",
             "outbound_from_email": "omni-test@wakanow.com",
             "outbound_use_starttls": True,
             "outbound_use_ssl": False,
@@ -84,9 +84,9 @@ def test_email_connection_test_authenticates_imap_and_smtp(
     assert result["inbound"]["connected"] is True
     assert result["outbound"]["connected"] is True
     assert "imap-app-password" not in response.text
-    assert "sendgrid-api-key" not in response.text
+    assert "smtp-app-password" not in response.text
     assert ("imap-select", "INBOX", True) in events
-    assert ("smtp-login", "apikey", "sendgrid-api-key") in events
+    assert ("smtp-login", "omni-test@wakanow.com", "smtp-app-password") in events
 
 
 def test_email_connection_test_reports_provider_auth_failures(
@@ -138,3 +138,4 @@ def test_email_connection_test_reports_provider_auth_failures(
     }
     assert result["outbound"]["connected"] is False
     assert "closed the connection" in result["outbound"]["detail"]
+    assert "app password" in result["outbound"]["detail"]
