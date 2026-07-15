@@ -1,0 +1,298 @@
+.omnichat-shell {
+  --oc-ink: #172b4d;
+  --oc-muted: #5b6b80;
+  --oc-border: #dfe5ec;
+  --oc-soft: #f6f8fb;
+  --oc-accent: #c9234a;
+  --oc-accent-soft: #fff0f3;
+  --oc-private: #fff5d9;
+  display: grid;
+  grid-template-columns: 58px minmax(300px, 348px) minmax(440px, 1fr) minmax(280px, 330px);
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  color: var(--oc-ink);
+  background: #fff;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.omnichat-shell * { box-sizing: border-box; letter-spacing: 0; }
+.omnichat-shell button, .omnichat-shell input, .omnichat-shell select, .omnichat-shell textarea { font: inherit; }
+.omnichat-shell button { color: inherit; }
+
+.omnichat-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 8px;
+  background: #132238;
+  border-right: 1px solid #0e1b2d;
+}
+
+.omnichat-logo,
+.omnichat-rail nav button,
+.omnichat-rail-bottom button {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  color: #cbd5e1;
+  background: transparent;
+  cursor: pointer;
+}
+
+.omnichat-logo {
+  margin-bottom: 17px;
+  color: #fff;
+  background: var(--oc-accent);
+  font-weight: 800;
+  font-size: 17px;
+}
+
+.omnichat-rail nav { display: grid; gap: 7px; }
+.omnichat-rail nav button:hover, .omnichat-rail nav button.active, .omnichat-rail-bottom button:hover { color: #fff; background: #263851; }
+.omnichat-rail-bottom { display: grid; gap: 8px; margin-top: auto; align-items: center; justify-items: center; }
+.omnichat-rail-bottom .omnichat-avatar { border: 1px solid #53657c; border-radius: 50%; color: #fff; font-size: 11px; font-weight: 800; }
+.omnichat-presence { width: 9px; height: 9px; border-radius: 50%; background: #8b98a9; box-shadow: 0 0 0 2px #132238, 0 0 0 3px #506079; }
+.omnichat-presence.connected { background: #24a148; }
+.omnichat-presence.reconnecting, .omnichat-presence.connecting { background: #f59e0b; }
+
+.omnichat-queue,
+.omnichat-thread,
+.omnichat-context { min-width: 0; min-height: 0; background: #fff; }
+.omnichat-queue { display: flex; flex-direction: column; border-right: 1px solid var(--oc-border); }
+.omnichat-queue-head { height: 68px; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--oc-border); }
+.omnichat-queue-head span { display: block; color: var(--oc-accent); font-size: 10px; line-height: 1; font-weight: 800; }
+.omnichat-queue-head h1 { margin: 5px 0 0; font-size: 18px; line-height: 1.1; }
+.omnichat-queue-head-actions { display: flex; gap: 6px; }
+
+.omnichat-icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--oc-border);
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+.omnichat-icon-button:hover { background: var(--oc-soft); border-color: #b9c4d1; }
+
+.omnichat-view-row { display: grid; grid-template-columns: 1fr 34px; gap: 8px; padding: 11px 13px 8px; }
+.omnichat-view-row select, .omnichat-queue-footer select, .omnichat-thread-actions select, .omnichat-property-list select, .omnichat-ticket-links select, .omnichat-composer-tools select {
+  min-width: 0;
+  height: 34px;
+  border: 1px solid var(--oc-border);
+  border-radius: 5px;
+  padding: 0 28px 0 9px;
+  color: var(--oc-ink);
+  background: #fff;
+}
+
+.omnichat-search { display: flex; align-items: center; gap: 8px; margin: 0 13px 9px; height: 36px; padding: 0 9px; border: 1px solid #ccd5df; border-radius: 5px; color: var(--oc-muted); background: #fff; }
+.omnichat-search:focus-within { border-color: #4c7bd9; box-shadow: 0 0 0 2px #e6eefc; }
+.omnichat-search input { min-width: 0; flex: 1; border: 0; outline: 0; color: var(--oc-ink); background: transparent; }
+.omnichat-search button { display: grid; place-items: center; padding: 0; border: 0; background: transparent; cursor: pointer; }
+
+.omnichat-filter-tabs { display: grid; grid-template-columns: repeat(3, 1fr); padding: 0 13px; border-bottom: 1px solid var(--oc-border); }
+.omnichat-filter-tabs button { height: 35px; border: 0; border-bottom: 2px solid transparent; color: var(--oc-muted); background: transparent; cursor: pointer; font-size: 12px; font-weight: 650; }
+.omnichat-filter-tabs button.active { color: var(--oc-accent); border-bottom-color: var(--oc-accent); }
+.omnichat-active-view { display: flex; align-items: center; gap: 5px; padding: 7px 13px; color: #46627f; background: #eef5fb; font-size: 11px; }
+.omnichat-conversation-list { min-height: 0; flex: 1; overflow-y: auto; }
+
+.omnichat-conversation-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 10px;
+  width: 100%;
+  min-height: 101px;
+  padding: 13px;
+  text-align: left;
+  border: 0;
+  border-bottom: 1px solid #edf0f4;
+  background: #fff;
+  cursor: pointer;
+}
+.omnichat-conversation-row:hover { background: #f8fafc; }
+.omnichat-conversation-row.active { background: var(--oc-accent-soft); box-shadow: inset 3px 0 var(--oc-accent); }
+.omnichat-customer-avatar { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; color: #3d5570; background: #e6edf5; font-size: 12px; font-weight: 800; flex: 0 0 auto; }
+.omnichat-customer-avatar.large { width: 40px; height: 40px; }
+.omnichat-customer-avatar.xlarge { width: 58px; height: 58px; font-size: 17px; }
+.omnichat-conversation-copy { min-width: 0; display: grid; gap: 3px; }
+.omnichat-conversation-copy > span { display: flex; gap: 8px; justify-content: space-between; min-width: 0; }
+.omnichat-conversation-copy strong, .omnichat-conversation-copy b, .omnichat-conversation-copy small, .omnichat-conversation-copy em { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.omnichat-conversation-copy strong { font-size: 13px; }
+.omnichat-conversation-copy time { color: #53667e; font-size: 11px; }
+.omnichat-conversation-copy b { font-size: 12px; font-weight: 650; }
+.omnichat-conversation-copy small { color: #53647b; font-size: 12px; }
+.omnichat-conversation-copy em { color: #53647b; font-size: 10px; font-style: normal; }
+.omnichat-unread { position: absolute; right: 13px; bottom: 12px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; color: #fff; background: var(--oc-accent); font-size: 10px; display: grid; place-items: center; }
+
+.omnichat-list-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 150px; padding: 24px; color: var(--oc-muted); text-align: center; font-size: 12px; }
+.omnichat-list-state.error { color: #a51232; }
+.omnichat-list-state button { border: 1px solid var(--oc-border); border-radius: 5px; padding: 7px 11px; background: #fff; cursor: pointer; }
+.omnichat-queue-footer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 9px 12px; border-top: 1px solid var(--oc-border); background: #fafbfc; }
+.omnichat-queue-footer button { height: 32px; border: 0; color: #52657c; background: transparent; font-size: 11px; cursor: pointer; }
+
+.omnichat-thread { display: flex; flex-direction: column; border-right: 1px solid var(--oc-border); background: #f7f9fb; }
+.omnichat-thread-head { min-height: 68px; display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--oc-border); background: #fff; }
+.omnichat-thread-head > div:nth-of-type(1) { min-width: 0; }
+.omnichat-thread-head h2 { overflow: hidden; margin: 0; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
+.omnichat-thread-head > div:nth-of-type(1) > span { display: block; overflow: hidden; margin-top: 3px; color: #53647b; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.omnichat-thread-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.omnichat-thread-actions select { width: 128px; }
+.omnichat-status-button { display: inline-flex; align-items: center; gap: 5px; height: 34px; padding: 0 10px; border: 1px solid #9fc7ad; border-radius: 5px; color: #176b38; background: #f0fbf4; cursor: pointer; font-size: 12px; font-weight: 700; }
+
+.omnichat-message-stream { min-height: 0; flex: 1; overflow-y: auto; padding: 18px clamp(16px, 3vw, 42px) 12px; }
+.omnichat-day-divider { display: flex; align-items: center; justify-content: center; margin: 7px 0 17px; }
+.omnichat-day-divider span { padding: 4px 9px; border: 1px solid var(--oc-border); border-radius: 8px; color: #53647b; background: #fff; font-size: 10px; }
+.omnichat-message { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 8px; max-width: 78%; margin-bottom: 15px; }
+.omnichat-message.agent { margin-left: auto; grid-template-columns: minmax(0, 1fr) 30px; }
+.omnichat-message.agent .omnichat-message-avatar { grid-column: 2; grid-row: 1; }
+.omnichat-message.agent > div { grid-column: 1; grid-row: 1; }
+.omnichat-message-avatar { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; color: #3a526d; background: #e3eaf2; font-size: 9px; font-weight: 800; }
+.omnichat-message > div { min-width: 0; padding: 9px 11px 7px; border: 1px solid #dce3eb; border-radius: 6px; background: #fff; box-shadow: 0 1px 2px rgb(23 43 77 / 5%); }
+.omnichat-message.agent > div { background: #eaf3ff; border-color: #c9dcf4; }
+.omnichat-message.private > div { background: var(--oc-private); border-color: #efd58e; }
+.omnichat-message header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 5px; }
+.omnichat-message header strong { font-size: 11px; }
+.omnichat-message header time { color: #53647b; font-size: 9px; }
+.omnichat-message p { margin: 0; color: #253a56; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.45; }
+.omnichat-message-attachments { display: grid; gap: 5px; margin-top: 8px; }
+.omnichat-message-attachments a { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; gap: 5px; min-height: 30px; padding: 5px 7px; border: 1px solid #cad7e5; border-radius: 5px; color: #315d9b; background: rgb(255 255 255 / 72%); text-decoration: none; }
+.omnichat-message-attachments a:hover { border-color: #8ca8c9; background: #fff; }
+.omnichat-message-attachments span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; font-weight: 700; }
+.omnichat-message-attachments small { color: #62738a; font-size: 9px; }
+.omnichat-message footer { margin-top: 6px; color: #53647b; text-transform: capitalize; font-size: 9px; }
+.omnichat-typing { margin-left: 38px; color: #6c7b8f; font-size: 11px; }
+
+.omnichat-composer { margin: 0 16px 14px; border: 1px solid #cdd6e0; border-radius: 6px; background: #fff; box-shadow: 0 2px 9px rgb(25 45 75 / 8%); }
+.omnichat-composer.private { border-color: #e2c46a; background: #fffdf5; }
+.omnichat-composer-tabs { height: 36px; display: flex; align-items: flex-end; gap: 14px; padding: 0 12px; border-bottom: 1px solid #e7ebf0; }
+.omnichat-composer-tabs button { height: 35px; padding: 0 2px; border: 0; border-bottom: 2px solid transparent; color: var(--oc-muted); background: transparent; cursor: pointer; font-size: 12px; font-weight: 700; }
+.omnichat-composer-tabs button.active { color: var(--oc-ink); border-bottom-color: var(--oc-accent); }
+.omnichat-composer textarea { display: block; width: 100%; min-height: 86px; max-height: 180px; resize: vertical; padding: 12px; border: 0; outline: 0; color: var(--oc-ink); background: transparent; line-height: 1.45; }
+.omnichat-file-input { display: none; }
+.omnichat-pending-attachments { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 11px 8px; }
+.omnichat-pending-attachments > span { display: inline-flex; align-items: center; gap: 5px; max-width: 260px; min-height: 28px; padding: 3px 4px 3px 7px; border: 1px solid #ccd7e3; border-radius: 5px; color: #344e6d; background: #f7f9fc; }
+.omnichat-pending-attachments b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+.omnichat-pending-attachments button { display: grid; place-items: center; width: 21px; height: 21px; padding: 0; border: 0; border-radius: 4px; color: #6a7788; background: transparent; cursor: pointer; }
+.omnichat-pending-attachments button:hover { color: #9d1736; background: #fce8ed; }
+.omnichat-composer-tools { min-height: 43px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 8px 7px 11px; border-top: 1px solid #eef1f4; }
+.omnichat-composer-tools > div { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.omnichat-composer-tools select { max-width: 155px; height: 30px; font-size: 11px; }
+.omnichat-composer-tools button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 30px; height: 30px; padding: 0 7px; border: 0; border-radius: 5px; background: transparent; cursor: pointer; }
+.omnichat-composer-tools button:disabled { cursor: not-allowed; opacity: .45; }
+.omnichat-composer-tools .omnichat-send { padding: 0 12px; color: #fff; background: var(--oc-accent); font-size: 12px; font-weight: 750; }
+.omnichat-empty-thread { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 30px; text-align: center; color: var(--oc-muted); }
+.omnichat-empty-thread h2 { margin: 14px 0 4px; color: var(--oc-ink); font-size: 18px; }
+.omnichat-empty-thread p { margin: 0; font-size: 12px; }
+
+.omnichat-context { display: flex; flex-direction: column; }
+.omnichat-context > header { height: 68px; display: flex; align-items: center; justify-content: space-between; padding: 0 13px; border-bottom: 1px solid var(--oc-border); }
+.omnichat-context > header h2 { margin: 0; font-size: 14px; }
+.omnichat-context-scroll { min-height: 0; flex: 1; overflow-y: auto; }
+.omnichat-customer-summary { display: flex; flex-direction: column; align-items: center; padding: 21px 14px 17px; border-bottom: 1px solid var(--oc-border); text-align: center; }
+.omnichat-customer-summary h3 { margin: 9px 0 2px; font-size: 15px; }
+.omnichat-customer-summary > a { color: #3d6fc2; font-size: 11px; text-decoration: none; }
+.omnichat-customer-summary > div { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; margin-top: 10px; }
+.omnichat-customer-summary > div span { padding: 3px 7px; border: 1px solid var(--oc-border); border-radius: 8px; color: #52667e; background: #f8fafc; font-size: 9px; text-transform: capitalize; }
+.omnichat-context-section { border-bottom: 1px solid var(--oc-border); }
+.omnichat-context-section > button { display: flex; align-items: center; justify-content: space-between; width: 100%; height: 45px; padding: 0 13px; border: 0; background: #fff; cursor: pointer; font-size: 12px; font-weight: 700; }
+.omnichat-context-section > button > span { display: flex; align-items: center; gap: 7px; }
+.omnichat-context-section > button svg:last-child { transition: transform 160ms ease; }
+.omnichat-context-section > button svg.open { transform: rotate(180deg); }
+.omnichat-property-list, .omnichat-history-list, .omnichat-ticket-links, .omnichat-context-attachments { padding: 0 13px 13px; }
+.omnichat-property-list { display: grid; gap: 10px; }
+.omnichat-property-list > div { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 8px; align-items: baseline; }
+.omnichat-property-list span, .omnichat-property-list label { color: var(--oc-muted); font-size: 10px; }
+.omnichat-property-list strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; text-transform: capitalize; }
+.omnichat-property-list label { display: grid; grid-template-columns: 88px minmax(0, 1fr); align-items: center; gap: 8px; }
+.omnichat-property-list select { width: 100%; height: 30px; color: var(--oc-ink); font-size: 11px; }
+.omnichat-history-list, .omnichat-ticket-links { display: grid; gap: 6px; }
+.omnichat-history-list > button, .omnichat-ticket-links > button { display: grid; gap: 2px; padding: 8px; text-align: left; border: 1px solid #e2e7ed; border-radius: 5px; background: #fff; cursor: pointer; }
+.omnichat-history-list span, .omnichat-ticket-links span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.omnichat-history-list small, .omnichat-ticket-links small { color: var(--oc-muted); font-size: 9px; text-transform: capitalize; }
+.omnichat-history-list p { margin: 4px 0 8px; color: var(--oc-muted); font-size: 10px; }
+.omnichat-ticket-links label { display: grid; grid-template-columns: 22px minmax(0, 1fr); align-items: center; gap: 4px; color: #52677f; }
+.omnichat-ticket-links select { width: 100%; height: 31px; font-size: 10px; }
+.omnichat-context-attachments { display: grid; gap: 6px; }
+.omnichat-context-attachments a { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 5px; min-height: 34px; padding: 6px 7px; border: 1px solid #e0e6ed; border-radius: 5px; color: #345e94; background: #fff; text-decoration: none; }
+.omnichat-context-attachments a:hover { border-color: #aab9ca; background: #f8fafc; }
+.omnichat-context-attachments span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; font-weight: 700; }
+.omnichat-context-attachments small, .omnichat-context-attachments p { color: var(--oc-muted); font-size: 9px; }
+.omnichat-context-attachments p { margin: 3px 0 7px; }
+.omnichat-context-section.compact { padding: 10px 13px 14px; display: grid; gap: 8px; }
+.omnichat-context-action { display: flex; align-items: center; gap: 8px; color: #53677f; font-size: 11px; }
+
+.omnichat-toast { position: fixed; z-index: 30; left: 50%; bottom: 20px; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; max-width: min(520px, calc(100vw - 32px)); padding: 9px 11px; border: 1px solid #b9c4d0; border-radius: 6px; color: #fff; background: #20344e; box-shadow: 0 8px 24px rgb(15 30 50 / 22%); font-size: 11px; }
+.omnichat-toast button { display: grid; place-items: center; padding: 0; border: 0; color: #fff; background: transparent; cursor: pointer; }
+
+.omnichat-dialog-backdrop { position: fixed; z-index: 40; inset: 0; display: grid; place-items: center; padding: 18px; background: rgb(16 29 47 / 48%); }
+.omnichat-dialog { width: min(480px, 100%); display: grid; gap: 14px; padding: 18px; border-radius: 7px; background: #fff; box-shadow: 0 20px 60px rgb(10 25 45 / 28%); }
+.omnichat-dialog header, .omnichat-dialog footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.omnichat-dialog header span { color: var(--oc-accent); font-size: 9px; font-weight: 800; }
+.omnichat-dialog h2 { margin: 3px 0 0; font-size: 18px; }
+.omnichat-dialog header button { display: grid; place-items: center; padding: 4px; border: 0; background: transparent; cursor: pointer; }
+.omnichat-dialog label { display: grid; gap: 5px; color: #485d75; font-size: 11px; font-weight: 700; }
+.omnichat-dialog input, .omnichat-dialog select, .omnichat-dialog textarea { width: 100%; min-height: 36px; border: 1px solid #cfd8e3; border-radius: 5px; padding: 8px 9px; color: var(--oc-ink); background: #fff; }
+.omnichat-dialog textarea { min-height: 100px; resize: vertical; }
+.omnichat-dialog footer { justify-content: flex-end; padding-top: 4px; }
+.omnichat-dialog footer button { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border: 1px solid var(--oc-border); border-radius: 5px; background: #fff; cursor: pointer; }
+.omnichat-dialog footer button[type="submit"] { color: #fff; border-color: var(--oc-accent); background: var(--oc-accent); font-weight: 700; }
+.omnichat-shortcuts { width: min(520px, 100%); }
+.omnichat-shortcuts dl { display: grid; margin: 0; }
+.omnichat-shortcuts dl > div { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-height: 45px; border-bottom: 1px solid var(--oc-border); }
+.omnichat-shortcuts dt { color: var(--oc-ink); font-size: 12px; font-weight: 650; }
+.omnichat-shortcuts dd { display: flex; gap: 4px; margin: 0; }
+.omnichat-shortcuts kbd { min-width: 27px; padding: 4px 6px; border: 1px solid #c8d2de; border-bottom-width: 2px; border-radius: 4px; color: #40546c; background: #f7f9fb; text-align: center; font: 10px/1.2 Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+
+.omnichat-mobile-back { display: none; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.omnichat-gate { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; padding: 32px; color: #54677f; text-align: center; background: #f7f9fb; }
+.omnichat-gate h1 { margin: 5px 0 0; color: #172b4d; font-size: 21px; }
+.omnichat-gate p { margin: 0; }
+.omnichat-gate button { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; height: 36px; padding: 0 12px; border: 1px solid #ccd5df; border-radius: 5px; background: #fff; cursor: pointer; }
+.spin { animation: omnichat-spin .8s linear infinite; }
+@keyframes omnichat-spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 1180px) {
+  .omnichat-shell { grid-template-columns: 58px minmax(280px, 330px) minmax(430px, 1fr); }
+  .omnichat-context { position: fixed; z-index: 20; top: 0; right: 0; bottom: 0; width: min(340px, calc(100vw - 58px)); border-left: 1px solid var(--oc-border); box-shadow: -10px 0 30px rgb(18 37 60 / 14%); transform: translateX(102%); transition: transform 180ms ease; }
+  .omnichat-shell.mobile-pane-context .omnichat-context { transform: translateX(0); }
+  .omnichat-context .omnichat-mobile-back { display: grid; }
+}
+
+@media (max-width: 1000px) {
+  .omnichat-thread-actions select { display: none; }
+}
+
+@media (max-width: 800px) {
+  .omnichat-shell { grid-template-columns: 52px minmax(0, 1fr); }
+  .omnichat-rail { padding-inline: 6px; }
+  .omnichat-queue, .omnichat-thread { grid-column: 2; grid-row: 1; }
+  .omnichat-thread { display: none; }
+  .omnichat-shell.mobile-pane-thread .omnichat-queue, .omnichat-shell.mobile-pane-context .omnichat-queue { display: none; }
+  .omnichat-shell.mobile-pane-thread .omnichat-thread, .omnichat-shell.mobile-pane-context .omnichat-thread { display: flex; }
+  .omnichat-thread .omnichat-mobile-back { display: grid; }
+  .omnichat-message { max-width: 90%; }
+  .omnichat-context { width: calc(100vw - 52px); }
+}
+
+@media (max-width: 540px) {
+  .omnichat-shell { grid-template-columns: 46px minmax(0, 1fr); }
+  .omnichat-logo, .omnichat-rail nav button, .omnichat-rail-bottom button { width: 34px; height: 34px; }
+  .omnichat-thread-head { padding-inline: 8px; }
+  .omnichat-thread-head .omnichat-customer-avatar { display: none; }
+  .omnichat-thread-actions .omnichat-status-button { width: 34px; padding: 0; font-size: 0; }
+  .omnichat-thread-actions .omnichat-status-button svg { width: 16px; }
+  .omnichat-message-stream { padding-inline: 10px; }
+  .omnichat-message { max-width: 96%; }
+  .omnichat-composer { margin-inline: 8px; }
+  .omnichat-composer-tools select { width: 118px; }
+  .omnichat-context { width: calc(100vw - 46px); }
+}

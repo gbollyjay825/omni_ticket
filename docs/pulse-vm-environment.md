@@ -11,12 +11,12 @@ The remote Pulse VM does not currently have Docker installed, so Omni Ticket is 
 - Support mailbox / sender identity: `jimb@wakanow.com`
 - App path: `/home/amechi/omni-ticket/current`
 - Runtime env: `/home/amechi/omni-ticket/runtime/env.sh`
-- Attachments: `/home/amechi/omni-ticket/attachments`
+- Attachments: S3-compatible object storage in production; VM disk is not an attachment store
 - Database: local PostgreSQL database/user `omni_ticket`
 - Frontend: PM2 process `omni-ticket-frontend` on port `8088`
 - API: PM2 process `omni-ticket-api` on `127.0.0.1:8090`
 - Worker: PM2 process `omni-ticket-worker`
-- AI guidance: Anthropic Messages API adapter is deployed. `/home/amechi/omni-ticket/current/AI_Key` is active and live-smoked against `claude-sonnet-4-6`; admins can also save a write-only Anthropic key in Setup -> Connectors -> Production credentials.
+- AI guidance: Anthropic Messages API adapter is deployed. The file-based fallback lives at `/home/amechi/omni-ticket/runtime/AI_Key`; admins can also save a write-only Anthropic key in Setup -> Connectors -> Production credentials.
 - Email inbound/outbound: IMAP intake and SMTP delivery adapter code is deployed. Admins can save the `jimb@wakanow.com` IMAP/SMTP host, username, sender, and write-only passwords from Setup. Runtime `OMNI_EMAIL_IMAP_*` and `OMNI_EMAIL_SMTP_*` values remain optional fallback values.
 - WhatsApp outbound/callbacks: Cloud API text outbound and signed inbound/status webhook code are deployed; admins can save phone number ID, access token, optional base URL, and preview settings in Setup Production credentials after the Meta WhatsApp Business account is provisioned.
 - Facebook Messenger outbound/callbacks: Graph API text outbound and signed inbound/postback/delivery webhook code are deployed; admins can save page ID, page access token, optional base URL, and messaging type in Setup Production credentials after the Meta page account is provisioned.
@@ -25,7 +25,7 @@ The remote Pulse VM does not currently have Docker installed, so Omni Ticket is 
 - Voice outbound/callbacks: HTTP callback adapter and signed call-log/voicemail/status webhook code are deployed; admins can save endpoint, API token, caller ID, status callback URL, and auth header settings in Setup Production credentials after the telephony provider account is provisioned.
 - Alert delivery: durable attempts are enabled in the app; admins can save the destination webhook URL and optional signing secret in Setup Production credentials after the operations destination account is created.
 
-The frontend is built with `VITE_OMNI_API_BASE_URL=/api/v1`. A small Node static server at `scripts/pulse-static-server.mjs` serves `dist/` for the PM2 deployment. The public Nginx route proxies `/api/*` directly to `http://127.0.0.1:8090`, so the existing Pulse app files, Pulse PM2 processes, and `pulse.wakanow.com` application route are not changed.
+The frontend is built with `VITE_OMNI_API_BASE_URL=/api/v1`. A small Node static server at `infra/scripts/pulse-static-server.mjs` serves `frontend/dist/` for the PM2 deployment. The public Nginx route proxies `/api/*` directly to `http://127.0.0.1:8090`, so the existing Pulse app files, Pulse PM2 processes, and `pulse.wakanow.com` application route are not changed.
 
 Verify on the VM:
 
@@ -74,7 +74,7 @@ Edit `.env.pulse`:
 ## Start The Docker Stack
 
 ```bash
-docker compose --env-file .env.pulse -f docker-compose.pulse.yml up -d --build
+docker compose --env-file .env.pulse -f infra/docker-compose.pulse.yml up -d --build
 ```
 
 The stack exposes only the frontend Nginx container on `PULSE_HTTP_PORT` by default. Nginx serves the SPA and proxies `/api/*` to the FastAPI service.
@@ -84,7 +84,7 @@ The stack exposes only the frontend Nginx container on `PULSE_HTTP_PORT` by defa
 ```bash
 curl http://127.0.0.1/api/v1/health
 curl http://127.0.0.1/api/v1/platform/readiness
-docker compose --env-file .env.pulse -f docker-compose.pulse.yml ps
+docker compose --env-file .env.pulse -f infra/docker-compose.pulse.yml ps
 ```
 
 Then open the VM URL in a browser.
@@ -94,24 +94,25 @@ Then open the VM URL in a browser.
 View logs:
 
 ```bash
-docker compose --env-file .env.pulse -f docker-compose.pulse.yml logs -f api worker frontend
+docker compose --env-file .env.pulse -f infra/docker-compose.pulse.yml logs -f api worker frontend
 ```
 
 Run migrations manually:
 
 ```bash
-docker compose --env-file .env.pulse -f docker-compose.pulse.yml run --rm migrate
+docker compose --env-file .env.pulse -f infra/docker-compose.pulse.yml run --rm migrate
 ```
 
 Restart after pulling code:
 
 ```bash
-docker compose --env-file .env.pulse -f docker-compose.pulse.yml up -d --build
+docker compose --env-file .env.pulse -f infra/docker-compose.pulse.yml up -d --build
 ```
 
 ## Production Notes
 
-The Pulse VM template defaults `OMNI_ENVIRONMENT=pulse` and `OMNI_INITIALIZE_DATABASE=true` so the first VM boot can seed baseline workspace data. For strict staging or production, set:
+The Pulse VM template must run with production safeguards enabled. Initialize schema
+and administrator access through explicit migration/onboarding commands, never runtime seeds:
 
 ```bash
 OMNI_ENVIRONMENT=production

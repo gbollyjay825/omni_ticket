@@ -35,6 +35,10 @@ __pycache__/
 # Local tooling and test artifacts
 .claude/
 artifacts/
+playwright-report/
+test-results/
+playwright/.auth/
+**/playwright/.auth/
 
 # Editor directories and files
 .vscode/*

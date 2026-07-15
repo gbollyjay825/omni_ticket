@@ -1,1 +1,0 @@
-"""Omni Ticket backend package."""

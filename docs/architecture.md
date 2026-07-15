@@ -2,14 +2,14 @@
 
 ## Goal
 
-Build a high-fidelity omnichannel operations support PWA with a production-shaped frontend and an independent Python/FastAPI backend. The current delivery still carries realistic local seed data for offline fallback, while the authenticated happy path reads and writes through market-scoped backend routes.
+Build a high-fidelity omnichannel operations support PWA with a production-shaped frontend and an independent Python/FastAPI backend. Operational records are always loaded from market-scoped backend routes; the production client contains no demo dataset or operational offline fallback.
 
 ## Stack
 
-- Vite, React, TypeScript.
-- Independent Python/FastAPI backend in `/Users/gbolahan.salami/Documents/omni-ticket-backend`.
+- Vite, React 19, TypeScript, React Router, and TanStack Query.
+- Independent Python/FastAPI backend in `backend/`.
 - Lucide React icons.
-- IndexedDB persistence via `idb`.
+- IndexedDB persistence via `idb` for drafts and non-authoritative UI state only.
 - Local storage only for lightweight UI preferences.
 - Production-only service worker and web app manifest.
 - Static PWA deployment container via frontend `Dockerfile` and `nginx.conf`.
@@ -17,15 +17,16 @@ Build a high-fidelity omnichannel operations support PWA with a production-shape
 
 ## Module Structure
 
-- `src/domain.ts`: shared TypeScript types for channels, conversations, tickets, customers, agents, SLA policies, automation rules, knowledge articles, analytics, tracker items, and store actions.
-- `src/seed.ts`: realistic omnichannel seed data across all channels and operational screens.
-- `src/store.ts`: IndexedDB hydration/persistence, derived metrics, workflow actions, and local UI state helpers.
-- `src/OmniApp.tsx`: app shell, navigation, screen rendering, and workflow wiring.
-- `src/App.css` and `src/index.css`: dense operational visual system and responsive behavior.
-- `src/pwa.ts`: production service worker registration.
-- `public/manifest.webmanifest` and `public/sw.js`: PWA install metadata and app shell cache.
-- `src/backend.ts`: authenticated API bridge to the independent Python backend.
-- `Dockerfile` and `nginx.conf`: production static container for the SPA.
+- `frontend/src/domain.ts`: shared TypeScript domain types.
+- `frontend/src/initialState.ts`: factual disconnected and empty states only.
+- `frontend/src/store.ts`: backend snapshot orchestration, drafts, derived metrics, and UI state.
+- `frontend/src/app/`: providers and route-level lazy loading.
+- `frontend/src/features/`: extracted feature modules using TanStack Query and the generated client.
+- `frontend/src/api/`: OpenAPI types, generated-client setup, and reconnecting realtime transport.
+- `frontend/src/OmniApp.tsx`: legacy workspace shell being split into feature modules.
+- `frontend/src/backend.ts`: transitional typed API bridge while feature modules move to the generated client.
+- `backend/app/`: FastAPI routes, SQLAlchemy repositories, provider services, workers, and importers.
+- `infra/`: isolated Nginx, PM2, deployment, rollback, and compose configuration.
 
 Backend attachment governance now exposes lifecycle-aware delete/purge, retention readout, admin pruning, storage/scanner readiness, S3-compatible storage configuration, and external HTTP malware scanner configuration through `DELETE /api/v1/tickets/{ticket_id}/attachments/{attachment_id}`, `GET /api/v1/attachments/provider-config`, `GET /api/v1/attachments/retention`, and `POST /api/v1/attachments/retention/prune`. Downloads and signed links only serve active, clean attachments.
 
@@ -46,10 +47,10 @@ Core entities:
 
 ## Local Persistence
 
-- Use IndexedDB store `omni-ticket`.
-- Persist the full demo state after workflow actions.
-- Store offline composer drafts and simulated send/handoff events in an outbox collection within app state.
-- Include a reset action internally by changing the persisted state version when the seed model changes.
+- Use IndexedDB store `omni-ticket` for drafts and non-authoritative preferences.
+- Keep tickets, messages, tasks, watches, time logs, sends, and handoffs on the backend.
+- Store browser sessions in Secure, HttpOnly, SameSite cookies; never persist bearer tokens in Web Storage.
+- Restore authoritative market state from the backend after authentication and reconnect.
 
 ## Workflow Actions
 
@@ -87,7 +88,8 @@ When `aiWorkQueueAutomationEnabled=false`, the backend must keep intake and tick
 
 The independent backend now exposes these routes and keeps them intentionally close to the frontend state shape. The frontend uses the authenticated bridge for ticket creation, ticket updates, replies, notes, handoffs, channel intake toggles, automation-rule toggles, article publishing, settings writes, user management, market-scoped snapshots, and connector account readiness when the API is reachable.
 
-- `POST /api/v1/auth/login`, `GET /api/v1/auth/me`, `GET /api/v1/auth/markets`
+- Browser: `POST /api/v1/auth/browser/login`, `GET /api/v1/auth/browser/session`, `POST /api/v1/auth/browser/logout`
+- API clients: `POST /api/v1/auth/login`, `GET /api/v1/auth/me`, `GET /api/v1/auth/markets`
 - `GET /api/v1/auth/users`, `POST /api/v1/auth/users`, `PATCH /api/v1/auth/users/{id}`
 - `GET /api/v1/frontend/snapshot`
 - `GET /api/v1/tickets`, `GET /api/v1/tickets/{id}`, `PATCH /api/v1/tickets/{id}`
@@ -151,8 +153,8 @@ Staging and production backend startup validates critical configuration so the s
 
 ## Verification
 
-- `npm run lint`
-- `npm run build`
+- `cd frontend && npm run lint`
+- `cd frontend && npm run build`
 - Backend checks from `/Users/gbolahan.salami/Documents/omni-ticket-backend`: `python -m compileall app tests`, `ruff check app tests migrations`, `mypy app tests`, and `pytest -q`.
 - Browser checks at desktop and mobile widths.
 - PWA checks: manifest exists, production service worker registers, offline shell is nonblank.

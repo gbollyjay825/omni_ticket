@@ -1,0 +1,536 @@
+.scheduling-workspace {
+  --schedule-line: #dfe6ed;
+  --schedule-text: #12344d;
+  --schedule-muted: #526d82;
+  min-width: 0;
+  color: var(--schedule-text);
+  background: #fff;
+}
+
+.scheduling-toolbar {
+  display: grid;
+  min-height: 56px;
+  grid-template-columns: auto minmax(250px, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--schedule-line);
+}
+
+.scheduling-toolbar button,
+.scheduling-toolbar select {
+  min-height: 34px;
+  border: 1px solid #cfd7df;
+  border-radius: 5px;
+  color: var(--schedule-text);
+  background: #fff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.scheduling-date-controls,
+.scheduling-toolbar > strong,
+.scheduling-toolbar > label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.scheduling-date-controls button {
+  padding: 6px 10px;
+}
+
+.scheduling-toolbar > strong {
+  justify-content: center;
+  font-size: 14px;
+}
+
+.scheduling-toolbar > label span {
+  color: var(--schedule-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.scheduling-toolbar > label select {
+  padding: 0 8px;
+}
+
+.scheduling-toolbar .primary-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border-color: #2c5cc5;
+  color: #fff;
+  background: #2c5cc5;
+}
+
+.scheduling-board {
+  display: grid;
+  min-height: calc(100vh - 220px);
+  grid-template-columns: 300px minmax(0, 1fr);
+}
+
+.service-task-pane {
+  min-width: 0;
+  border-right: 1px solid var(--schedule-line);
+  background: #f7f9fb;
+}
+
+.service-task-pane > header {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--schedule-line);
+}
+
+.service-task-pane > header span {
+  min-width: 24px;
+  padding: 3px 7px;
+  border-radius: 10px;
+  color: #fff;
+  background: #526d82;
+  font-size: 11px;
+  text-align: center;
+}
+
+.service-task-filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 84px;
+  gap: 7px;
+  padding: 9px;
+  border-bottom: 1px solid var(--schedule-line);
+}
+
+.service-task-filters select,
+.service-task-filters label {
+  min-height: 34px;
+  border: 1px solid #cfd7df;
+  border-radius: 5px;
+  color: var(--schedule-text);
+  background: #fff;
+}
+
+.service-task-filters select {
+  min-width: 0;
+  padding: 0 7px;
+  font: inherit;
+  font-size: 12px;
+}
+
+.service-task-filters label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 7px;
+}
+
+.service-task-filters input {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  font: inherit;
+  font-size: 12px;
+}
+
+.service-task-list {
+  display: grid;
+  max-height: calc(100vh - 325px);
+  gap: 7px;
+  overflow-y: auto;
+  padding: 9px;
+}
+
+.service-task-list > article {
+  padding: 10px;
+  border: 1px solid #d8e0e7;
+  border-radius: 5px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(18 52 77 / 5%);
+  cursor: pointer;
+}
+
+.service-task-list > article.selected {
+  border-color: #2c5cc5;
+  box-shadow: 0 0 0 1px #2c5cc5;
+}
+
+.service-task-card-head {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) 26px;
+  align-items: center;
+  gap: 8px;
+}
+
+.service-task-avatar,
+.technician-label > span {
+  display: grid;
+  border-radius: 50%;
+  place-items: center;
+  color: #2c5cc5;
+  background: #e8f1ff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.service-task-avatar {
+  width: 30px;
+  height: 30px;
+}
+
+.service-task-card-head > span:nth-child(2) {
+  display: grid;
+}
+
+.service-task-card-head small,
+.service-task-list h3 small,
+.service-task-list p,
+.service-task-list footer {
+  color: var(--schedule-muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.service-task-card-head button {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  place-items: center;
+  color: var(--schedule-muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.service-task-list h3 {
+  margin: 9px 0 7px;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.service-task-list p,
+.service-task-list footer {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 5px 0;
+}
+
+.service-task-list footer {
+  padding-top: 7px;
+  border-top: 1px solid #edf0f3;
+}
+
+.service-task-empty,
+.schedule-no-technicians {
+  display: grid;
+  min-height: 180px;
+  place-content: center;
+  justify-items: center;
+  gap: 7px;
+  color: var(--schedule-muted);
+  text-align: center;
+}
+
+.technician-schedule {
+  min-width: 0;
+  overflow: auto;
+  background: #fff;
+}
+
+.schedule-scroll {
+  min-width: 920px;
+}
+
+.schedule-time-header,
+.technician-row {
+  display: grid;
+  grid-template-columns: 160px minmax(760px, 1fr);
+}
+
+.schedule-time-header {
+  position: sticky;
+  z-index: 5;
+  top: 0;
+  min-height: 52px;
+  border-bottom: 1px solid var(--schedule-line);
+  background: #f7f9fb;
+}
+
+.schedule-time-header > strong {
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  border-right: 1px solid var(--schedule-line);
+  font-size: 13px;
+}
+
+.schedule-hour-labels {
+  display: grid;
+  grid-template-columns: repeat(11, minmax(68px, 1fr));
+  align-items: end;
+}
+
+.schedule-hour-labels span {
+  padding: 0 4px 9px;
+  color: var(--schedule-muted);
+  font-size: 10px;
+}
+
+.technician-row {
+  min-height: 94px;
+  border-bottom: 1px solid var(--schedule-line);
+}
+
+.technician-label {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  padding: 10px 12px;
+  border-right: 1px solid var(--schedule-line);
+  background: #fff;
+}
+
+.technician-label > span {
+  width: 36px;
+  height: 36px;
+}
+
+.technician-label div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.technician-label strong,
+.technician-label small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.technician-label strong {
+  font-size: 12px;
+}
+
+.technician-label small {
+  color: var(--schedule-muted);
+  font-size: 10px;
+}
+
+.technician-time-grid {
+  position: relative;
+  min-width: 760px;
+  background-color: #fff;
+  background-image:
+    linear-gradient(to right, var(--schedule-line) 1px, transparent 1px),
+    linear-gradient(to right, #eef2f5 1px, transparent 1px);
+  background-position: 0 0;
+  background-size: 10% 100%, 2.5% 100%;
+}
+
+.schedule-block {
+  position: absolute;
+  z-index: 2;
+  top: 14px;
+  display: grid;
+  min-width: 48px;
+  min-height: 62px;
+  align-content: center;
+  gap: 3px;
+  padding: 7px 8px;
+  overflow: hidden;
+  border: 1px solid #a9d9e6;
+  border-radius: 5px;
+  color: #16445b;
+  background: #d9f2f8;
+  text-align: left;
+  cursor: grab;
+}
+
+.schedule-block-1 { border-color: #c7b6ed; background: #ece5ff; color: #4d3d7a; }
+.schedule-block-2 { border-color: #f0b8b8; background: #ffe3e3; color: #733d3d; }
+.schedule-block-3 { border-color: #b8d7ad; background: #e5f5df; color: #335c2c; }
+
+.schedule-block.selected {
+  box-shadow: 0 0 0 2px #2c5cc5;
+}
+
+.schedule-block small,
+.schedule-block strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.schedule-block small { font-size: 9px; }
+.schedule-block strong { font-size: 11px; }
+
+.service-task-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(720px, calc(100vw - 32px));
+  max-height: calc(100svh - 32px);
+  overflow: hidden;
+  border: 1px solid var(--schedule-line);
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 18px 48px rgba(15, 31, 48, 0.22);
+}
+
+.service-task-dialog .modal-head,
+.service-task-dialog .modal-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 20px;
+  background: #fff;
+}
+
+.service-task-dialog .modal-head {
+  border-bottom: 1px solid var(--schedule-line);
+}
+
+.service-task-dialog .modal-head span {
+  color: var(--schedule-muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.service-task-dialog .modal-head h2 {
+  margin: 2px 0 0;
+  color: var(--schedule-text);
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.service-task-dialog .modal-actions {
+  justify-content: flex-end;
+  border-top: 1px solid var(--schedule-line);
+}
+
+.service-task-dialog .modal-actions button {
+  min-height: 36px;
+  padding: 7px 13px;
+  border: 1px solid #cfd7df;
+  border-radius: 5px;
+  background: #fff;
+  color: var(--schedule-text);
+  font-weight: 600;
+}
+
+.service-task-dialog .modal-actions .primary-action {
+  border-color: #2c5cc5;
+  background: #2c5cc5;
+  color: #fff;
+}
+
+.service-task-form {
+  display: grid;
+  flex: 1 1 auto;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px 20px;
+}
+
+.service-task-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--schedule-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.service-task-form-wide { grid-column: 1 / -1; }
+
+.service-task-form input,
+.service-task-form select,
+.service-task-form textarea {
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 9px;
+  border: 1px solid #cfd7df;
+  border-radius: 5px;
+  color: var(--schedule-text);
+  background: #fff;
+  font: inherit;
+}
+
+@media (max-width: 1040px) {
+  .scheduling-toolbar {
+    grid-template-columns: auto minmax(220px, 1fr) auto;
+  }
+
+  .scheduling-toolbar .primary-action {
+    grid-column: 1 / -1;
+    justify-self: end;
+  }
+
+  .scheduling-board {
+    grid-template-columns: 260px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 720px) {
+  .scheduling-toolbar {
+    grid-template-columns: 1fr auto;
+  }
+
+  .scheduling-toolbar > strong {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    justify-content: flex-start;
+  }
+
+  .scheduling-date-controls { grid-column: 1 / -1; }
+  .scheduling-toolbar > label { justify-content: flex-end; }
+  .scheduling-toolbar .primary-action { grid-column: auto; }
+
+  .scheduling-board {
+    min-height: auto;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .service-task-pane {
+    border-right: 0;
+    border-bottom: 1px solid var(--schedule-line);
+  }
+
+  .service-task-list {
+    max-height: 285px;
+  }
+
+  .technician-schedule {
+    max-width: 100%;
+  }
+
+  .service-task-form {
+    grid-template-columns: 1fr;
+    padding: 14px;
+  }
+
+  .service-task-form-wide { grid-column: auto; }
+
+  .service-task-dialog {
+    width: calc(100vw - 20px);
+    max-height: calc(100svh - 20px);
+  }
+
+  .service-task-dialog .modal-head,
+  .service-task-dialog .modal-actions {
+    padding: 12px 14px;
+  }
+}

@@ -1675,7 +1675,7 @@ The new panels reuse existing classes. Add only additive styling for the custom-
 6. Backend tests (E1, E2).
 7. Frontend: domain.ts (F1) → backend.ts (F2) → store.ts (F3) → seed.ts (F4) → OmniApp.tsx (F5) → App.css (F6).
 
-**Key file paths:** Backend: `/Users/gbolahan.salami/Documents/Ticket Desk/services/omni-ticket-backend/app/models/domain.py`, `app/models/__init__.py`, `app/db/models.py`, `app/db/mappers.py`, `app/db/management.py`, `app/db/bootstrap.py`, `app/db/store_sync.py`, `app/db/settings.py`, `app/core/store.py`, `app/api/v1/resources.py`, 4 new migrations, tests `tests/test_operations.py`, `tests/test_database.py`. Frontend: `src/domain.ts`, `src/backend.ts`, `src/store.ts`, `src/seed.ts`, `src/OmniApp.tsx`, `src/App.css`.
+**Key file paths:** Backend: `/Users/gbolahan.salami/Documents/Ticket Desk/backend/app/models/domain.py`, `app/models/__init__.py`, `app/db/models.py`, `app/db/mappers.py`, `app/db/management.py`, `app/db/bootstrap.py`, `app/db/store_sync.py`, `app/db/settings.py`, `app/core/store.py`, `app/api/v1/resources.py`, 4 new migrations, tests `tests/test_operations.py`, `tests/test_database.py`. Frontend: `frontend/src/domain.ts`, `frontend/src/backend.ts`, `frontend/src/store.ts`, `frontend/src/seed.ts`, `frontend/src/OmniApp.tsx`, `frontend/src/App.css`.
 
 ---
 

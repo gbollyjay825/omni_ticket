@@ -1,9 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": "vite",
-  "installCommand": "npm ci",
-  "buildCommand": "npm run build",
-  "outputDirectory": "dist",
   "rewrites": [
     {
       "source": "/((?!api/|_/omni-ticket-backend/).*)",
@@ -12,11 +8,12 @@
   ],
   "experimentalServices": {
     "frontend": {
+      "entrypoint": "frontend",
       "routePrefix": "/",
       "framework": "vite"
     },
     "omni-ticket-backend": {
-      "entrypoint": "services/omni-ticket-backend",
+      "entrypoint": "backend/app/main.py",
       "routePrefix": "/_/omni-ticket-backend"
     }
   }

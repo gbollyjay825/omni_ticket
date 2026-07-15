@@ -13,6 +13,9 @@ jobs:
   frontend:
     name: Frontend PWA
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
 
     steps:
       - name: Checkout repository
@@ -23,6 +26,12 @@ jobs:
         with:
           node-version: "24"
           cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Set up Python for browser tests
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
       - name: Install frontend dependencies
         run: npm ci
@@ -33,12 +42,41 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+      - name: Test frontend components
+        run: npm test
+
+      - name: Install isolated browser-test backend
+        run: |
+          python -m venv ../backend/.venv
+          ../backend/.venv/bin/python -m pip install --upgrade pip
+          ../backend/.venv/bin/python -m pip install -e "../backend[dev]"
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Test desktop, tablet, mobile, and accessibility workflows
+        env:
+          OMNI_DATABASE_URL: sqlite:////tmp/omni-ticket-e2e.db
+          OMNI_ENVIRONMENT: local
+        run: npm run test:e2e
+
+      - name: Upload browser-test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: omni-browser-test-evidence
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+          if-no-files-found: ignore
+          retention-days: 14
+
   backend:
     name: Python Backend
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: services/omni-ticket-backend
+        working-directory: backend
 
     steps:
       - name: Checkout repository

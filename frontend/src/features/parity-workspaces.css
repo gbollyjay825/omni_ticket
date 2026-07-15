@@ -1,0 +1,25 @@
+.connected-workspace { width: 100%; max-width: 100%; min-width: 0; min-height: calc(100vh - 126px); overflow: hidden; border: 1px solid #d8e0e7; border-radius: 6px; background: #fff; color: #17324a; }
+.connected-workspace-heading { display: flex; align-items: center; gap: 12px; min-height: 70px; padding: 14px 22px; border-bottom: 1px solid #d8e0e7; }
+.connected-workspace-heading > span:last-child { display: grid; gap: 4px; min-width: 0; }
+.connected-workspace-heading strong { font-size: 17px; }
+.connected-workspace-heading small { color: #586f83; }
+.connected-workspace-icon { display: grid; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; border-radius: 5px; background: #eef3f8; color: #2c5cc5; }
+.connected-workspace-icon.campaign { color: #237a55; }
+.connected-workspace-body { min-width: 0; padding: 20px 22px; }
+.connected-workspace-with-rail { display: grid; grid-template-columns: 48px minmax(0, 1fr); }
+.connected-workspace-with-rail > aside { display: flex; flex-direction: column; gap: 8px; padding: 14px 8px; border-right: 1px solid #d8e0e7; background: #f8fafc; }
+.connected-workspace-with-rail > aside > span { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 4px; color: #60758a; }
+.connected-workspace-with-rail > aside > span.active { background: #e7eef7; color: #2c5cc5; }
+.connected-workspace-main { min-width: 0; overflow: hidden; }
+.connected-workspace .campaign-console, .connected-workspace .ai-studio-console { max-width: 1180px; }
+@media (max-width: 720px) {
+  .connected-workspace-heading { align-items: flex-start; padding: 12px 14px; }
+  .connected-workspace-body { padding: 14px; }
+  .connected-workspace-with-rail { grid-template-columns: 1fr; }
+  .connected-workspace-with-rail > aside { flex-direction: row; border-right: 0; border-bottom: 1px solid #d8e0e7; }
+  .connected-workspace .ai-policy-row { flex-direction: column; }
+  .connected-workspace .ai-agent-form, .connected-workspace .campaign-form { grid-template-columns: 1fr; }
+  .connected-workspace .campaign-template-fields { grid-template-columns: 1fr; }
+  .connected-workspace .ai-agent-list article { grid-template-columns: 36px minmax(0, 1fr); padding-right: 12px; }
+  .connected-workspace .ai-agent-policy, .connected-workspace .ai-agent-actions, .connected-workspace .ai-agent-list article > em { grid-column: 2; }
+}

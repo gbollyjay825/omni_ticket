@@ -3,7 +3,7 @@
 Authoritative, **observed** description of how Omni Ticket runs in production on the
 `pulse-prod` VM, plus a reproducible release procedure. The architecture below was
 captured by read-only inspection of the running VM on 2026-06-07; the helper scripts
-(`scripts/deploy-pulse.sh`, `scripts/rollback-pulse.sh`) encode the same steps.
+(`infra/scripts/deploy-pulse.sh`, `infra/scripts/rollback-pulse.sh`) encode the same steps.
 
 > The VM previously had **no committed deploy tooling** — releases were cut manually.
 > This runbook + scripts close that gap. Review the scripts before first use.
@@ -22,7 +22,7 @@ captured by read-only inspection of the running VM on 2026-06-07; the helper scr
   - `attachments/`, `backups/`, `logs/`
 - **Database:** local PostgreSQL `omni_ticket` (`OMNI_DATABASE_URL` in `runtime/env.sh`).
 - **Runtimes (on VM):** Node `v22.x`, Python `3.14` (backend venv at
-  `releases/<rel>/services/omni-ticket-backend/.venv`).
+  `releases/<rel>/backend/.venv`).
 
 ## Process model (PM2, fork mode)
 
@@ -31,33 +31,37 @@ and run from the release's own venv / node:
 
 | PM2 process | Command (observed) | Port |
 | --- | --- | --- |
-| `omni-ticket-api` | `cd current/services/omni-ticket-backend && source runtime/env.sh && . .venv/bin/activate && uvicorn app.main:app --host 127.0.0.1 --port 8090` | 8090 |
-| `omni-ticket-worker` | `cd current/services/omni-ticket-backend && source runtime/env.sh && . .venv/bin/activate && python -m app.worker --interval-seconds 60 --outbound-limit 50` | — |
-| `omni-ticket-frontend` | `cd current && source runtime/env.sh && node scripts/pulse-static-server.mjs` | 8088 |
+| `omni-ticket-api` | `cd current/backend && source ../../runtime/env.sh && . .venv/bin/activate && uvicorn app.main:app --host 127.0.0.1 --port 8090` | 8090 |
+| `omni-ticket-worker` | `cd current/backend && source ../../runtime/env.sh && . .venv/bin/activate && python -m app.worker --interval-seconds 60 --outbound-limit 50` | — |
+| `omni-ticket-frontend` | `cd current && source ../runtime/env.sh && node infra/scripts/pulse-static-server.mjs` | 8088 |
 
-The frontend static server (`scripts/pulse-static-server.mjs`) serves `dist/` with SPA
+The frontend static server (`infra/scripts/pulse-static-server.mjs`) serves `frontend/dist/` with SPA
 fallback and proxies `/api/*` to `OMNI_API_PROXY_TARGET` (`127.0.0.1:8090`). It reads
-`OMNI_FRONTEND_PORT` (8088) and `OMNI_FRONTEND_DIST` (default `dist`).
+`OMNI_FRONTEND_PORT` (8088) and `OMNI_FRONTEND_DIST` (default `frontend/dist`).
 
 Guardrails: in staging/production the API/worker refuse to start unless
 `OMNI_INITIALIZE_DATABASE=false`, `OMNI_DATABASE_URL` is non-SQLite, `OMNI_SESSION_SECRET`
 is not the dev default, and `OMNI_ALLOWED_ORIGINS` is explicit (no `*`). See
-`services/omni-ticket-backend/docs/DEPLOYMENT.md`.
+`backend/docs/DEPLOYMENT.md`.
 
-## Release procedure (what `scripts/deploy-pulse.sh` automates)
+## Release procedure (what `infra/scripts/deploy-pulse.sh` automates)
 
 Run on the VM. Given a git `REF` (branch/tag/sha):
 
 1. **Snapshot** the ref into a new `releases/<ref>-<UTCstamp>/` (git export, `.git` stripped).
-2. **Build frontend:** `npm ci && VITE_OMNI_API_BASE_URL=/api/v1 npm run build` → `dist/`,
+2. **Build frontend:** run `npm ci && VITE_OMNI_API_BASE_URL=/api/v1 npm run build` in
+   `frontend/` to produce `frontend/dist/`,
    then drop `node_modules` to keep the release lean.
 3. **Build backend venv:** `python3 -m venv .venv && .venv/bin/pip install -e .` in
-   `services/omni-ticket-backend`.
-4. **Carry secrets:** copy `AI_Key` from the previous `current` release into the new one
-   (`OMNI_ANTHROPIC_API_KEY_FILE=AI_Key`). `runtime/env.sh` is shared, not per-release.
+   `backend/`.
+4. **Carry secrets:** keep `AI_Key` in `/home/amechi/omni-ticket/runtime/AI_Key` and
+   symlink it into each release backend (`OMNI_ANTHROPIC_API_KEY_FILE=AI_Key`).
+   `runtime/env.sh` and all provider secrets are shared, protected runtime files.
 5. **Migrate:** `source runtime/env.sh && .venv/bin/alembic upgrade head` (idempotent).
 6. **Activate atomically:** `ln -sfn releases/<new> current`.
-7. **Restart:** `pm2 restart omni-ticket-api omni-ticket-worker omni-ticket-frontend --update-env`.
+7. **Reload:** apply `infra/pm2/ecosystem.config.cjs` with `pm2 startOrReload`. The
+   definition owns only `omni-ticket-api`, `omni-ticket-worker`, and
+   `omni-ticket-frontend`; Pulse processes are not selected or modified.
 8. **Health-gate:** curl `127.0.0.1:8090/api/v1/health` and `127.0.0.1:8088/`. On failure,
    **auto-rollback** (repoint `current` to the prior release, restart) and exit non-zero.
 9. **Prune** old releases, keeping the most recent N (default 10).
@@ -66,10 +70,10 @@ Run on the VM. Given a git `REF` (branch/tag/sha):
 
 ```bash
 # From a workstation with SSH access (recommended): stream the script to the VM.
-ssh pulse-prod 'bash -s -- Claude' < scripts/deploy-pulse.sh
+ssh pulse-prod 'bash -s -- Claude' < infra/scripts/deploy-pulse.sh
 
 # Or copy it once and run on the VM:
-scp scripts/deploy-pulse.sh pulse-prod:/home/amechi/omni-ticket/deploy-pulse.sh
+scp infra/scripts/deploy-pulse.sh pulse-prod:/home/amechi/omni-ticket/deploy-pulse.sh
 ssh pulse-prod 'bash /home/amechi/omni-ticket/deploy-pulse.sh Claude'
 ```
 
@@ -81,10 +85,10 @@ Releases are immutable, so rollback is just repointing the symlink:
 
 ```bash
 # Roll back to the immediately previous release and restart:
-ssh pulse-prod 'bash -s' < scripts/rollback-pulse.sh
+ssh pulse-prod 'bash -s' < infra/scripts/rollback-pulse.sh
 
 # Or to a specific release:
-ssh pulse-prod 'bash -s -- claude-20260607085917' < scripts/rollback-pulse.sh
+ssh pulse-prod 'bash -s -- claude-20260607085917' < infra/scripts/rollback-pulse.sh
 ```
 
 ## Verify

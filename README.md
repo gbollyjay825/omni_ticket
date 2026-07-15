@@ -1,38 +1,53 @@
 # Omni Ticket
 
-Omni Ticket is a high-fidelity, Freshdesk/Freshworks-inspired omnichannel operations support platform for a generic support desk.
-
-The repository contains the React PWA at the root and an independent Python backend in `services/omni-ticket-backend`. Together they cover an Omni Command center, unified work queue, native channel chats, Customer 360, AI-assisted queue automation, knowledge, rules, handoffs, analytics, workforce, market-based administration, PostgreSQL-ready persistence, and connector boundaries for Email, WhatsApp, Facebook Messenger, Instagram DM, SMS, voice, portal, and partner APIs.
+Omni Ticket is Wakanow's omnichannel support platform. It provides Freshdesk- and
+Freshchat-compatible support workflows under Omni branding, with a React client and
+an independent FastAPI service.
 
 ## Repository Layout
 
-- `src/`: Vite, React, and TypeScript PWA.
-- `public/`: PWA manifest, app icons, and service worker shell assets.
-- `docs/`: product research, UI plan, architecture, and tracker artifacts.
-- `backend/`: early local demo bridge kept for compatibility with the original prototype.
-- `services/omni-ticket-backend/`: production-shaped FastAPI backend with tests, migrations, worker, Docker, and deployment docs.
+- `frontend/`: React 19, TypeScript, Vite, PWA assets, and frontend container config.
+- `backend/`: FastAPI, SQLAlchemy, Alembic, PostgreSQL worker, provider adapters, and tests.
+- `infra/`: isolated Pulse VM deployment, rollback, static server, and Docker Compose tooling.
+- `docs/`: architecture, deployment runbooks, product research, and delivery records.
+
+The previous in-memory Python prototype has been removed. The only backend is the
+service under `backend/`.
 
 ## Run Locally
 
+Start the API:
+
 ```bash
-npm install
-npm run dev -- --host 127.0.0.1
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+alembic upgrade head
+uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-Open `http://127.0.0.1:5173/`.
+Start the frontend in another terminal:
+
+```bash
+cd frontend
+npm ci
+VITE_OMNI_API_BASE_URL=http://127.0.0.1:8000/api/v1 npm run dev -- --host 127.0.0.1
+```
+
+Open `http://127.0.0.1:5173/`. API documentation is available at
+`http://127.0.0.1:8000/docs`.
 
 ## Build And Check
 
 ```bash
+cd frontend
 npm run lint
 npm run build
-npm run preview
 ```
 
-Backend checks:
-
 ```bash
-cd services/omni-ticket-backend
+cd backend
 python -m compileall app tests
 pytest -q
 ruff check app tests
@@ -41,57 +56,35 @@ alembic upgrade head
 python -m app.worker --once --market-id market-ng
 ```
 
-The root GitHub Actions workflow runs the same production gate on push and pull request: frontend lint/build, backend compile, lint, typecheck, tests, Alembic migration sanity, and a one-cycle worker smoke test.
+The root GitHub Actions workflow runs both production gates on pushes and pull
+requests.
 
-## Production Container
+## Production Containers
 
-Build the PWA as a static Nginx container. The API URL is baked into the Vite build:
+Build the frontend from the repository root:
 
 ```bash
 docker build \
-  --build-arg VITE_OMNI_API_BASE_URL=https://api.your-omni-ticket-domain.example/api/v1 \
-  -t omni-ticket-frontend .
+  --build-arg VITE_OMNI_API_BASE_URL=/api/v1 \
+  -t omni-ticket-frontend frontend
 ```
 
-Run locally against the Python backend:
+Build the backend independently:
 
 ```bash
-docker run --rm -p 8080:80 \
-  omni-ticket-frontend
+docker build -t omni-ticket-backend backend
 ```
 
-## Key Files
+The Pulse VM deployment remains isolated from the Pulse application. See
+`docs/DEPLOY_RUNBOOK.md` and `infra/scripts/deploy-pulse.sh`.
+Freshworks export and incremental migration are documented in
+`backend/docs/FRESHWORKS_MIGRATION.md`.
 
-- `src/domain.ts`: domain model.
-- `src/seed.ts`: realistic omnichannel seed data.
-- `src/store.ts`: IndexedDB-backed local-first state and workflow actions.
-- `src/OmniApp.tsx`: PWA shell and screens.
-- `Dockerfile` and `nginx.conf`: production static SPA container.
-- `backend/app.py`: local Python HTTP API server with docs and an OpenAPI-style schema.
-- `backend/store.py`: in-memory backend state and mutation helpers.
-- `docs/`: research, UI plan, architecture, and project tracker.
+## Production Principles
 
-## PWA Notes
-
-The service worker registers only in production builds. Offline sends are simulated by placing reply/note/handoff events in the local outbox.
-
-## Backend Notes
-
-Run the lightweight prototype bridge with:
-
-```bash
-python3 -m backend.app
-```
-
-Then open [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) for the route list and [http://127.0.0.1:8000/openapi.json](http://127.0.0.1:8000/openapi.json) for the schema.
-
-Run the production-shaped Python backend with:
-
-```bash
-cd services/omni-ticket-backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
-alembic upgrade head
-uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
-```
+- PostgreSQL is the system of record; IndexedDB is limited to drafts and local preferences.
+- Production attachments use S3-compatible object storage and signed access.
+- Redis provides presence, rate limits, cache, and realtime fan-out; durable events remain in PostgreSQL.
+- External providers return `Not configured` until credentials are saved. They never simulate delivery.
+- Runtime demo seeding is disabled in staging and production.
+- Secrets belong in the protected runtime environment or write-only credential store, never Git.
