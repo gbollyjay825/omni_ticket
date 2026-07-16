@@ -138,3 +138,17 @@ records are not guaranteed to survive a cold start or stay consistent across fun
 instances. Connect the managed PostgreSQL database before treating the Vercel target as a
 shared integration environment; no application fallback should pretend that ephemeral
 state is durable.
+
+## Pulse VM production runtime gate
+
+**Status:** External infrastructure and identity configuration still block the strict
+production profile.
+
+The live VM currently identifies itself as `pulse-vm`, uses PostgreSQL and the real Gmail
+IMAP/SMTP connector, but still has password login for all seeded users, non-secure session
+cookies, VM-local attachment storage, and the local outbound fallback enabled. Changing
+the runtime to `production` is intentionally blocked until Wakanow supplies managed Redis,
+S3-compatible attachment storage, the HTTP malware scanner, Entra metadata and group maps,
+and named TOTP break-glass administrators. SMTP now refuses reserved placeholder recipients
+in `pulse-vm` so seeded `*.example.com` team addresses cannot create false sends or mailbox
+bounces while IT replaces them with real support group inboxes.

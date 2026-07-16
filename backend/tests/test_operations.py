@@ -3701,6 +3701,22 @@ def test_email_outbound_uses_configured_smtp_adapter(
         for event in audit
     )
 
+    sent_count = len(sent_messages)
+    monkeypatch.setattr(settings, "environment", "pulse-vm")
+    blocked = client.post(
+        f"/api/v1/tickets/{ticket['id']}/reply",
+        json={
+            "channel": "email",
+            "actor": "agent-amara",
+            "body": "A deployed runtime must not send to a reserved example domain.",
+            "public": True,
+        },
+    )
+    assert blocked.status_code == 200
+    assert blocked.json()["metadata"]["delivery_status"] == "failed"
+    assert "non-routable placeholder domain" in blocked.json()["metadata"]["delivery_error"]
+    assert len(sent_messages) == sent_count
+
 
 def test_email_reply_threads_to_existing_ticket_and_reopens(
     client: TestClient,

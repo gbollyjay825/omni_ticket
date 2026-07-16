@@ -99,6 +99,8 @@ class LocalDevOutboundAdapter:
 
 class SmtpEmailOutboundAdapter:
     name = "smtp"
+    deployed_environments = {"staging", "production", "pulse-vm"}
+    reserved_recipient_domains = {"example.com", "example.net", "example.org", "invalid", "test"}
 
     def configured(self, email_settings: RuntimeEmailProviderSettings | None = None) -> bool:
         config = email_settings or email_provider_settings_repository.runtime_settings()
@@ -125,6 +127,13 @@ class SmtpEmailOutboundAdapter:
         text = str(value or "").strip()
         if text:
             message[header] = text
+
+    def _non_routable_recipient(self, address: str) -> bool:
+        domain = address.strip().lower().rsplit("@", 1)[-1]
+        return any(
+            domain == reserved or domain.endswith(f".{reserved}")
+            for reserved in self.reserved_recipient_domains
+        )
 
     def _build_message(self, context: OutboundSendContext) -> EmailMessage | None:
         payload = context.message.payload or {}
@@ -194,6 +203,19 @@ class SmtpEmailOutboundAdapter:
                 succeeded=False,
                 adapter=self.name,
                 error="Email delivery requires a recipient address and sender address.",
+            )
+        recipient = str(email["To"] or "").strip()
+        if (
+            settings.environment.strip().lower() in self.deployed_environments
+            and self._non_routable_recipient(recipient)
+        ):
+            return OutboundSendResult(
+                succeeded=False,
+                adapter=self.name,
+                error=(
+                    "Email recipient uses a non-routable placeholder domain. "
+                    "Configure the real customer or team address before delivery."
+                ),
             )
         smtp_class = smtplib.SMTP_SSL if email_settings.outbound_use_ssl else smtplib.SMTP
         try:
