@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-test.use({ storageState: { cookies: [], origins: [] } })
+test.use({ storageState: { cookies: [], origins: [] }, serviceWorkers: 'block' })
 
 test('administrator access signs in and persists the session', async ({ page }) => {
   await page.goto('/?screen=inbox', { waitUntil: 'domcontentloaded' })
@@ -17,7 +17,13 @@ test('administrator access signs in and persists the session', async ({ page }) 
   }
   await expect(page.getByRole('heading', { name: 'All tickets' })).toBeVisible()
 
-  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.route('**/api/v1/auth/browser/session', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    await route.continue()
+  })
+  await page.reload({ waitUntil: 'commit' })
+  await expect(page.getByRole('heading', { name: 'Restoring secure session' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Sign in to your market workspace' })).toHaveCount(0)
   await expect(page.getByRole('heading', { name: 'All tickets' })).toBeVisible()
 
   const overflow = await page.evaluate(() => ({

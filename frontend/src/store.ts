@@ -1337,6 +1337,7 @@ async function fetchOptionalOidcProviderConfig() {
 export function useOmniStore() {
   const [state, setState] = useState<OmniState>(initialOmniState)
   const [backendSession, setBackendSession] = useState<BackendSession | null>(null)
+  const [authSessionRestoring, setAuthSessionRestoring] = useState(true)
   const [hydrated, setHydrated] = useState(false)
   const [online, setOnline] = useState(
     typeof navigator === 'undefined' ? true : navigator.onLine,
@@ -1428,6 +1429,7 @@ export function useOmniStore() {
   }
 
   async function applyBackendSession(session: BackendSession) {
+    setAuthSessionRestoring(false)
     saveBackendSession(session)
     const [snapshot, oidcProviderConfig] = await Promise.all([
       fetchBackendSnapshot(session),
@@ -1536,6 +1538,7 @@ export function useOmniStore() {
       // Local sign-out still completes if the API is temporarily unreachable.
     }
     saveBackendSession(null)
+    setAuthSessionRestoring(false)
     setBackendSync({
       status: 'idle',
       baseUrl: getBackendBaseUrl(),
@@ -1543,7 +1546,7 @@ export function useOmniStore() {
   }
 
   useEffect(() => {
-    if (!hydrated || !online || backendSession) return
+    if (!hydrated || !online || !authSessionRestoring || backendSession) return
     let cancelled = false
     setBackendSync((current) => ({
       ...current,
@@ -1561,6 +1564,7 @@ export function useOmniStore() {
         if (cancelled) return
         const nextSession = sessionFromSnapshot(session, snapshot)
         setBackendSession(nextSession)
+        setAuthSessionRestoring(false)
         setState((current) => mergeBackendSnapshot(current, snapshot))
         setBackendSync((current) => ({
           ...current,
@@ -1573,6 +1577,7 @@ export function useOmniStore() {
       })
       .catch((error) => {
         if (cancelled) return
+        setAuthSessionRestoring(false)
         setBackendSync((current) => ({
           ...current,
           status: isBackendAuthError(error) ? 'idle' : 'error',
@@ -1587,7 +1592,7 @@ export function useOmniStore() {
     return () => {
       cancelled = true
     }
-  }, [backendSession, hydrated, online])
+  }, [authSessionRestoring, backendSession, hydrated, online])
 
   async function switchMarket(marketId: string) {
     if (!backendSession) return
@@ -1661,7 +1666,13 @@ export function useOmniStore() {
       }))
     } catch (error) {
       if (isBackendAuthError(error)) {
-        saveBackendSession(null)
+        try {
+          const restoredSession = await restoreBackendSession()
+          await applyBackendSession(restoredSession)
+          return
+        } catch {
+          saveBackendSession(null)
+        }
       }
       setBackendSync((current) => ({
         ...current,
@@ -1670,48 +1681,6 @@ export function useOmniStore() {
       }))
     }
   }
-
-  useEffect(() => {
-    if (!hydrated || !online || !backendSession) return
-    let cancelled = false
-
-    setBackendSync((current) => ({
-      ...current,
-      status: 'syncing',
-      error: undefined,
-    }))
-
-    Promise.all([fetchBackendSnapshot(backendSession), fetchOptionalOidcProviderConfig()])
-      .then(([snapshot, oidcProviderConfig]) => {
-        if (cancelled) return
-        const nextSession = sessionFromSnapshot(backendSession, snapshot)
-        if (sessionChanged(backendSession, nextSession)) saveBackendSession(nextSession)
-        patchState((current) => mergeBackendSnapshot(current, snapshot))
-        setBackendSync((current) => ({
-          ...current,
-          status: 'connected',
-          baseUrl: getBackendBaseUrl(),
-          lastSyncAt: new Date().toISOString(),
-          snapshot,
-          oidcProviderConfig: oidcProviderConfig ?? current.oidcProviderConfig,
-        }))
-      })
-      .catch((error) => {
-        if (cancelled) return
-        if (isBackendAuthError(error)) {
-          saveBackendSession(null)
-        }
-        setBackendSync((current) => ({
-          ...current,
-          status: 'error',
-          error: error instanceof Error ? error.message : 'Backend sync failed',
-        }))
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [backendSession, hydrated, online])
 
   const selectedConversation =
     state.conversations.find((conversation) => conversation.id === state.selectedConversationId) ??
@@ -2916,6 +2885,7 @@ export function useOmniStore() {
     createResponseMacro,
     updateResponseMacro,
     backendSession,
+    authSessionRestoring,
     login,
     loginQaAdmin,
     beginOidcLogin,

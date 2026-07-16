@@ -3977,7 +3977,7 @@ def test_email_settings_can_be_saved_and_used_by_imap_and_smtp(
         ("connect", "imap.settings.wakanow.test", 1993, settings.email_imap_timeout_seconds),
         ("login", "jimb@wakanow.com", "imap-settings-secret"),
         ("select", "Support"),
-        ("uid", "search", None, "UNSEEN"),
+        ("uid", "search", None, "ALL"),
     ]
     assert ("uid", "store", "201", "+FLAGS", "(\\Seen)") in imap_events
 
@@ -5892,7 +5892,7 @@ def test_email_inbound_sync_uses_configured_imap_adapter(
         ("connect", "imap.wakanow.test", 993, 7),
         ("login", "jimb@wakanow.com", "imap-secret"),
         ("select", "INBOX"),
-        ("uid", "search", None, "UNSEEN"),
+        ("uid", "search", None, "ALL"),
     ]
     assert ("uid", "store", "101", "+FLAGS", "(\\Seen)") in imap_events
 
@@ -5957,10 +5957,11 @@ def test_email_inbound_sync_uses_configured_imap_adapter(
     with Session(get_engine()) as session:
         duplicate = worker_service.sync_inbound_email(session, store, "market-ng", limit=10)
 
-    assert duplicate.processed == 1
-    assert duplicate.succeeded == 1
-    assert duplicate.details["deduplicated"] == 1
+    assert duplicate.processed == 0
+    assert duplicate.succeeded == 0
+    assert duplicate.details["deduplicated"] == 0
     assert duplicate.details["attachment_ids"] == []
+    assert ("uid", "search", None, "UID", "102:*") in imap_events
     assert len(client.get(f"/api/v1/tickets/{ticket['id']}/attachments").json()) == len(attachments)
     assert len(
         [

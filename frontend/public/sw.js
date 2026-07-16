@@ -1,4 +1,4 @@
-const cacheName = 'omni-ticket-v1'
+const cacheName = 'omni-ticket-v2'
 const appShell = ['/', '/index.html', '/manifest.webmanifest', '/omni-ticket.svg']
 
 self.addEventListener('install', (event) => {
@@ -19,6 +19,10 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return
 
   const request = event.request
+  const url = new URL(request.url)
+
+  // Authentication and market data must always come from the live API.
+  if (url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return
 
   if (request.mode === 'navigate') {
     event.respondWith(
@@ -32,6 +36,8 @@ self.addEventListener('fetch', (event) => {
     )
     return
   }
+
+  if (!url.pathname.startsWith('/assets/') && !appShell.includes(url.pathname)) return
 
   event.respondWith(
     fetch(request)

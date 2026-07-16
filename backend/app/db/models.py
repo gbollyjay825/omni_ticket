@@ -1342,6 +1342,7 @@ class ConnectorAccountRecord(TimestampMixin, Base):
     failure_count: Mapped[int] = mapped_column(Integer, default=0)
     required_credentials: Mapped[list[str]] = mapped_column(JSON, default=list)
     capabilities: Mapped[list[str]] = mapped_column(JSON, default=list)
+    sync_cursor: Mapped[dict] = mapped_column(JSON, default=dict)
 
     __table_args__ = (
         UniqueConstraint("market_id", "provider", name="uq_connector_account_market_provider"),

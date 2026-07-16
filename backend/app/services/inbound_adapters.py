@@ -9,6 +9,7 @@ import imaplib
 from typing import Any, Protocol
 from uuid import uuid4
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -19,7 +20,7 @@ from app.db.email_settings import (
     email_provider_settings_repository,
 )
 from app.db.mappers import market_from_record
-from app.db.models import ConnectorAccountRecord, MarketRecord
+from app.db.models import ConnectorAccountRecord, ConnectorEventRecord, MarketRecord
 from app.db.settings import get_or_create_workspace_settings, workspace_settings_from_record
 from app.db.ticketing import ticket_repository
 from app.models.domain import (
@@ -184,6 +185,101 @@ class ImapEmailInboundAdapter:
             email_settings.inbound_port,
             timeout=settings.email_imap_timeout_seconds,
         )
+
+    def _uidvalidity(self, client: imaplib.IMAP4) -> str | None:
+        try:
+            status, data = client.response("UIDVALIDITY")
+        except (AttributeError, imaplib.IMAP4.error):
+            return None
+        if status != "UIDVALIDITY" or not data:
+            return None
+        value = data[0]
+        return value.decode() if isinstance(value, bytes) else str(value)
+
+    def _last_ingested_uid(self, db: Session, market_id: str) -> int:
+        payloads = db.scalars(
+            select(ConnectorEventRecord.payload).where(
+                ConnectorEventRecord.market_id == market_id,
+                ConnectorEventRecord.provider == ChannelType.email.value,
+                ConnectorEventRecord.direction == "inbound",
+            )
+        ).all()
+        last_uid = 0
+        for payload in payloads:
+            metadata = (payload or {}).get("metadata") or {}
+            try:
+                last_uid = max(last_uid, int(metadata.get("imap_uid") or 0))
+            except (TypeError, ValueError):
+                continue
+        return last_uid
+
+    def _search_uids(
+        self,
+        client: imaplib.IMAP4,
+        db: Session,
+        account: ConnectorAccountRecord,
+        *,
+        market_id: str,
+        mailbox: str,
+        limit: int,
+    ) -> tuple[list[bytes], int, str | None]:
+        uidvalidity = self._uidvalidity(client)
+        cursor = dict(account.sync_cursor or {})
+        cursor_mailbox = str(cursor.get("mailbox") or "")
+        cursor_uidvalidity = str(cursor.get("uidvalidity") or "") or None
+        try:
+            last_uid = int(cursor.get("last_uid") or 0)
+        except (TypeError, ValueError):
+            last_uid = 0
+
+        cursor_matches = cursor_mailbox in {"", mailbox} and (
+            uidvalidity is None
+            or cursor_uidvalidity is None
+            or cursor_uidvalidity == uidvalidity
+        )
+        if not cursor_matches:
+            last_uid = 0
+        elif last_uid == 0:
+            last_uid = self._last_ingested_uid(db, market_id)
+
+        if last_uid > 0:
+            status, search_data = client.uid(
+                "search",
+                None,  # type: ignore[arg-type]
+                "UID",
+                f"{last_uid + 1}:*",
+            )
+        else:
+            status, search_data = client.uid("search", None, "ALL")  # type: ignore[arg-type]
+        if status != "OK" or not search_data:
+            raise ValueError("Unable to search the configured IMAP mailbox.")
+
+        search_bytes = search_data[0] if isinstance(search_data[0], bytes) else b""
+        candidates = []
+        for uid in search_bytes.split():
+            try:
+                if int(uid) > last_uid:
+                    candidates.append(uid)
+            except ValueError:
+                continue
+        if last_uid == 0 and len(candidates) > limit:
+            candidates = candidates[-limit:]
+        return candidates[:limit], last_uid, uidvalidity
+
+    def _save_cursor(
+        self,
+        account: ConnectorAccountRecord,
+        *,
+        mailbox: str,
+        last_uid: int,
+        uidvalidity: str | None,
+    ) -> None:
+        account.sync_cursor = {
+            "mailbox": mailbox,
+            "last_uid": last_uid,
+            "uidvalidity": uidvalidity,
+            "checkpoint_at": utc_now().isoformat(),
+        }
 
     def _plain_body(self, message) -> str:
         if message.is_multipart():
@@ -450,11 +546,14 @@ class ImapEmailInboundAdapter:
             client = self._connect(email_settings)
             client.login(email_settings.inbound_username, email_settings.inbound_password or "")
             client.select(email_settings.inbound_mailbox)
-            status, search_data = client.uid("search", None, "UNSEEN")  # type: ignore[arg-type]
-            if status != "OK" or not search_data:
-                return InboundSyncResult(**base.to_details())
-            search_bytes = search_data[0] if isinstance(search_data[0], bytes) else b""
-            uids: list[bytes] = search_bytes.split()[:limit]
+            uids, last_completed_uid, uidvalidity = self._search_uids(
+                client,
+                db,
+                account,
+                market_id=market_id,
+                mailbox=email_settings.inbound_mailbox,
+                limit=limit,
+            )
             market_record = db.get(MarketRecord, market_id)
             if market_record is None:
                 raise ValueError("Market not found for email intake sync.")
@@ -521,10 +620,25 @@ class ImapEmailInboundAdapter:
                             )
                     if email_settings.inbound_mark_seen:
                         client.uid("store", uid_text, "+FLAGS", "(\\Seen)")
+                    last_completed_uid = int(uid_text)
+                    self._save_cursor(
+                        account,
+                        mailbox=email_settings.inbound_mailbox,
+                        last_uid=last_completed_uid,
+                        uidvalidity=uidvalidity,
+                    )
                 except Exception as exc:
                     db.rollback()
                     failed += 1
                     errors.append(str(exc))
+                    break
+            if not uids:
+                self._save_cursor(
+                    account,
+                    mailbox=email_settings.inbound_mailbox,
+                    last_uid=last_completed_uid,
+                    uidvalidity=uidvalidity,
+                )
             account.last_sync_at = utc_now()
             account.last_error = errors[-1] if errors else None
             if errors:

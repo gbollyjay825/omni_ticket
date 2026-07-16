@@ -1004,6 +1004,7 @@ function OmniApp() {
     runScenario,
     recordResponseMacroUse,
     backendSession,
+    authSessionRestoring,
     login,
     loginQaAdmin,
     beginOidcLogin,
@@ -2873,6 +2874,21 @@ function OmniApp() {
     }
   }
 
+
+  if (authSessionRestoring && !backendSession) {
+    return (
+      <main className="login-shell">
+        <section className="login-panel" aria-live="polite">
+          <div className="brand-mark">
+            <LifeBuoy size={24} />
+          </div>
+          <span>OMNI TICKET SECURE ACCESS</span>
+          <h1>Restoring secure session</h1>
+          <p>Checking your protected browser session and market access.</p>
+        </section>
+      </main>
+    )
+  }
 
   if (!backendSession) {
     return (
